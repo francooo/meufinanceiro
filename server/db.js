@@ -31,7 +31,9 @@ export async function migrate() {
       note TEXT DEFAULT '',
       month TEXT NOT NULL DEFAULT '${month}',
       recurrent BOOLEAN NOT NULL DEFAULT false,
-      paid_at TEXT DEFAULT NULL
+      paid_at TEXT DEFAULT NULL,
+      installment_total INTEGER DEFAULT NULL,
+      installment_number INTEGER DEFAULT NULL
     );
   `);
   await pool.query(`
@@ -49,6 +51,8 @@ export async function migrate() {
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_at TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_total INTEGER DEFAULT NULL`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_number INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
 
@@ -77,7 +81,9 @@ export async function getMonths() {
 
 export async function getData(month) {
   const { rows: expenses } = await pool.query(
-    'SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt" FROM expenses WHERE month = $1 ORDER BY description',
+    `SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt",
+            installment_total AS "installmentTotal", installment_number AS "installmentNumber"
+     FROM expenses WHERE month = $1 ORDER BY description`,
     [month]
   );
   const { rows: incomes } = await pool.query(
@@ -98,8 +104,20 @@ export async function replaceExpenses(month, expenses) {
     await client.query("DELETE FROM expenses WHERE month = $1", [month]);
     for (const e of expenses) {
       await client.query(
-        "INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        [e.id, e.description, e.category, Number(e.value) || 0, e.note || "", month, !!e.recurrent, e.paidAt || null]
+        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, installment_total, installment_number)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [
+          e.id,
+          e.description,
+          e.category,
+          Number(e.value) || 0,
+          e.note || "",
+          month,
+          !!e.recurrent,
+          e.paidAt || null,
+          e.installmentTotal ?? null,
+          e.installmentNumber ?? null,
+        ]
       );
     }
     await client.query("COMMIT");
@@ -150,14 +168,30 @@ export async function createMonth(newMonth) {
     await client.query("INSERT INTO months (month) VALUES ($1)", [newMonth]);
 
     if (sourceMonth) {
-      const { rows: recurExpenses } = await client.query(
-        "SELECT description, category, value, note FROM expenses WHERE month = $1 AND recurrent = true",
+      const { rows: carryForwardExpenses } = await client.query(
+        `SELECT description, category, value, note, recurrent,
+                installment_total AS "installmentTotal", installment_number AS "installmentNumber"
+         FROM expenses
+         WHERE month = $1
+           AND (recurrent = true OR (installment_total IS NOT NULL AND installment_number < installment_total))`,
         [sourceMonth]
       );
-      for (const e of recurExpenses) {
+      for (const e of carryForwardExpenses) {
+        const isInstallment = e.installmentTotal != null;
         await client.query(
-          "INSERT INTO expenses (id, description, category, value, note, month, recurrent) VALUES ($1, $2, $3, $4, $5, $6, true)",
-          [randomUUID(), e.description, e.category, e.value, e.note, newMonth]
+          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, installment_total, installment_number)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            randomUUID(),
+            e.description,
+            e.category,
+            e.value,
+            e.note,
+            newMonth,
+            e.recurrent,
+            isInstallment ? e.installmentTotal : null,
+            isInstallment ? e.installmentNumber + 1 : null,
+          ]
         );
       }
 

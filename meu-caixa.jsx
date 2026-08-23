@@ -798,6 +798,8 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid }) {
                   muted={!e.value}
                   recurrent={e.recurrent}
                   paidAt={e.paidAt}
+                  installmentTotal={e.installmentTotal}
+                  installmentNumber={e.installmentNumber}
                   onEdit={() => onEdit(e)}
                   onDelete={() => onDelete(e)}
                   onTogglePaid={() => onTogglePaid(e)}
@@ -882,7 +884,7 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
   );
 }
 
-function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, onTogglePaid }) {
+function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, onTogglePaid, installmentTotal, installmentNumber }) {
   const isPaid = !!paidAt;
   return (
     <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
@@ -890,6 +892,11 @@ function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, p
         <p className={"text-sm truncate flex items-center gap-1.5 " + (muted ? "text-slate-400" : "text-slate-800")}>
           <span className="truncate">{title}</span>
           {recurrent && <Repeat size={12} className="text-slate-400 shrink-0" aria-label="Recorrente" />}
+          {installmentTotal && (
+            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 shrink-0 tabular-nums">
+              {installmentNumber}/{installmentTotal}
+            </span>
+          )}
         </p>
         {note ? <p className="text-xs text-slate-400 truncate mt-0.5">{note}</p> : null}
         {isPaid && <p className="text-xs text-emerald-600 truncate mt-0.5">Pago em {formatDateBR(paidAt)}</p>}
@@ -947,6 +954,12 @@ function EntryModal({ mode, item, onClose, onSave }) {
   const [value, setValue] = useState(item ? String(item.value) : "");
   const [note, setNote] = useState(item?.note || "");
   const [recurrent, setRecurrent] = useState(item?.recurrent || false);
+  const [repeatMode, setRepeatMode] = useState(() => {
+    if (item?.installmentTotal) return "installments";
+    if (item?.recurrent) return "recurrent";
+    return "none";
+  });
+  const [installmentTotal, setInstallmentTotal] = useState(item?.installmentTotal || 2);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -961,12 +974,21 @@ function EntryModal({ mode, item, onClose, onSave }) {
     value !== "" &&
     !isNaN(parseFloat(value)) &&
     parseFloat(value) >= 0 &&
-    (!isExpense || category.trim() !== "");
+    (!isExpense || category.trim() !== "") &&
+    (!isExpense || repeatMode !== "installments" || (Number.isInteger(installmentTotal) && installmentTotal >= 2));
 
   const submit = () => {
     if (!canSave) return;
     const data = isExpense
-      ? { description: desc.trim(), category: category.trim(), value: parseFloat(value), note: note.trim(), recurrent }
+      ? {
+          description: desc.trim(),
+          category: category.trim(),
+          value: parseFloat(value),
+          note: note.trim(),
+          recurrent: repeatMode === "recurrent",
+          installmentTotal: repeatMode === "installments" ? installmentTotal : null,
+          installmentNumber: repeatMode === "installments" ? item?.installmentNumber || 1 : null,
+        }
       : { source: desc.trim(), value: parseFloat(value), note: note.trim(), recurrent };
     onSave(mode, data, item?.id);
   };
@@ -1063,15 +1085,55 @@ function EntryModal({ mode, item, onClose, onSave }) {
           />
         </Field>
 
-        <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-          <input
-            type="checkbox"
-            checked={recurrent}
-            onChange={(e) => setRecurrent(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-          />
-          Recorrente (repete todo mês)
-        </label>
+        {isExpense ? (
+          <div className="block">
+            <span className="text-xs font-medium text-slate-500 mb-1 block">Repetição</span>
+            <div className="flex flex-col gap-2">
+              {[
+                ["none", "Não se repete"],
+                ["recurrent", "Recorrente (repete todo mês)"],
+                ["installments", "Parcelado"],
+              ].map(([value, label]) => (
+                <label key={value} className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+                  <input
+                    type="radio"
+                    name="repeatMode"
+                    checked={repeatMode === value}
+                    onChange={() => setRepeatMode(value)}
+                    className="h-4 w-4 text-slate-700 focus:ring-slate-400"
+                  />
+                  {label}
+                </label>
+              ))}
+              {repeatMode === "installments" && (
+                <div className="flex items-center gap-2 pl-6">
+                  <span className="text-xs text-slate-500">Em quantas vezes?</span>
+                  <input
+                    type="number"
+                    min="2"
+                    step="1"
+                    value={installmentTotal}
+                    onChange={(e) => setInstallmentTotal(parseInt(e.target.value, 10) || 2)}
+                    className="w-16 px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+                  />
+                  {item?.installmentNumber && (
+                    <span className="text-xs text-slate-400">(esta é a parcela {item.installmentNumber})</span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+            <input
+              type="checkbox"
+              checked={recurrent}
+              onChange={(e) => setRecurrent(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+            />
+            Recorrente (repete todo mês)
+          </label>
+        )}
       </div>
 
       <div className="flex gap-2 mt-5">
