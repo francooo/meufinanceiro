@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  Wallet, Plus, Pencil, Trash2, X, RotateCcw, Check,
+  Wallet, Plus, Pencil, Trash2, X, Check,
   ArrowUpRight, ArrowDownRight, PiggyBank, Tag,
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
@@ -27,45 +27,6 @@ const uid = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID)
     ? crypto.randomUUID()
     : "id-" + Math.random().toString(36).slice(2) + Date.now();
-
-const SEED = {
-  expenses: [
-    ["Apartamento", "Moradia", 1100, ""],
-    ["Condomínio Mont Blanc", "Moradia", 700, ""],
-    ["Condomínio Ipiranga", "Moradia", 290, ""],
-    ["Escola Valentina", "Educação", 2080, ""],
-    ["Ballet Valentina", "Educação", 210, ""],
-    ["Farmácia", "Saúde", 74, "Parcela 2/3 · Total R$ 220"],
-    ["Remédios Panvel", "Saúde", 120, "Parcela 2/2 (última) · Cartão Nubank Fran"],
-    ["Remédio Valentina", "Saúde", 150, ""],
-    ["Academia Andrews", "Saúde", 200, ""],
-    ["Luz", "Casa / Utilidades", 350, ""],
-    ["Gás", "Casa / Utilidades", 120, ""],
-    ["Internet casa", "Casa / Utilidades", 110, ""],
-    ["Meu Claro", "Telefonia", 64, ""],
-    ["Meu imposto", "Impostos", 400, ""],
-    ["Seguro carro", "Transporte", 330, ""],
-    ["Cartão Zaffari", "Cartões / Financeiro", 1500, ""],
-    ["Parcela meu Nubank", "Cartões / Financeiro", 580, ""],
-    ["Empréstimo", "Cartões / Financeiro", 1590, ""],
-    ["Assinatura Inter", "Cartões / Financeiro", 80, ""],
-    ["Assinaturas da TV", "Assinaturas / Serviços", 115, "Mercado Livre, Globo Play"],
-    ["Claude Code", "Assinaturas / Serviços", 110, ""],
-    ["Hostinger", "Assinaturas / Serviços", 50, ""],
-    ["Pokémon", "Lazer / Hobbies", 125, "Parcela 2/2 (última) · Cartão Nubank Fran"],
-    ["Meu cartão Nubank", "Cartões / Financeiro", 0, "Sem valor informado"],
-    ["Cartão Nubank Fran", "Cartões / Financeiro", 0, "Sem valor informado"],
-    ["Cartão Sams Fran", "Cartões / Financeiro", 0, "Sem valor informado"],
-  ].map(([description, category, value, note]) => ({ id: uid(), description, category, value, note })),
-  incomes: [
-    ["Fluid", 9000, "Freelance"],
-    ["Atos", 4400, ""],
-    ["NeoGrid", 4400, ""],
-    ["NeoGrid", 700, ""],
-    ["Atos", 550, ""],
-    ["Garagem", 210, ""],
-  ].map(([source, value, note]) => ({ id: uid(), source, value, note })),
-};
 
 /* ---------- helpers ---------- */
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -151,6 +112,7 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState("overview");
   const [modal, setModal] = useState(null); // {mode:'expense'|'income', item|null}
   const [confirmState, setConfirmState] = useState(null); // {kind, payload}
@@ -196,12 +158,10 @@ export default function App() {
       if (data && Array.isArray(data.expenses)) {
         setExpenses(data.expenses);
         setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
+        setLoaded(true);
       } else {
-        setExpenses(SEED.expenses);
-        setIncomes(SEED.incomes);
-        store.save(initialMonth, SEED);
+        setLoadError(true);
       }
-      setLoaded(true);
     })();
   }, [authed]);
 
@@ -304,16 +264,6 @@ export default function App() {
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
     );
   };
-  const resetAll = () => {
-    const fresh = {
-      expenses: SEED.expenses.map((e) => ({ ...e, id: uid() })),
-      incomes: SEED.incomes.map((i) => ({ ...i, id: uid() })),
-    };
-    setExpenses(fresh.expenses);
-    setIncomes(fresh.incomes);
-    setConfirmState(null);
-  };
-
   if (!authChecked) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#F1F4F2" }}>
@@ -327,6 +277,16 @@ export default function App() {
 
   if (!authed) {
     return <LoginScreen onLogin={handleLogin} />;
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "#F1F4F2" }}>
+        <p className="text-sm text-slate-500 text-center max-w-xs">
+          Não foi possível carregar seus dados. Verifique sua conexão e recarregue a página.
+        </p>
+      </div>
+    );
   }
 
   if (!loaded) {
@@ -367,13 +327,6 @@ export default function App() {
             >
               <Check size={13} /> Salvo
             </span>
-            <button
-              onClick={() => setConfirmState({ kind: "reset" })}
-              title="Restaurar dados iniciais"
-              className="h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <RotateCcw size={16} />
-            </button>
             <button
               onClick={handleLogout}
               title="Sair"
@@ -472,10 +425,7 @@ export default function App() {
         <ConfirmModal
           state={confirmState}
           onCancel={() => setConfirmState(null)}
-          onConfirm={() => {
-            if (confirmState.kind === "reset") resetAll();
-            else removeEntry(confirmState.mode, confirmState.payload.id);
-          }}
+          onConfirm={() => removeEntry(confirmState.mode, confirmState.payload.id)}
         />
       )}
     </div>
@@ -1157,34 +1107,29 @@ function EntryModal({ mode, item, onClose, onSave }) {
 }
 
 function ConfirmModal({ state, onCancel, onConfirm }) {
-  const isReset = state.kind === "reset";
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onCancel();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    const onKey = (e) => e.key === 'Escape' && onCancel();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, [onCancel]);
   return (
     <Overlay onClose={onCancel}>
-      <h3 className="text-base font-bold text-slate-800 mb-1">
-        {isReset ? "Restaurar dados iniciais?" : "Excluir lançamento?"}
-      </h3>
-      <p className="text-sm text-slate-500 mb-5">
-        {isReset
-          ? "Todos os lançamentos voltam para os valores originais da planilha. Não dá pra desfazer."
-          : `“${state.payload.description || state.payload.source}” será removido. Não dá pra desfazer.`}
+      <h3 className='text-base font-bold text-slate-800 mb-1'>Excluir lançamento?</h3>
+      <p className='text-sm text-slate-500 mb-5'>
+        “{state.payload.description || state.payload.source}” será removido. Não dá pra desfazer.
       </p>
-      <div className="flex gap-2">
+      <div className='flex gap-2'>
         <button
           onClick={onCancel}
-          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+          className='flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300'
         >
           Cancelar
         </button>
         <button
           onClick={onConfirm}
-          className="flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold shadow-sm hover:bg-rose-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-400"
+          className='flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold shadow-sm hover:bg-rose-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-400'
         >
-          {isReset ? "Restaurar" : "Excluir"}
+          Excluir
         </button>
       </div>
     </Overlay>
