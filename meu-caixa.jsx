@@ -99,6 +99,27 @@ const store = {
     }
     return res.json();
   },
+  async loadWishlist() {
+    try {
+      const res = await fetch("/api/wishlist");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.items) ? data.items : [];
+    } catch {
+      return [];
+    }
+  },
+  async saveWishlist(items) {
+    try {
+      await fetch("/api/wishlist", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+    } catch {
+      /* silencioso: segue em memória, sem persistir no banco */
+    }
+  },
 };
 
 /* ---------- app ---------- */
@@ -111,10 +132,11 @@ export default function App() {
   const [creatingMonth, setCreatingMonth] = useState(false);
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState("overview");
-  const [modal, setModal] = useState(null); // {mode:'expense'|'income', item|null}
+  const [modal, setModal] = useState(null); // {mode:'expense'|'income'|'wish', item|null}
   const [confirmState, setConfirmState] = useState(null); // {kind, payload}
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef(null);
@@ -158,6 +180,7 @@ export default function App() {
       if (data && Array.isArray(data.expenses)) {
         setExpenses(data.expenses);
         setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
+        setWishlist(await store.loadWishlist());
         setLoaded(true);
       } else {
         setLoadError(true);
@@ -172,6 +195,14 @@ export default function App() {
     clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 1400);
   }, [expenses, incomes, loaded, authed, month]);
+
+  useEffect(() => {
+    if (!authed || !loaded) return;
+    store.saveWishlist(wishlist);
+    setSaved(true);
+    clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1400);
+  }, [wishlist, loaded, authed]);
 
   const nextMonthKey = useMemo(
     () => addMonths(months.length > 0 ? months[months.length - 1] : month, 1),
@@ -256,12 +287,24 @@ export default function App() {
   };
   const removeEntry = (mode, id) => {
     if (mode === "expense") setExpenses((p) => p.filter((e) => e.id !== id));
-    else setIncomes((p) => p.filter((i) => i.id !== id));
+    else if (mode === "income") setIncomes((p) => p.filter((i) => i.id !== id));
+    else setWishlist((p) => p.filter((w) => w.id !== id));
     setConfirmState(null);
   };
   const togglePaid = (id) => {
     setExpenses((prev) =>
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
+    );
+  };
+  const saveWish = (data, id) => {
+    setWishlist((prev) =>
+      id ? prev.map((w) => (w.id === id ? { ...w, ...data } : w)) : [...prev, { id: uid(), doneAt: null, ...data }]
+    );
+    setModal(null);
+  };
+  const toggleWishDone = (id) => {
+    setWishlist((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, doneAt: w.doneAt ? null : todayISO() } : w))
     );
   };
   if (!authChecked) {
@@ -361,7 +404,7 @@ export default function App() {
             <div className="h-8 w-px bg-white/15" />
             <HeroStat icon={<ArrowDownRight size={15} />} label="Gastos" value={fmt(totalGastos)} tone="down" />
             <div className="h-8 w-px bg-white/15" />
-            <HeroStat icon={<PiggyBank size={15} />} label="Sobra" value={`${taxaSobra}%`} tone="up" />
+            <HeroStat icon={<PiggyBank size={15} />} label="Sobra" value={`${taxaSobra}%`} subValue={fmt(saldo)} tone="up" />
           </div>
         </section>
 
@@ -371,6 +414,7 @@ export default function App() {
             ["overview", "Visão geral"],
             ["gastos", "Gastos"],
             ["ganhos", "Ganhos"],
+            ["desejos", "Desejos"],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -410,9 +454,27 @@ export default function App() {
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "income", payload: item })}
           />
         )}
+
+        {tab === "desejos" && (
+          <Desejos
+            items={wishlist}
+            onAdd={() => setModal({ mode: "wish", item: null })}
+            onEdit={(item) => setModal({ mode: "wish", item })}
+            onDelete={(item) => setConfirmState({ kind: "delete", mode: "wish", payload: item })}
+            onToggleDone={(item) => toggleWishDone(item.id)}
+          />
+        )}
       </div>
 
-      {modal && (
+      {modal && modal.mode === "wish" && (
+        <WishModal
+          item={modal.item}
+          onClose={() => setModal(null)}
+          onSave={saveWish}
+        />
+      )}
+
+      {modal && modal.mode !== "wish" && (
         <EntryModal
           mode={modal.mode}
           item={modal.item}
@@ -549,7 +611,7 @@ function MonthDropdown({ months, month, nextMonthKey, onChange, onAddNext, disab
   );
 }
 
-function HeroStat({ icon, label, value, tone }) {
+function HeroStat({ icon, label, value, subValue, tone }) {
   return (
     <div className="flex-1 min-w-0">
       <div className={"flex items-center gap-1 text-[11px] " + (tone === "up" ? "text-emerald-300" : "text-rose-300")}>
@@ -557,6 +619,7 @@ function HeroStat({ icon, label, value, tone }) {
         <span className="text-emerald-100/70 uppercase tracking-wide">{label}</span>
       </div>
       <div className="text-sm font-semibold text-white truncate mt-0.5 tabular-nums">{value}</div>
+      {subValue && <div className="text-[11px] text-emerald-100/60 truncate tabular-nums">{subValue}</div>}
     </div>
   );
 }
@@ -834,6 +897,91 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
   );
 }
 
+function Desejos({ items, onAdd, onEdit, onDelete, onToggleDone }) {
+  const pending = items.filter((w) => !w.doneAt);
+  const done = items.filter((w) => w.doneAt);
+  const totalPending = pending.reduce((s, w) => s + (Number(w.value) || 0), 0);
+  const ordered = [...pending, ...done];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-slate-500">Total desejado</p>
+          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(totalPending)}</p>
+        </div>
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+          style={{ background: "#16382c" }}
+        >
+          <Plus size={16} /> Novo desejo
+        </button>
+      </div>
+
+      {ordered.length === 0 ? (
+        <Empty text="Nenhum desejo cadastrado." />
+      ) : (
+        <Card className="divide-y divide-slate-100">
+          {ordered.map((w) => (
+            <WishRow
+              key={w.id}
+              item={w}
+              onEdit={() => onEdit(w)}
+              onDelete={() => onDelete(w)}
+              onToggleDone={() => onToggleDone(w)}
+            />
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function WishRow({ item, onEdit, onDelete, onToggleDone }) {
+  const isDone = !!item.doneAt;
+  return (
+    <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+      <div className="flex-1 min-w-0">
+        <p className={"text-sm truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
+        {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
+        {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Realizado em {formatDateBR(item.doneAt)}</p>}
+      </div>
+      {item.value > 0 && (
+        <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
+          {fmt(item.value)}
+        </span>
+      )}
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onToggleDone}
+          className={
+            "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
+            (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
+          }
+          title={isDone ? "Realizado — clique para desfazer" : "Confirmar realizado"}
+        >
+          <Check size={15} />
+        </button>
+        <button
+          onClick={onEdit}
+          className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+          title="Editar"
+        >
+          <Pencil size={15} />
+        </button>
+        <button
+          onClick={onDelete}
+          className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+          title="Excluir"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, onTogglePaid, installmentTotal, installmentNumber }) {
   const isPaid = !!paidAt;
   return (
@@ -894,6 +1042,90 @@ function Empty({ text }) {
 }
 
 /* ---------- modais ---------- */
+function WishModal({ item, onClose, onSave }) {
+  const [title, setTitle] = useState(item?.title || "");
+  const [value, setValue] = useState(item ? String(item.value ?? "") : "");
+  const [note, setNote] = useState(item?.note || "");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const canSave = title.trim() !== "" && (value === "" || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0));
+
+  const submit = () => {
+    if (!canSave) return;
+    onSave({ title: title.trim(), value: value === "" ? 0 : parseFloat(value), note: note.trim() }, item?.id);
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-bold text-slate-800">{item ? "Editar desejo" : "Novo desejo"}</h3>
+        <button onClick={onClose} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="space-y-3.5">
+        <Field label="O que você deseja?">
+          <input
+            ref={inputRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Ex.: Fone de ouvido novo"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+
+        <Field label="Valor estimado (opcional)">
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="0,00"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+
+        <Field label="Observação (opcional)">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ex.: cor preta, comprar na loja X"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+      </div>
+
+      <div className="flex gap-2 mt-5">
+        <button
+          onClick={onClose}
+          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={submit}
+          disabled={!canSave}
+          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "#16382c" }}
+        >
+          Salvar
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
 function EntryModal({ mode, item, onClose, onSave }) {
   const isExpense = mode === "expense";
   const [desc, setDesc] = useState(item ? (isExpense ? item.description : item.source) : "");
@@ -1116,7 +1348,7 @@ function ConfirmModal({ state, onCancel, onConfirm }) {
     <Overlay onClose={onCancel}>
       <h3 className='text-base font-bold text-slate-800 mb-1'>Excluir lançamento?</h3>
       <p className='text-sm text-slate-500 mb-5'>
-        “{state.payload.description || state.payload.source}” será removido. Não dá pra desfazer.
+        “{state.payload.description || state.payload.source || state.payload.title}” será removido. Não dá pra desfazer.
       </p>
       <div className='flex gap-2'>
         <button

@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { getData, getMonths, replaceExpenses, replaceIncomes, createMonth, currentMonth } from "./db.js";
+import { getData, getMonths, replaceExpenses, replaceIncomes, createMonth, currentMonth, getWishlist, replaceWishlist } from "./db.js";
 import { verifyGoogleCredential, issueSessionCookie, clearSessionCookie, getSessionEmail, requireAuth } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -89,5 +89,29 @@ app.put("/api/data", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("PUT /api/data failed:", err);
     res.status(500).json({ error: "Falha ao salvar dados no banco." });
+  }
+});
+
+app.get("/api/wishlist", requireAuth, async (_req, res) => {
+  try {
+    const items = await getWishlist();
+    res.json({ items });
+  } catch (err) {
+    console.error("GET /api/wishlist failed:", err);
+    res.status(500).json({ error: "Falha ao carregar a lista de desejos." });
+  }
+});
+
+app.put("/api/wishlist", requireAuth, async (req, res) => {
+  const { items } = req.body || {};
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
+  }
+  try {
+    await replaceWishlist(items);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PUT /api/wishlist failed:", err);
+    res.status(500).json({ error: "Falha ao salvar a lista de desejos." });
   }
 });

@@ -46,6 +46,15 @@ export async function migrate() {
       recurrent BOOLEAN NOT NULL DEFAULT false
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wishlist_items (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      value NUMERIC NOT NULL DEFAULT 0,
+      note TEXT DEFAULT '',
+      done_at TEXT DEFAULT NULL
+    );
+  `);
 
   // bancos criados antes das colunas month/recurrent existirem
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
@@ -216,4 +225,33 @@ export async function createMonth(newMonth) {
   }
 
   return getData(newMonth);
+}
+
+export async function getWishlist() {
+  const { rows } = await pool.query(
+    `SELECT id, title, value, note, done_at AS "doneAt"
+     FROM wishlist_items
+     ORDER BY (done_at IS NULL) DESC, title`
+  );
+  return rows.map((r) => ({ ...r, value: Number(r.value) }));
+}
+
+export async function replaceWishlist(items) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM wishlist_items");
+    for (const it of items) {
+      await client.query(
+        "INSERT INTO wishlist_items (id, title, value, note, done_at) VALUES ($1, $2, $3, $4, $5)",
+        [it.id, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
