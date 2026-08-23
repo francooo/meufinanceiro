@@ -130,18 +130,10 @@ const store = {
   },
 };
 
-/* ---------- autenticação (placeholder visual) ---------- */
-const AUTH_KEY = "meu-financeiro-auth";
-
 /* ---------- app ---------- */
 export default function App() {
-  const [authed, setAuthed] = useState(() => {
-    try {
-      return localStorage.getItem(AUTH_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [authed, setAuthed] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
   const [months, setMonths] = useState([]);
   const [month, setMonth] = useState(() => monthKey(new Date()));
   const [switchingMonth, setSwitchingMonth] = useState(false);
@@ -156,23 +148,31 @@ export default function App() {
   const savedTimer = useRef(null);
 
   const handleLogin = () => {
-    try {
-      localStorage.setItem(AUTH_KEY, "1");
-    } catch {
-      /* segue apenas em memória */
-    }
     setAuthed(true);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     try {
-      localStorage.removeItem(AUTH_KEY);
+      await fetch("/api/auth/logout", { method: "POST" });
     } catch {
-      /* ignora */
+      /* segue mesmo se a chamada falhar */
     }
     setAuthed(false);
     setLoaded(false);
   };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me");
+        setAuthed(res.ok);
+      } catch {
+        setAuthed(false);
+      } finally {
+        setAuthChecked(true);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     if (!authed) return;
@@ -298,6 +298,17 @@ export default function App() {
     setIncomes(fresh.incomes);
     setConfirmState(null);
   };
+
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: "#F1F4F2" }}>
+        <div className="flex items-center gap-3 text-slate-500">
+          <div className="h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+          <span className="text-sm">Verificando sessão…</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!authed) {
     return <LoginScreen onLogin={handleLogin} />;
@@ -456,25 +467,67 @@ export default function App() {
 }
 
 /* ---------- login ---------- */
-function GoogleGlyph({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
-      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
-      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.9-2.26 5.36-4.78 7.02l7.73 6c4.51-4.18 7.09-10.36 7.09-17.49z" />
-      <path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 0 1 9.5 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.94 23.94 0 0 0 0 24c0 3.88.93 7.54 2.56 10.78l7.97-6.19z" />
-      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.9l-7.97 6.19C6.51 42.62 14.62 48 24 48z" />
-    </svg>
-  );
-}
-
 function LoginScreen({ onLogin }) {
-  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [ready, setReady] = useState(false);
+  const buttonRef = useRef(null);
 
-  const handleGoogleLogin = () => {
-    setLoading(true);
-    // placeholder visual: aqui entra a verificação real com Google Identity Services
-    setTimeout(() => onLogin(), 700);
-  };
+  useEffect(() => {
+    let cancelled = false;
+
+    const handleCredentialResponse = async (response) => {
+      setError("");
+      try {
+        const res = await fetch("/api/auth/google", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ credential: response.credential }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Falha ao entrar com o Google.");
+        }
+        onLogin();
+      } catch (err) {
+        setError(err.message || "Falha ao entrar com o Google.");
+      }
+    };
+
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+    const init = () => {
+      if (cancelled) return;
+      if (!clientId) {
+        setError("Login com Google não configurado (defina VITE_GOOGLE_CLIENT_ID).");
+        return;
+      }
+      if (!window.google?.accounts?.id) {
+        setTimeout(init, 200);
+        return;
+      }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleCredentialResponse,
+      });
+      if (buttonRef.current) {
+        window.google.accounts.id.renderButton(buttonRef.current, {
+          type: "standard",
+          theme: "outline",
+          size: "large",
+          width: 296,
+          text: "continue_with",
+          shape: "rectangular",
+        });
+      }
+      setReady(true);
+    };
+
+    init();
+    return () => {
+      cancelled = true;
+      if (buttonRef.current) buttonRef.current.innerHTML = "";
+    };
+  }, [onLogin]);
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "#F1F4F2" }}>
@@ -491,18 +544,11 @@ function LoginScreen({ onLogin }) {
         </div>
 
         <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-          <button
-            onClick={handleGoogleLogin}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-            ) : (
-              <GoogleGlyph size={18} />
-            )}
-            {loading ? "Entrando…" : "Continuar com Google"}
-          </button>
+          <div className="min-h-[44px] flex items-center justify-center">
+            {!ready && !error && <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />}
+            <div ref={buttonRef} className={ready ? "flex justify-center" : "hidden"} />
+          </div>
+          {error && <p className="text-xs text-rose-500 text-center mt-3">{error}</p>}
           <p className="text-[11px] text-slate-400 text-center mt-4 leading-relaxed">
             Acesso restrito à conta autorizada.
           </p>
