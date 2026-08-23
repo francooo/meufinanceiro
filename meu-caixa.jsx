@@ -71,6 +71,16 @@ const SEED = {
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const fmt = (n) => brl.format(Number(n) || 0);
 
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const formatDateBR = (iso) => {
+  const [y, m, d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+};
+
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 const monthLabel = (key) => {
@@ -289,6 +299,11 @@ export default function App() {
     else setIncomes((p) => p.filter((i) => i.id !== id));
     setConfirmState(null);
   };
+  const togglePaid = (id) => {
+    setExpenses((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
+    );
+  };
   const resetAll = () => {
     const fresh = {
       expenses: SEED.expenses.map((e) => ({ ...e, id: uid() })),
@@ -429,6 +444,7 @@ export default function App() {
             onAdd={() => setModal({ mode: "expense", item: null })}
             onEdit={(item) => setModal({ mode: "expense", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "expense", payload: item })}
+            onTogglePaid={(item) => togglePaid(item.id)}
           />
         )}
 
@@ -560,6 +576,7 @@ function LoginScreen({ onLogin }) {
 
 /* ---------- subcomponentes ---------- */
 const ADD_NEXT_MONTH = "__add_next__";
+const NEW_CATEGORY = "__new_category__";
 
 function MonthDropdown({ months, month, nextMonthKey, onChange, onAddNext, disabled }) {
   return (
@@ -701,7 +718,7 @@ function Overview({ byCat, totalGastos, expenses }) {
   );
 }
 
-function Gastos({ grouped, total, onAdd, onEdit, onDelete }) {
+function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
@@ -780,8 +797,10 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete }) {
                   value={e.value}
                   muted={!e.value}
                   recurrent={e.recurrent}
+                  paidAt={e.paidAt}
                   onEdit={() => onEdit(e)}
                   onDelete={() => onDelete(e)}
+                  onTogglePaid={() => onTogglePaid(e)}
                 />
               ))}
             </div>
@@ -863,7 +882,8 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
   );
 }
 
-function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent }) {
+function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, onTogglePaid }) {
+  const isPaid = !!paidAt;
   return (
     <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
       <div className="flex-1 min-w-0">
@@ -872,6 +892,7 @@ function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent })
           {recurrent && <Repeat size={12} className="text-slate-400 shrink-0" aria-label="Recorrente" />}
         </p>
         {note ? <p className="text-xs text-slate-400 truncate mt-0.5">{note}</p> : null}
+        {isPaid && <p className="text-xs text-emerald-600 truncate mt-0.5">Pago em {formatDateBR(paidAt)}</p>}
       </div>
       <span
         className="text-sm font-semibold tabular-nums shrink-0"
@@ -880,6 +901,18 @@ function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent })
         {fmt(value)}
       </span>
       <div className="flex items-center gap-1 shrink-0">
+        {onTogglePaid && (
+          <button
+            onClick={onTogglePaid}
+            className={
+              "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
+              (isPaid ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
+            }
+            title={isPaid ? "Pagamento confirmado — clique para desfazer" : "Confirmar pagamento"}
+          >
+            <Check size={15} />
+          </button>
+        )}
         <button
           onClick={onEdit}
           className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
@@ -908,6 +941,9 @@ function EntryModal({ mode, item, onClose, onSave }) {
   const isExpense = mode === "expense";
   const [desc, setDesc] = useState(item ? (isExpense ? item.description : item.source) : "");
   const [category, setCategory] = useState(item?.category || CATS[0].name);
+  const [categoryMode, setCategoryMode] = useState(() =>
+    CATS.some((c) => c.name === (item?.category || CATS[0].name)) ? "select" : "custom"
+  );
   const [value, setValue] = useState(item ? String(item.value) : "");
   const [note, setNote] = useState(item?.note || "");
   const [recurrent, setRecurrent] = useState(item?.recurrent || false);
@@ -920,12 +956,17 @@ function EntryModal({ mode, item, onClose, onSave }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const canSave = desc.trim() !== "" && value !== "" && !isNaN(parseFloat(value)) && parseFloat(value) >= 0;
+  const canSave =
+    desc.trim() !== "" &&
+    value !== "" &&
+    !isNaN(parseFloat(value)) &&
+    parseFloat(value) >= 0 &&
+    (!isExpense || category.trim() !== "");
 
   const submit = () => {
     if (!canSave) return;
     const data = isExpense
-      ? { description: desc.trim(), category, value: parseFloat(value), note: note.trim(), recurrent }
+      ? { description: desc.trim(), category: category.trim(), value: parseFloat(value), note: note.trim(), recurrent }
       : { source: desc.trim(), value: parseFloat(value), note: note.trim(), recurrent };
     onSave(mode, data, item?.id);
   };
@@ -954,17 +995,48 @@ function EntryModal({ mode, item, onClose, onSave }) {
 
         {isExpense && (
           <Field label="Categoria">
-            <input
-              list="cats-list"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-            />
-            <datalist id="cats-list">
-              {CATS.map((c) => (
-                <option key={c.name} value={c.name} />
-              ))}
-            </datalist>
+            {categoryMode === "select" ? (
+              <select
+                value={category}
+                onChange={(e) => {
+                  if (e.target.value === NEW_CATEGORY) {
+                    setCategoryMode("custom");
+                    setCategory("");
+                  } else {
+                    setCategory(e.target.value);
+                  }
+                }}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+              >
+                {CATS.map((c) => (
+                  <option key={c.name} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+                <option value={NEW_CATEGORY}>+ Criar nova categoria</option>
+              </select>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Nome da nova categoria"
+                  className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCategoryMode("select");
+                    setCategory(CATS.some((c) => c.name === category) ? category : CATS[0].name);
+                  }}
+                  title="Cancelar"
+                  className="h-[42px] w-[42px] shrink-0 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
           </Field>
         )}
 

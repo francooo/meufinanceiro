@@ -30,7 +30,8 @@ export async function migrate() {
       value NUMERIC NOT NULL DEFAULT 0,
       note TEXT DEFAULT '',
       month TEXT NOT NULL DEFAULT '${month}',
-      recurrent BOOLEAN NOT NULL DEFAULT false
+      recurrent BOOLEAN NOT NULL DEFAULT false,
+      paid_at TEXT DEFAULT NULL
     );
   `);
   await pool.query(`
@@ -47,6 +48,7 @@ export async function migrate() {
   // bancos criados antes das colunas month/recurrent existirem
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_at TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
 
@@ -75,7 +77,7 @@ export async function getMonths() {
 
 export async function getData(month) {
   const { rows: expenses } = await pool.query(
-    "SELECT id, description, category, value, note, recurrent FROM expenses WHERE month = $1 ORDER BY description",
+    'SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt" FROM expenses WHERE month = $1 ORDER BY description',
     [month]
   );
   const { rows: incomes } = await pool.query(
@@ -96,8 +98,8 @@ export async function replaceExpenses(month, expenses) {
     await client.query("DELETE FROM expenses WHERE month = $1", [month]);
     for (const e of expenses) {
       await client.query(
-        "INSERT INTO expenses (id, description, category, value, note, month, recurrent) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [e.id, e.description, e.category, Number(e.value) || 0, e.note || "", month, !!e.recurrent]
+        "INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [e.id, e.description, e.category, Number(e.value) || 0, e.note || "", month, !!e.recurrent, e.paidAt || null]
       );
     }
     await client.query("COMMIT");
