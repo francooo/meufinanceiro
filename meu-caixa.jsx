@@ -4,6 +4,7 @@ import {
   ArrowUpRight, ArrowDownRight, PiggyBank, Tag,
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
+  DollarSign, LogOut, Search,
 } from "lucide-react";
 
 /* ---------- dados de referência ---------- */
@@ -69,30 +70,82 @@ const SEED = {
 /* ---------- helpers ---------- */
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const fmt = (n) => brl.format(Number(n) || 0);
-const KEY = "orcamento-v1";
+
+const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+const monthLabel = (key) => {
+  const [y, m] = key.split("-").map(Number);
+  const s = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+};
+
+const addMonths = (key, n) => {
+  const [y, m] = key.split("-").map(Number);
+  return monthKey(new Date(y, m - 1 + n, 1));
+};
 
 const store = {
-  async load() {
+  async loadMonths() {
     try {
-      if (!window.storage) return null;
-      const r = await window.storage.get(KEY);
-      return r && r.value ? JSON.parse(r.value) : null;
+      const res = await fetch("/api/months");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.months) ? data.months : [];
+    } catch {
+      return [];
+    }
+  },
+  async load(month) {
+    try {
+      const res = await fetch(`/api/data?month=${encodeURIComponent(month)}`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data && Array.isArray(data.expenses) ? data : null;
     } catch {
       return null;
     }
   },
-  async save(data) {
+  async save(month, data) {
     try {
-      if (!window.storage) return;
-      await window.storage.set(KEY, JSON.stringify(data));
+      await fetch("/api/data", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month, ...data }),
+      });
     } catch {
-      /* silencioso: segue em memória */
+      /* silencioso: segue em memória, sem persistir no banco */
     }
+  },
+  async createMonth(month) {
+    const res = await fetch("/api/months", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Falha ao criar o mês.");
+    }
+    return res.json();
   },
 };
 
+/* ---------- autenticação (placeholder visual) ---------- */
+const AUTH_KEY = "meu-financeiro-auth";
+
 /* ---------- app ---------- */
 export default function App() {
+  const [authed, setAuthed] = useState(() => {
+    try {
+      return localStorage.getItem(AUTH_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [months, setMonths] = useState([]);
+  const [month, setMonth] = useState(() => monthKey(new Date()));
+  const [switchingMonth, setSwitchingMonth] = useState(false);
+  const [creatingMonth, setCreatingMonth] = useState(false);
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -102,28 +155,86 @@ export default function App() {
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef(null);
 
+  const handleLogin = () => {
+    try {
+      localStorage.setItem(AUTH_KEY, "1");
+    } catch {
+      /* segue apenas em memória */
+    }
+    setAuthed(true);
+  };
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem(AUTH_KEY);
+    } catch {
+      /* ignora */
+    }
+    setAuthed(false);
+    setLoaded(false);
+  };
+
   useEffect(() => {
+    if (!authed) return;
     (async () => {
-      const data = await store.load();
+      const availableMonths = await store.loadMonths();
+      const initialMonth = availableMonths.length > 0 ? availableMonths[availableMonths.length - 1] : monthKey(new Date());
+      setMonths(availableMonths.length > 0 ? availableMonths : [initialMonth]);
+      setMonth(initialMonth);
+
+      const data = await store.load(initialMonth);
       if (data && Array.isArray(data.expenses)) {
         setExpenses(data.expenses);
         setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
       } else {
         setExpenses(SEED.expenses);
         setIncomes(SEED.incomes);
-        store.save(SEED);
+        store.save(initialMonth, SEED);
       }
       setLoaded(true);
     })();
-  }, []);
+  }, [authed]);
 
   useEffect(() => {
-    if (!loaded) return;
-    store.save({ expenses, incomes });
+    if (!authed || !loaded) return;
+    store.save(month, { expenses, incomes });
     setSaved(true);
     clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 1400);
-  }, [expenses, incomes, loaded]);
+  }, [expenses, incomes, loaded, authed, month]);
+
+  const nextMonthKey = useMemo(
+    () => addMonths(months.length > 0 ? months[months.length - 1] : month, 1),
+    [months, month]
+  );
+
+  const handleMonthChange = async (newMonth) => {
+    if (newMonth === month || switchingMonth) return;
+    setSwitchingMonth(true);
+    const data = await store.load(newMonth);
+    if (data && Array.isArray(data.expenses)) {
+      setMonth(newMonth);
+      setExpenses(data.expenses);
+      setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
+    }
+    setSwitchingMonth(false);
+  };
+
+  const handleAddNextMonth = async () => {
+    if (creatingMonth) return;
+    setCreatingMonth(true);
+    try {
+      const data = await store.createMonth(nextMonthKey);
+      setMonths((prev) => [...prev, nextMonthKey]);
+      setMonth(nextMonthKey);
+      setExpenses(data.expenses);
+      setIncomes(data.incomes);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCreatingMonth(false);
+    }
+  };
 
   const totalGastos = useMemo(() => expenses.reduce((s, e) => s + (Number(e.value) || 0), 0), [expenses]);
   const totalGanhos = useMemo(() => incomes.reduce((s, i) => s + (Number(i.value) || 0), 0), [incomes]);
@@ -157,18 +268,8 @@ export default function App() {
       .sort((a, b) => b.subtotal - a.subtotal);
   }, [expenses]);
 
-  const topGastos = useMemo(
-    () => [...expenses].filter((e) => e.value > 0).sort((a, b) => b.value - a.value).slice(0, 5),
-    [expenses]
-  );
-
   const pctGasto = totalGanhos > 0 ? Math.min(100, (totalGastos / totalGanhos) * 100) : (totalGastos > 0 ? 100 : 0);
   const taxaSobra = totalGanhos > 0 ? Math.round((saldo / totalGanhos) * 100) : 0;
-
-  const mesLabel = useMemo(() => {
-    const s = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-    return s.charAt(0).toUpperCase() + s.slice(1);
-  }, []);
 
   /* CRUD */
   const saveEntry = (mode, data, id) => {
@@ -198,6 +299,10 @@ export default function App() {
     setConfirmState(null);
   };
 
+  if (!authed) {
+    return <LoginScreen onLogin={handleLogin} />;
+  }
+
   if (!loaded) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#F1F4F2" }}>
@@ -219,8 +324,15 @@ export default function App() {
               <Wallet size={20} />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-800 leading-tight">Meu Caixa</h1>
-              <p className="text-xs text-slate-500 leading-tight">{mesLabel}</p>
+              <h1 className="text-lg font-bold text-slate-800 leading-tight">Meu financeiro</h1>
+              <MonthDropdown
+                months={months}
+                month={month}
+                nextMonthKey={nextMonthKey}
+                onChange={handleMonthChange}
+                onAddNext={handleAddNextMonth}
+                disabled={switchingMonth || creatingMonth}
+              />
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -235,6 +347,13 @@ export default function App() {
               className="h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
             >
               <RotateCcw size={16} />
+            </button>
+            <button
+              onClick={handleLogout}
+              title="Sair"
+              className="h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <LogOut size={16} />
             </button>
           </div>
         </header>
@@ -289,7 +408,7 @@ export default function App() {
         </div>
 
         {tab === "overview" && (
-          <Overview byCat={byCat} totalGastos={totalGastos} topGastos={topGastos} />
+          <Overview byCat={byCat} totalGastos={totalGastos} expenses={expenses} />
         )}
 
         {tab === "gastos" && (
@@ -336,7 +455,87 @@ export default function App() {
   );
 }
 
+/* ---------- login ---------- */
+function GoogleGlyph({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z" />
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.9-2.26 5.36-4.78 7.02l7.73 6c4.51-4.18 7.09-10.36 7.09-17.49z" />
+      <path fill="#FBBC05" d="M10.53 28.59A14.5 14.5 0 0 1 9.5 24c0-1.59.27-3.13.76-4.59l-7.98-6.19A23.94 23.94 0 0 0 0 24c0 3.88.93 7.54 2.56 10.78l7.97-6.19z" />
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.9l-7.97 6.19C6.51 42.62 14.62 48 24 48z" />
+    </svg>
+  );
+}
+
+function LoginScreen({ onLogin }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleGoogleLogin = () => {
+    setLoading(true);
+    // placeholder visual: aqui entra a verificação real com Google Identity Services
+    setTimeout(() => onLogin(), 700);
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "#F1F4F2" }}>
+      <div className="w-full max-w-sm">
+        <div className="flex flex-col items-center text-center mb-8">
+          <div
+            className="h-16 w-16 rounded-3xl flex items-center justify-center text-white shadow-lg mb-4"
+            style={{ background: "linear-gradient(135deg,#0f2e25 0%,#16382c 55%,#1e4a38 100%)" }}
+          >
+            <DollarSign size={30} />
+          </div>
+          <h1 className="text-2xl font-bold text-slate-800">Meu financeiro</h1>
+          <p className="text-sm text-slate-500 mt-1">Organize seus ganhos e gastos em um só lugar</p>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
+          <button
+            onClick={handleGoogleLogin}
+            disabled={loading}
+            className="w-full flex items-center justify-center gap-3 py-3 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+            ) : (
+              <GoogleGlyph size={18} />
+            )}
+            {loading ? "Entrando…" : "Continuar com Google"}
+          </button>
+          <p className="text-[11px] text-slate-400 text-center mt-4 leading-relaxed">
+            Acesso restrito à conta autorizada.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- subcomponentes ---------- */
+const ADD_NEXT_MONTH = "__add_next__";
+
+function MonthDropdown({ months, month, nextMonthKey, onChange, onAddNext, disabled }) {
+  return (
+    <select
+      value={month}
+      disabled={disabled}
+      onChange={(e) => {
+        if (e.target.value === ADD_NEXT_MONTH) onAddNext();
+        else onChange(e.target.value);
+      }}
+      className="text-xs text-slate-500 leading-tight bg-transparent border-none -ml-1 pl-1 pr-1 py-0 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60 disabled:cursor-wait"
+    >
+      {months.map((m) => (
+        <option key={m} value={m}>
+          {monthLabel(m)}
+        </option>
+      ))}
+      <option value={ADD_NEXT_MONTH}>+ Adicionar {monthLabel(nextMonthKey)}</option>
+    </select>
+  );
+}
+
 function HeroStat({ icon, label, value, tone }) {
   return (
     <div className="flex-1 min-w-0">
@@ -355,7 +554,26 @@ function Card({ children, className = "" }) {
   );
 }
 
-function Overview({ byCat, totalGastos, topGastos }) {
+function Overview({ byCat, totalGastos, expenses }) {
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const isSearching = query !== "";
+
+  const sortedGastos = useMemo(
+    () => [...expenses].filter((e) => e.value > 0).sort((a, b) => b.value - a.value),
+    [expenses]
+  );
+
+  const listedGastos = useMemo(
+    () => (isSearching ? sortedGastos.filter((e) => e.description.toLowerCase().includes(query)) : sortedGastos.slice(0, 5)),
+    [sortedGastos, isSearching, query]
+  );
+
+  const foundTotal = useMemo(
+    () => listedGastos.reduce((s, e) => s + (Number(e.value) || 0), 0),
+    [listedGastos]
+  );
+
   return (
     <div className="space-y-5">
       <Card className="p-5">
@@ -391,12 +609,35 @@ function Overview({ byCat, totalGastos, topGastos }) {
       </Card>
 
       <Card className="p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-3">Maiores gastos</h2>
-        {topGastos.length === 0 ? (
-          <Empty text="Nada por aqui." />
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-slate-800">{isSearching ? "Resultado da busca" : "Maiores gastos"}</h2>
+          {isSearching && <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(foundTotal)}</span>}
+        </div>
+
+        <div className="relative mb-3.5">
+          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar gasto por título…"
+            className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+          {isSearching && (
+            <button
+              onClick={() => setSearch("")}
+              title="Limpar busca"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {listedGastos.length === 0 ? (
+          <Empty text={isSearching ? "Nenhum gasto encontrado." : "Nada por aqui."} />
         ) : (
           <div className="divide-y divide-slate-100">
-            {topGastos.map((e, i) => {
+            {listedGastos.map((e, i) => {
               const c = catMeta(e.category);
               return (
                 <div key={e.id} className="flex items-center gap-3 py-2.5">
@@ -415,12 +656,31 @@ function Overview({ byCat, totalGastos, topGastos }) {
 }
 
 function Gastos({ grouped, total, onAdd, onEdit, onDelete }) {
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const isSearching = query !== "";
+
+  const filteredGrouped = useMemo(() => {
+    if (!query) return grouped;
+    return grouped
+      .map((g) => {
+        const items = g.items.filter((e) => e.description.toLowerCase().includes(query));
+        return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
+      })
+      .filter((g) => g.items.length > 0);
+  }, [grouped, query]);
+
+  const visibleTotal = useMemo(
+    () => filteredGrouped.reduce((s, g) => s + g.subtotal, 0),
+    [filteredGrouped]
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-slate-500">Total de gastos</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(total)}</p>
+          <p className="text-xs text-slate-500">{isSearching ? "Total encontrado" : "Total de gastos"}</p>
+          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(isSearching ? visibleTotal : total)}</p>
         </div>
         <button
           onClick={onAdd}
@@ -431,9 +691,30 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete }) {
         </button>
       </div>
 
-      {grouped.length === 0 && <Empty text="Nenhum gasto cadastrado." />}
+      <div className="relative">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar gasto por título…"
+          className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+        />
+        {isSearching && (
+          <button
+            onClick={() => setSearch("")}
+            title="Limpar busca"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
 
-      {grouped.map((g) => {
+      {filteredGrouped.length === 0 && (
+        <Empty text={isSearching ? "Nenhum gasto encontrado." : "Nenhum gasto cadastrado."} />
+      )}
+
+      {filteredGrouped.map((g) => {
         const Icon = g.icon;
         return (
           <Card key={g.name} className="overflow-hidden">
@@ -452,6 +733,7 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete }) {
                   note={e.note}
                   value={e.value}
                   muted={!e.value}
+                  recurrent={e.recurrent}
                   onEdit={() => onEdit(e)}
                   onDelete={() => onDelete(e)}
                 />
@@ -465,12 +747,26 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete }) {
 }
 
 function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const isSearching = query !== "";
+
+  const filteredIncomes = useMemo(
+    () => (isSearching ? incomes.filter((i) => i.source.toLowerCase().includes(query)) : incomes),
+    [incomes, isSearching, query]
+  );
+
+  const visibleTotal = useMemo(
+    () => filteredIncomes.reduce((s, i) => s + (Number(i.value) || 0), 0),
+    [filteredIncomes]
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-slate-500">Total de ganhos</p>
-          <p className="text-xl font-bold text-emerald-600 tabular-nums">{fmt(total)}</p>
+          <p className="text-xs text-slate-500">{isSearching ? "Total encontrado" : "Total de ganhos"}</p>
+          <p className="text-xl font-bold text-emerald-600 tabular-nums">{fmt(isSearching ? visibleTotal : total)}</p>
         </div>
         <button
           onClick={onAdd}
@@ -480,17 +776,37 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
         </button>
       </div>
 
-      {incomes.length === 0 ? (
-        <Empty text="Nenhuma fonte de renda cadastrada." />
+      <div className="relative">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar ganho por título…"
+          className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400"
+        />
+        {isSearching && (
+          <button
+            onClick={() => setSearch("")}
+            title="Limpar busca"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {filteredIncomes.length === 0 ? (
+        <Empty text={isSearching ? "Nenhum ganho encontrado." : "Nenhuma fonte de renda cadastrada."} />
       ) : (
         <Card className="divide-y divide-slate-100">
-          {incomes.map((i) => (
+          {filteredIncomes.map((i) => (
             <Row
               key={i.id}
               title={i.source}
               note={i.note}
               value={i.value}
               accent="#059669"
+              recurrent={i.recurrent}
               onEdit={() => onEdit(i)}
               onDelete={() => onDelete(i)}
             />
@@ -501,11 +817,14 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
   );
 }
 
-function Row({ title, note, value, onEdit, onDelete, accent, muted }) {
+function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent }) {
   return (
     <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
       <div className="flex-1 min-w-0">
-        <p className={"text-sm truncate " + (muted ? "text-slate-400" : "text-slate-800")}>{title}</p>
+        <p className={"text-sm truncate flex items-center gap-1.5 " + (muted ? "text-slate-400" : "text-slate-800")}>
+          <span className="truncate">{title}</span>
+          {recurrent && <Repeat size={12} className="text-slate-400 shrink-0" aria-label="Recorrente" />}
+        </p>
         {note ? <p className="text-xs text-slate-400 truncate mt-0.5">{note}</p> : null}
       </div>
       <span
@@ -545,6 +864,7 @@ function EntryModal({ mode, item, onClose, onSave }) {
   const [category, setCategory] = useState(item?.category || CATS[0].name);
   const [value, setValue] = useState(item ? String(item.value) : "");
   const [note, setNote] = useState(item?.note || "");
+  const [recurrent, setRecurrent] = useState(item?.recurrent || false);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -559,8 +879,8 @@ function EntryModal({ mode, item, onClose, onSave }) {
   const submit = () => {
     if (!canSave) return;
     const data = isExpense
-      ? { description: desc.trim(), category, value: parseFloat(value), note: note.trim() }
-      : { source: desc.trim(), value: parseFloat(value), note: note.trim() };
+      ? { description: desc.trim(), category, value: parseFloat(value), note: note.trim(), recurrent }
+      : { source: desc.trim(), value: parseFloat(value), note: note.trim(), recurrent };
     onSave(mode, data, item?.id);
   };
 
@@ -624,6 +944,16 @@ function EntryModal({ mode, item, onClose, onSave }) {
             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
           />
         </Field>
+
+        <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+          <input
+            type="checkbox"
+            checked={recurrent}
+            onChange={(e) => setRecurrent(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+          />
+          Recorrente (repete todo mês)
+        </label>
       </div>
 
       <div className="flex gap-2 mt-5">

@@ -1,0 +1,45 @@
+import { randomUUID } from "node:crypto";
+
+export const SEED_EXPENSES = [
+  ["Apartamento", "Moradia", 1100, ""],
+  ["Condomínio Mont Blanc", "Moradia", 700, ""],
+  ["Condomínio Ipiranga", "Moradia", 290, ""],
+  ["Escola Valentina", "Educação", 2080, ""],
+  ["Ballet Valentina", "Educação", 210, ""],
+  ["Farmácia", "Saúde", 74, "Parcela 2/3 · Total R$ 220"],
+  ["Remédios Panvel", "Saúde", 120, "Parcela 2/2 (última) · Cartão Nubank Fran"],
+  ["Remédio Valentina", "Saúde", 150, ""],
+  ["Academia Andrews", "Saúde", 200, ""],
+  ["Luz", "Casa / Utilidades", 350, ""],
+  ["Gás", "Casa / Utilidades", 120, ""],
+  ["Internet casa", "Casa / Utilidades", 110, ""],
+  ["Meu Claro", "Telefonia", 64, ""],
+  ["Meu imposto", "Impostos", 400, ""],
+  ["Seguro carro", "Transporte", 330, ""],
+  ["Cartão Zaffari", "Cartões / Financeiro", 1500, ""],
+  ["Parcela meu Nubank", "Cartões / Financeiro", 580, ""],
+  ["Empréstimo", "Cartões / Financeiro", 1590, ""],
+  ["Assinatura Inter", "Cartões / Financeiro", 80, ""],
+  ["Assinaturas da TV", "Assinaturas / Serviços", 115, "Mercado Livre, Globo Play"],
+  ["Claude Code", "Assinaturas / Serviços", 110, ""],
+  ["Hostinger", "Assinaturas / Serviços", 50, ""],
+  ["Pokémon", "Lazer / Hobbies", 125, "Parcela 2/2 (última) · Cartão Nubank Fran"],
+  ["Meu cartão Nubank", "Cartões / Financeiro", 0, "Sem valor informado"],
+  ["Cartão Nubank Fran", "Cartões / Financeiro", 0, "Sem valor informado"],
+  ["Cartão Sams Fran", "Cartões / Financeiro", 0, "Sem valor informado"],
+].map(([description, category, value, note]) => ({
+  id: randomUUID(),
+  description,
+  category,
+  value,
+  note,
+}));
+
+export const SEED_INCOMES = [
+  ["Fluid", 9000, "Freelance"],
+  ["Atos", 4400, ""],
+  ["NeoGrid", 4400, ""],
+  ["NeoGrid", 700, ""],
+  ["Atos", 550, ""],
+  ["Garagem", 210, ""],
+].map(([source, value, note]) => ({ id: randomUUID(), source, value, note }));
