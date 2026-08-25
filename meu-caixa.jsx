@@ -4,7 +4,7 @@ import {
   ArrowUpRight, ArrowDownRight, PiggyBank, Tag,
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
-  DollarSign, LogOut, Search,
+  DollarSign, LogOut, Search, ChevronUp, ChevronDown,
 } from "lucide-react";
 
 /* ---------- dados de referência ---------- */
@@ -263,7 +263,12 @@ export default function App() {
       .map(([name, items]) => ({
         name,
         ...catMeta(name),
-        items: [...items].sort((a, b) => (b.value || 0) - (a.value || 0)),
+        items: [...items].sort((a, b) => {
+          if (a.order != null && b.order != null) return a.order - b.order;
+          if (a.order != null) return -1;
+          if (b.order != null) return 1;
+          return (b.value || 0) - (a.value || 0);
+        }),
         subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0),
       }))
       .sort((a, b) => b.subtotal - a.subtotal);
@@ -294,6 +299,20 @@ export default function App() {
   const togglePaid = (id) => {
     setExpenses((prev) =>
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
+    );
+  };
+  const moveExpense = (category, id, direction) => {
+    const group = gastosGrouped.find((g) => g.name === category);
+    if (!group) return;
+    const items = group.items;
+    const idx = items.findIndex((e) => e.id === id);
+    const targetIdx = idx + (direction === "up" ? -1 : 1);
+    if (idx === -1 || targetIdx < 0 || targetIdx >= items.length) return;
+    const reordered = [...items];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    const orderById = new Map(reordered.map((e, i) => [e.id, i]));
+    setExpenses((prev) =>
+      prev.map((e) => (orderById.has(e.id) ? { ...e, order: orderById.get(e.id) } : e))
     );
   };
   const saveWish = (data, id) => {
@@ -442,6 +461,7 @@ export default function App() {
             onEdit={(item) => setModal({ mode: "expense", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "expense", payload: item })}
             onTogglePaid={(item) => togglePaid(item.id)}
+            onMove={moveExpense}
           />
         )}
 
@@ -731,7 +751,7 @@ function Overview({ byCat, totalGastos, expenses }) {
   );
 }
 
-function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid }) {
+function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
@@ -802,7 +822,7 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid }) {
               <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(g.subtotal)}</span>
             </div>
             <div className="divide-y divide-slate-100">
-              {g.items.map((e) => (
+              {g.items.map((e, idx) => (
                 <Row
                   key={e.id}
                   title={e.description}
@@ -813,6 +833,9 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid }) {
                   paidAt={e.paidAt}
                   installmentTotal={e.installmentTotal}
                   installmentNumber={e.installmentNumber}
+                  position={idx + 1}
+                  onMoveUp={!isSearching && idx > 0 ? () => onMove(e.category, e.id, "up") : undefined}
+                  onMoveDown={!isSearching && idx < g.items.length - 1 ? () => onMove(e.category, e.id, "down") : undefined}
                   onEdit={() => onEdit(e)}
                   onDelete={() => onDelete(e)}
                   onTogglePaid={() => onTogglePaid(e)}
@@ -982,10 +1005,39 @@ function WishRow({ item, onEdit, onDelete, onToggleDone }) {
   );
 }
 
-function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, onTogglePaid, installmentTotal, installmentNumber }) {
+function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown }) {
   const isPaid = !!paidAt;
   return (
     <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+      {position != null && (
+        <div className="flex flex-col items-center shrink-0">
+          {onMoveUp ? (
+            <button
+              onClick={onMoveUp}
+              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              title="Mover para cima"
+            >
+              <ChevronUp size={12} />
+            </button>
+          ) : (
+            <span className="h-4 w-4" />
+          )}
+          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1 tabular-nums leading-tight">
+            {position}
+          </span>
+          {onMoveDown ? (
+            <button
+              onClick={onMoveDown}
+              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              title="Mover para baixo"
+            >
+              <ChevronDown size={12} />
+            </button>
+          ) : (
+            <span className="h-4 w-4" />
+          )}
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <p className={"text-sm truncate flex items-center gap-1.5 " + (muted ? "text-slate-400" : "text-slate-800")}>
           <span className="truncate">{title}</span>
