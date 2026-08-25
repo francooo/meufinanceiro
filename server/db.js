@@ -14,6 +14,15 @@ export function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function addOneMonthToDate(iso) {
+  if (!iso) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  const daysInNextMonth = new Date(y, m + 1, 0).getDate();
+  const day = Math.min(d, daysInNextMonth);
+  const next = new Date(y, m, day);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+}
+
 export async function migrate() {
   const month = currentMonth();
 
@@ -32,6 +41,7 @@ export async function migrate() {
       month TEXT NOT NULL DEFAULT '${month}',
       recurrent BOOLEAN NOT NULL DEFAULT false,
       paid_at TEXT DEFAULT NULL,
+      due_date TEXT DEFAULT NULL,
       installment_total INTEGER DEFAULT NULL,
       installment_number INTEGER DEFAULT NULL
     );
@@ -43,7 +53,8 @@ export async function migrate() {
       value NUMERIC NOT NULL DEFAULT 0,
       note TEXT DEFAULT '',
       month TEXT NOT NULL DEFAULT '${month}',
-      recurrent BOOLEAN NOT NULL DEFAULT false
+      recurrent BOOLEAN NOT NULL DEFAULT false,
+      receipt_date TEXT DEFAULT NULL
     );
   `);
   await pool.query(`
@@ -73,8 +84,10 @@ export async function migrate() {
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_total INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_number INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS due_date TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS receipt_date TEXT DEFAULT NULL`);
 
   await pool.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [month]);
   await pool.query(`
@@ -101,14 +114,14 @@ export async function getMonths() {
 
 export async function getData(month) {
   const { rows: expenses } = await pool.query(
-    `SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt",
+    `SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt", due_date AS "dueDate",
             installment_total AS "installmentTotal", installment_number AS "installmentNumber",
             order_index AS "order"
      FROM expenses WHERE month = $1 ORDER BY category, order_index NULLS LAST, description`,
     [month]
   );
   const { rows: incomes } = await pool.query(
-    "SELECT id, source, value, note, recurrent FROM incomes WHERE month = $1 ORDER BY source",
+    'SELECT id, source, value, note, recurrent, receipt_date AS "receiptDate" FROM incomes WHERE month = $1 ORDER BY source',
     [month]
   );
   return {
@@ -125,8 +138,8 @@ export async function replaceExpenses(month, expenses) {
     await client.query("DELETE FROM expenses WHERE month = $1", [month]);
     for (const e of expenses) {
       await client.query(
-        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, installment_total, installment_number, order_index)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, due_date, installment_total, installment_number, order_index)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           e.id,
           e.description,
@@ -136,6 +149,7 @@ export async function replaceExpenses(month, expenses) {
           month,
           !!e.recurrent,
           e.paidAt || null,
+          e.dueDate || null,
           e.installmentTotal ?? null,
           e.installmentNumber ?? null,
           e.order ?? null,
@@ -159,8 +173,8 @@ export async function replaceIncomes(month, incomes) {
     await client.query("DELETE FROM incomes WHERE month = $1", [month]);
     for (const i of incomes) {
       await client.query(
-        "INSERT INTO incomes (id, source, value, note, month, recurrent) VALUES ($1, $2, $3, $4, $5, $6)",
-        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent]
+        "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent, i.receiptDate || null]
       );
     }
     await client.query("COMMIT");
@@ -191,7 +205,7 @@ export async function createMonth(newMonth) {
 
     if (sourceMonth) {
       const { rows: carryForwardExpenses } = await client.query(
-        `SELECT description, category, value, note, recurrent,
+        `SELECT description, category, value, note, recurrent, due_date AS "dueDate",
                 installment_total AS "installmentTotal", installment_number AS "installmentNumber",
                 order_index AS "order"
          FROM expenses
@@ -202,8 +216,8 @@ export async function createMonth(newMonth) {
       for (const e of carryForwardExpenses) {
         const isInstallment = e.installmentTotal != null;
         await client.query(
-          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, installment_total, installment_number, order_index)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, order_index)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             randomUUID(),
             e.description,
@@ -212,6 +226,7 @@ export async function createMonth(newMonth) {
             e.note,
             newMonth,
             e.recurrent,
+            addOneMonthToDate(e.dueDate),
             isInstallment ? e.installmentTotal : null,
             isInstallment ? e.installmentNumber + 1 : null,
             e.order ?? null,
@@ -220,13 +235,13 @@ export async function createMonth(newMonth) {
       }
 
       const { rows: recurIncomes } = await client.query(
-        "SELECT source, value, note FROM incomes WHERE month = $1 AND recurrent = true",
+        'SELECT source, value, note, receipt_date AS "receiptDate" FROM incomes WHERE month = $1 AND recurrent = true',
         [sourceMonth]
       );
       for (const i of recurIncomes) {
         await client.query(
-          "INSERT INTO incomes (id, source, value, note, month, recurrent) VALUES ($1, $2, $3, $4, $5, true)",
-          [randomUUID(), i.source, i.value, i.note, newMonth]
+          "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date) VALUES ($1, $2, $3, $4, $5, true, $6)",
+          [randomUUID(), i.source, i.value, i.note, newMonth, addOneMonthToDate(i.receiptDate)]
         );
       }
     }

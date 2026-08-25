@@ -277,6 +277,14 @@ export default function App() {
   const totalGanhos = useMemo(() => incomes.reduce((s, i) => s + (Number(i.value) || 0), 0), [incomes]);
   const saldo = totalGanhos - totalGastos;
 
+  const nextIncome = useMemo(() => {
+    const today = todayISO();
+    const upcoming = incomes
+      .filter((i) => i.receiptDate && i.receiptDate >= today)
+      .sort((a, b) => (a.receiptDate < b.receiptDate ? -1 : 1));
+    return upcoming[0] || null;
+  }, [incomes]);
+
   const byCat = useMemo(() => {
     const m = new Map();
     for (const e of expenses) {
@@ -450,6 +458,17 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {nextIncome && (
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-2xl px-4 py-3 mb-5">
+            <ArrowUpRight size={16} className="shrink-0" />
+            <span>
+              Você vai receber <strong className="tabular-nums">{fmt(nextIncome.value)}</strong> de{" "}
+              <strong>{nextIncome.source}</strong>, no dia{" "}
+              <strong>{formatDateBR(nextIncome.receiptDate)}</strong>
+            </span>
+          </div>
+        )}
 
         {/* hero saldo */}
         <section
@@ -913,6 +932,7 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove 
                   muted={!e.value}
                   recurrent={e.recurrent}
                   paidAt={e.paidAt}
+                  dueDate={e.dueDate}
                   installmentTotal={e.installmentTotal}
                   installmentNumber={e.installmentNumber}
                   position={idx + 1}
@@ -1087,7 +1107,7 @@ function WishRow({ item, onEdit, onDelete, onToggleDone }) {
   );
 }
 
-function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown }) {
+function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, dueDate, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown }) {
   const isPaid = !!paidAt;
   return (
     <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
@@ -1140,6 +1160,14 @@ function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, p
         {fmt(value)}
       </span>
       <div className="flex items-center gap-1 shrink-0">
+        {dueDate && (
+          <span
+            className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 tabular-nums"
+            title="Vencimento"
+          >
+            {formatDateBR(dueDate)}
+          </span>
+        )}
         {onTogglePaid && (
           <button
             onClick={onTogglePaid}
@@ -1438,6 +1466,8 @@ function EntryModal({ mode, item, onClose, onSave }) {
   );
   const [value, setValue] = useState(item ? String(item.value) : "");
   const [note, setNote] = useState(item?.note || "");
+  const [dueDate, setDueDate] = useState(item?.dueDate || "");
+  const [receiptDate, setReceiptDate] = useState(item?.receiptDate || "");
   const [recurrent, setRecurrent] = useState(item?.recurrent || false);
   const [repeatMode, setRepeatMode] = useState(() => {
     if (item?.installmentTotal) return "installments";
@@ -1470,11 +1500,12 @@ function EntryModal({ mode, item, onClose, onSave }) {
           category: category.trim(),
           value: parseFloat(value),
           note: note.trim(),
+          dueDate: dueDate || null,
           recurrent: repeatMode === "recurrent",
           installmentTotal: repeatMode === "installments" ? installmentTotal : null,
           installmentNumber: repeatMode === "installments" ? item?.installmentNumber || 1 : null,
         }
-      : { source: desc.trim(), value: parseFloat(value), note: note.trim(), recurrent };
+      : { source: desc.trim(), value: parseFloat(value), note: note.trim(), receiptDate: receiptDate || null, recurrent };
     onSave(mode, data, item?.id);
   };
 
@@ -1560,6 +1591,26 @@ function EntryModal({ mode, item, onClose, onSave }) {
             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
           />
         </Field>
+
+        {isExpense ? (
+          <Field label="Data de vencimento (opcional)">
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+            />
+          </Field>
+        ) : (
+          <Field label="Data prevista de recebimento (opcional)">
+            <input
+              type="date"
+              value={receiptDate}
+              onChange={(e) => setReceiptDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+            />
+          </Field>
+        )}
 
         <Field label="Observação (opcional)">
           <input
