@@ -120,6 +120,27 @@ const store = {
       /* silencioso: segue em memória, sem persistir no banco */
     }
   },
+  async loadShoppingList(listType) {
+    try {
+      const res = await fetch(`/api/shopping?list=${listType}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.items) ? data.items : [];
+    } catch {
+      return [];
+    }
+  },
+  async saveShoppingList(listType, items) {
+    try {
+      await fetch(`/api/shopping?list=${listType}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+    } catch {
+      /* silencioso: segue em memória, sem persistir no banco */
+    }
+  },
 };
 
 /* ---------- app ---------- */
@@ -133,10 +154,11 @@ export default function App() {
   const [expenses, setExpenses] = useState([]);
   const [incomes, setIncomes] = useState([]);
   const [wishlist, setWishlist] = useState([]);
+  const [shoppingLists, setShoppingLists] = useState({ mercado: [], farmacia: [] });
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState("overview");
-  const [modal, setModal] = useState(null); // {mode:'expense'|'income'|'wish', item|null}
+  const [modal, setModal] = useState(null); // {mode:'expense'|'income'|'wish'|'mercado'|'farmacia', item|null}
   const [confirmState, setConfirmState] = useState(null); // {kind, payload}
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef(null);
@@ -181,6 +203,11 @@ export default function App() {
         setExpenses(data.expenses);
         setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
         setWishlist(await store.loadWishlist());
+        const [mercado, farmacia] = await Promise.all([
+          store.loadShoppingList("mercado"),
+          store.loadShoppingList("farmacia"),
+        ]);
+        setShoppingLists({ mercado, farmacia });
         setLoaded(true);
       } else {
         setLoadError(true);
@@ -203,6 +230,15 @@ export default function App() {
     clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 1400);
   }, [wishlist, loaded, authed]);
+
+  useEffect(() => {
+    if (!authed || !loaded) return;
+    store.saveShoppingList("mercado", shoppingLists.mercado);
+    store.saveShoppingList("farmacia", shoppingLists.farmacia);
+    setSaved(true);
+    clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1400);
+  }, [shoppingLists, loaded, authed]);
 
   const nextMonthKey = useMemo(
     () => addMonths(months.length > 0 ? months[months.length - 1] : month, 1),
@@ -293,7 +329,8 @@ export default function App() {
   const removeEntry = (mode, id) => {
     if (mode === "expense") setExpenses((p) => p.filter((e) => e.id !== id));
     else if (mode === "income") setIncomes((p) => p.filter((i) => i.id !== id));
-    else setWishlist((p) => p.filter((w) => w.id !== id));
+    else if (mode === "wish") setWishlist((p) => p.filter((w) => w.id !== id));
+    else setShoppingLists((prev) => ({ ...prev, [mode]: prev[mode].filter((it) => it.id !== id) }));
     setConfirmState(null);
   };
   const togglePaid = (id) => {
@@ -325,6 +362,21 @@ export default function App() {
     setWishlist((prev) =>
       prev.map((w) => (w.id === id ? { ...w, doneAt: w.doneAt ? null : todayISO() } : w))
     );
+  };
+  const saveShoppingItem = (listType, data, id) => {
+    setShoppingLists((prev) => ({
+      ...prev,
+      [listType]: id
+        ? prev[listType].map((it) => (it.id === id ? { ...it, ...data } : it))
+        : [...prev[listType], { id: uid(), doneAt: null, ...data }],
+    }));
+    setModal(null);
+  };
+  const toggleShoppingItemDone = (listType, id) => {
+    setShoppingLists((prev) => ({
+      ...prev,
+      [listType]: prev[listType].map((it) => (it.id === id ? { ...it, doneAt: it.doneAt ? null : todayISO() } : it)),
+    }));
   };
   if (!authChecked) {
     return (
@@ -428,18 +480,20 @@ export default function App() {
         </section>
 
         {/* tabs */}
-        <div className="flex bg-white rounded-full p-1 border border-slate-200 mb-5 shadow-sm">
+        <div className="flex gap-1 overflow-x-auto bg-white rounded-full p-1 border border-slate-200 mb-5 shadow-sm">
           {[
             ["overview", "Visão geral"],
             ["gastos", "Gastos"],
             ["ganhos", "Ganhos"],
             ["desejos", "Desejos"],
+            ["mercado", "Mercado"],
+            ["farmacia", "Farmácia"],
           ].map(([id, label]) => (
             <button
               key={id}
               onClick={() => setTab(id)}
               className={
-                "flex-1 text-sm font-medium py-2 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 " +
+                "shrink-0 px-4 text-sm font-medium py-2 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 " +
                 (tab === id ? "text-white" : "text-slate-500 hover:text-slate-800")
               }
               style={tab === id ? { background: "#16382c" } : undefined}
@@ -484,6 +538,26 @@ export default function App() {
             onToggleDone={(item) => toggleWishDone(item.id)}
           />
         )}
+
+        {tab === "mercado" && (
+          <ShoppingListTab
+            items={shoppingLists.mercado}
+            onAdd={() => setModal({ mode: "mercado", item: null })}
+            onEdit={(item) => setModal({ mode: "mercado", item })}
+            onDelete={(item) => setConfirmState({ kind: "delete", mode: "mercado", payload: item })}
+            onToggleDone={(item) => toggleShoppingItemDone("mercado", item.id)}
+          />
+        )}
+
+        {tab === "farmacia" && (
+          <ShoppingListTab
+            items={shoppingLists.farmacia}
+            onAdd={() => setModal({ mode: "farmacia", item: null })}
+            onEdit={(item) => setModal({ mode: "farmacia", item })}
+            onDelete={(item) => setConfirmState({ kind: "delete", mode: "farmacia", payload: item })}
+            onToggleDone={(item) => toggleShoppingItemDone("farmacia", item.id)}
+          />
+        )}
       </div>
 
       {modal && modal.mode === "wish" && (
@@ -494,7 +568,15 @@ export default function App() {
         />
       )}
 
-      {modal && modal.mode !== "wish" && (
+      {modal && (modal.mode === "mercado" || modal.mode === "farmacia") && (
+        <ShoppingItemModal
+          item={modal.item}
+          onClose={() => setModal(null)}
+          onSave={(data, id) => saveShoppingItem(modal.mode, data, id)}
+        />
+      )}
+
+      {modal && (modal.mode === "expense" || modal.mode === "income") && (
         <EntryModal
           mode={modal.mode}
           item={modal.item}
@@ -1153,6 +1235,175 @@ function WishModal({ item, onClose, onSave }) {
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Ex.: cor preta, comprar na loja X"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+      </div>
+
+      <div className="flex gap-2 mt-5">
+        <button
+          onClick={onClose}
+          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={submit}
+          disabled={!canSave}
+          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "#16382c" }}
+        >
+          Salvar
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
+function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone }) {
+  const pending = items.filter((it) => !it.doneAt);
+  const done = items.filter((it) => it.doneAt);
+  const totalPending = pending.reduce((s, it) => s + (Number(it.value) || 0), 0);
+  const ordered = [...pending, ...done];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-slate-500">Total estimado</p>
+          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(totalPending)}</p>
+        </div>
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+          style={{ background: "#16382c" }}
+        >
+          <Plus size={16} /> Novo item
+        </button>
+      </div>
+
+      {ordered.length === 0 ? (
+        <Empty text="Nenhum item cadastrado." />
+      ) : (
+        <Card className="divide-y divide-slate-100">
+          {ordered.map((it) => (
+            <ShoppingItemRow
+              key={it.id}
+              item={it}
+              onEdit={() => onEdit(it)}
+              onDelete={() => onDelete(it)}
+              onToggleDone={() => onToggleDone(it)}
+            />
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function ShoppingItemRow({ item, onEdit, onDelete, onToggleDone }) {
+  const isDone = !!item.doneAt;
+  return (
+    <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+      <div className="flex-1 min-w-0">
+        <p className={"text-sm truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
+        {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
+        {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Comprado em {formatDateBR(item.doneAt)}</p>}
+      </div>
+      {item.value > 0 && (
+        <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
+          {fmt(item.value)}
+        </span>
+      )}
+      <div className="flex items-center gap-1 shrink-0">
+        <button
+          onClick={onToggleDone}
+          className={
+            "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
+            (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
+          }
+          title={isDone ? "Comprado — clique para desfazer" : "Confirmar compra"}
+        >
+          <Check size={15} />
+        </button>
+        <button
+          onClick={onEdit}
+          className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+          title="Editar"
+        >
+          <Pencil size={15} />
+        </button>
+        <button
+          onClick={onDelete}
+          className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+          title="Excluir"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ShoppingItemModal({ item, onClose, onSave }) {
+  const [title, setTitle] = useState(item?.title || "");
+  const [value, setValue] = useState(item ? String(item.value ?? "") : "");
+  const [note, setNote] = useState(item?.note || "");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const canSave = title.trim() !== "" && (value === "" || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0));
+
+  const submit = () => {
+    if (!canSave) return;
+    onSave({ title: title.trim(), value: value === "" ? 0 : parseFloat(value), note: note.trim() }, item?.id);
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-bold text-slate-800">{item ? "Editar item" : "Novo item"}</h3>
+        <button onClick={onClose} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="space-y-3.5">
+        <Field label="O que você precisa comprar?">
+          <input
+            ref={inputRef}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Ex.: Arroz"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+
+        <Field label="Valor estimado (opcional)">
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="0,00"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+
+        <Field label="Observação (opcional)">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ex.: marca preferida, quantidade"
             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
           />
         </Field>

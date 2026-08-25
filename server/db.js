@@ -55,6 +55,16 @@ export async function migrate() {
       done_at TEXT DEFAULT NULL
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS shopping_items (
+      id TEXT PRIMARY KEY,
+      list_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      value NUMERIC NOT NULL DEFAULT 0,
+      note TEXT DEFAULT '',
+      done_at TEXT DEFAULT NULL
+    );
+  `);
 
   // bancos criados antes das colunas month/recurrent existirem
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
@@ -250,6 +260,37 @@ export async function replaceWishlist(items) {
       await client.query(
         "INSERT INTO wishlist_items (id, title, value, note, done_at) VALUES ($1, $2, $3, $4, $5)",
         [it.id, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getShoppingList(listType) {
+  const { rows } = await pool.query(
+    `SELECT id, title, value, note, done_at AS "doneAt"
+     FROM shopping_items
+     WHERE list_type = $1
+     ORDER BY (done_at IS NULL) DESC, title`,
+    [listType]
+  );
+  return rows.map((r) => ({ ...r, value: Number(r.value) }));
+}
+
+export async function replaceShoppingList(listType, items) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM shopping_items WHERE list_type = $1", [listType]);
+    for (const it of items) {
+      await client.query(
+        "INSERT INTO shopping_items (id, list_type, title, value, note, done_at) VALUES ($1, $2, $3, $4, $5, $6)",
+        [it.id, listType, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null]
       );
     }
     await client.query("COMMIT");
