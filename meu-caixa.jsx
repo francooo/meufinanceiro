@@ -5,6 +5,7 @@ import {
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
   DollarSign, LogOut, Search, ChevronUp, ChevronDown,
+  HandCoins, FileText, AlertTriangle,
 } from "lucide-react";
 
 /* ---------- dados de referência ---------- */
@@ -22,6 +23,15 @@ const CATS = [
 ];
 const FALLBACK = { color: "#64748B", icon: Tag };
 const catMeta = (n) => CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };
+
+const SERASA_CATS = [
+  { name: "Cartão de crédito", color: "#D6493B", icon: CreditCard },
+  { name: "Empréstimo", color: "#7A5AF8", icon: HandCoins },
+  { name: "Financiamento", color: "#1098AD", icon: FileText },
+  { name: "Conta atrasada", color: "#E8873C", icon: AlertTriangle },
+  { name: "Outros", color: "#64748B", icon: Tag },
+];
+const serasaCatMeta = (n) => SERASA_CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };
 
 const uid = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID)
@@ -141,6 +151,27 @@ const store = {
       /* silencioso: segue em memória, sem persistir no banco */
     }
   },
+  async loadSerasa() {
+    try {
+      const res = await fetch("/api/serasa");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.items) ? data.items : [];
+    } catch {
+      return [];
+    }
+  },
+  async saveSerasa(items) {
+    try {
+      await fetch("/api/serasa", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+    } catch {
+      /* silencioso: segue em memória, sem persistir no banco */
+    }
+  },
 };
 
 /* ---------- app ---------- */
@@ -155,6 +186,7 @@ export default function App() {
   const [incomes, setIncomes] = useState([]);
   const [wishlist, setWishlist] = useState([]);
   const [shoppingLists, setShoppingLists] = useState({ mercado: [], farmacia: [] });
+  const [serasa, setSerasa] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState("overview");
@@ -208,6 +240,7 @@ export default function App() {
           store.loadShoppingList("farmacia"),
         ]);
         setShoppingLists({ mercado, farmacia });
+        setSerasa(await store.loadSerasa());
         setLoaded(true);
       } else {
         setLoadError(true);
@@ -239,6 +272,14 @@ export default function App() {
     clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 1400);
   }, [shoppingLists, loaded, authed]);
+
+  useEffect(() => {
+    if (!authed || !loaded) return;
+    store.saveSerasa(serasa);
+    setSaved(true);
+    clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1400);
+  }, [serasa, loaded, authed]);
 
   const nextMonthKey = useMemo(
     () => addMonths(months.length > 0 ? months[months.length - 1] : month, 1),
@@ -318,6 +359,41 @@ export default function App() {
       .sort((a, b) => b.subtotal - a.subtotal);
   }, [expenses]);
 
+  const wishGrouped = useMemo(() => {
+    const sortFn = (a, b) => {
+      if (a.order != null && b.order != null) return a.order - b.order;
+      if (a.order != null) return -1;
+      if (b.order != null) return 1;
+      return a.title.localeCompare(b.title);
+    };
+    return {
+      pending: wishlist.filter((w) => !w.doneAt).sort(sortFn),
+      done: wishlist.filter((w) => w.doneAt).sort(sortFn),
+    };
+  }, [wishlist]);
+
+  const serasaGrouped = useMemo(() => {
+    const m = new Map();
+    for (const s of serasa) {
+      if (!m.has(s.category)) m.set(s.category, []);
+      m.get(s.category).push(s);
+    }
+    return [...m.entries()]
+      .map(([name, items]) => ({
+        name,
+        ...serasaCatMeta(name),
+        items: [...items].sort((a, b) => {
+          if (a.order != null && b.order != null) return a.order - b.order;
+          if (a.order != null) return -1;
+          if (b.order != null) return 1;
+          return (b.value || 0) - (a.value || 0);
+        }),
+        subtotal: items.reduce((s2, i) => s2 + (Number(i.value) || 0), 0),
+      }))
+      .sort((a, b) => b.subtotal - a.subtotal);
+  }, [serasa]);
+  const totalSerasa = useMemo(() => serasa.reduce((s, i) => s + (Number(i.value) || 0), 0), [serasa]);
+
   const pctGasto = totalGanhos > 0 ? Math.min(100, (totalGastos / totalGanhos) * 100) : (totalGastos > 0 ? 100 : 0);
   const taxaSobra = totalGanhos > 0 ? Math.round((saldo / totalGanhos) * 100) : 0;
 
@@ -326,6 +402,10 @@ export default function App() {
     if (mode === "expense") {
       setExpenses((prev) =>
         id ? prev.map((e) => (e.id === id ? { ...e, ...data } : e)) : [...prev, { id: uid(), ...data }]
+      );
+    } else if (mode === "serasa") {
+      setSerasa((prev) =>
+        id ? prev.map((s) => (s.id === id ? { ...s, ...data } : s)) : [...prev, { id: uid(), ...data }]
       );
     } else {
       setIncomes((prev) =>
@@ -338,6 +418,7 @@ export default function App() {
     if (mode === "expense") setExpenses((p) => p.filter((e) => e.id !== id));
     else if (mode === "income") setIncomes((p) => p.filter((i) => i.id !== id));
     else if (mode === "wish") setWishlist((p) => p.filter((w) => w.id !== id));
+    else if (mode === "serasa") setSerasa((p) => p.filter((s) => s.id !== id));
     else setShoppingLists((prev) => ({ ...prev, [mode]: prev[mode].filter((it) => it.id !== id) }));
     setConfirmState(null);
   };
@@ -360,6 +441,25 @@ export default function App() {
       prev.map((e) => (orderById.has(e.id) ? { ...e, order: orderById.get(e.id) } : e))
     );
   };
+  const toggleSerasaPaid = (id) => {
+    setSerasa((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, paidAt: s.paidAt ? null : todayISO() } : s))
+    );
+  };
+  const moveSerasaItem = (category, id, direction) => {
+    const group = serasaGrouped.find((g) => g.name === category);
+    if (!group) return;
+    const items = group.items;
+    const idx = items.findIndex((s) => s.id === id);
+    const targetIdx = idx + (direction === "up" ? -1 : 1);
+    if (idx === -1 || targetIdx < 0 || targetIdx >= items.length) return;
+    const reordered = [...items];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    const orderById = new Map(reordered.map((s, i) => [s.id, i]));
+    setSerasa((prev) =>
+      prev.map((s) => (orderById.has(s.id) ? { ...s, order: orderById.get(s.id) } : s))
+    );
+  };
   const saveWish = (data, id) => {
     setWishlist((prev) =>
       id ? prev.map((w) => (w.id === id ? { ...w, ...data } : w)) : [...prev, { id: uid(), doneAt: null, ...data }]
@@ -369,6 +469,18 @@ export default function App() {
   const toggleWishDone = (id) => {
     setWishlist((prev) =>
       prev.map((w) => (w.id === id ? { ...w, doneAt: w.doneAt ? null : todayISO() } : w))
+    );
+  };
+  const moveWish = (id, direction) => {
+    const group = wishGrouped.pending.some((w) => w.id === id) ? wishGrouped.pending : wishGrouped.done;
+    const idx = group.findIndex((w) => w.id === id);
+    const targetIdx = idx + (direction === "up" ? -1 : 1);
+    if (idx === -1 || targetIdx < 0 || targetIdx >= group.length) return;
+    const reordered = [...group];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    const orderById = new Map(reordered.map((w, i) => [w.id, i]));
+    setWishlist((prev) =>
+      prev.map((w) => (orderById.has(w.id) ? { ...w, order: orderById.get(w.id) } : w))
     );
   };
   const saveShoppingItem = (listType, data, id) => {
@@ -384,6 +496,12 @@ export default function App() {
     setShoppingLists((prev) => ({
       ...prev,
       [listType]: prev[listType].map((it) => (it.id === id ? { ...it, doneAt: it.doneAt ? null : todayISO() } : it)),
+    }));
+  };
+  const clearDoneShoppingItems = (listType) => {
+    setShoppingLists((prev) => ({
+      ...prev,
+      [listType]: prev[listType].filter((it) => !it.doneAt),
     }));
   };
   if (!authChecked) {
@@ -507,6 +625,7 @@ export default function App() {
             ["desejos", "Desejos"],
             ["mercado", "Mercado"],
             ["farmacia", "Farmácia"],
+            ["serasa", "Serasa"],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -550,11 +669,13 @@ export default function App() {
 
         {tab === "desejos" && (
           <Desejos
-            items={wishlist}
+            pending={wishGrouped.pending}
+            done={wishGrouped.done}
             onAdd={() => setModal({ mode: "wish", item: null })}
             onEdit={(item) => setModal({ mode: "wish", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "wish", payload: item })}
             onToggleDone={(item) => toggleWishDone(item.id)}
+            onMove={moveWish}
           />
         )}
 
@@ -565,6 +686,7 @@ export default function App() {
             onEdit={(item) => setModal({ mode: "mercado", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "mercado", payload: item })}
             onToggleDone={(item) => toggleShoppingItemDone("mercado", item.id)}
+            onClearDone={() => clearDoneShoppingItems("mercado")}
           />
         )}
 
@@ -575,6 +697,18 @@ export default function App() {
             onEdit={(item) => setModal({ mode: "farmacia", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "farmacia", payload: item })}
             onToggleDone={(item) => toggleShoppingItemDone("farmacia", item.id)}
+          />
+        )}
+
+        {tab === "serasa" && (
+          <Serasa
+            grouped={serasaGrouped}
+            total={totalSerasa}
+            onAdd={() => setModal({ mode: "serasa", item: null })}
+            onEdit={(item) => setModal({ mode: "serasa", item })}
+            onDelete={(item) => setConfirmState({ kind: "delete", mode: "serasa", payload: item })}
+            onTogglePaid={(item) => toggleSerasaPaid(item.id)}
+            onMove={moveSerasaItem}
           />
         )}
       </div>
@@ -595,7 +729,7 @@ export default function App() {
         />
       )}
 
-      {modal && (modal.mode === "expense" || modal.mode === "income") && (
+      {modal && (modal.mode === "expense" || modal.mode === "income" || modal.mode === "serasa") && (
         <EntryModal
           mode={modal.mode}
           item={modal.item}
@@ -951,6 +1085,105 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove 
   );
 }
 
+function Serasa({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove }) {
+  const [search, setSearch] = useState("");
+  const query = search.trim().toLowerCase();
+  const isSearching = query !== "";
+
+  const filteredGrouped = useMemo(() => {
+    if (!query) return grouped;
+    return grouped
+      .map((g) => {
+        const items = g.items.filter((s) => s.description.toLowerCase().includes(query));
+        return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
+      })
+      .filter((g) => g.items.length > 0);
+  }, [grouped, query]);
+
+  const visibleTotal = useMemo(
+    () => filteredGrouped.reduce((s, g) => s + g.subtotal, 0),
+    [filteredGrouped]
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-slate-500">{isSearching ? "Total encontrado" : "Total de dívidas"}</p>
+          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(isSearching ? visibleTotal : total)}</p>
+        </div>
+        <button
+          onClick={onAdd}
+          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+          style={{ background: "#16382c" }}
+        >
+          <Plus size={16} /> Nova dívida
+        </button>
+      </div>
+
+      <div className="relative">
+        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar dívida por descrição…"
+          className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+        />
+        {isSearching && (
+          <button
+            onClick={() => setSearch("")}
+            title="Limpar busca"
+            className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
+
+      {filteredGrouped.length === 0 && (
+        <Empty text={isSearching ? "Nenhuma dívida encontrada." : "Nenhuma dívida cadastrada."} />
+      )}
+
+      {filteredGrouped.map((g) => {
+        const Icon = g.icon;
+        return (
+          <Card key={g.name} className="overflow-hidden">
+            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
+              <span className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: g.color + "1F", color: g.color }}>
+                <Icon size={15} />
+              </span>
+              <span className="text-sm font-semibold text-slate-700 flex-1">{g.name}</span>
+              <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(g.subtotal)}</span>
+            </div>
+            <div className="divide-y divide-slate-100">
+              {g.items.map((s, idx) => (
+                <Row
+                  key={s.id}
+                  title={s.description}
+                  note={s.note}
+                  value={s.value}
+                  muted={!s.value}
+                  recurrent={s.recurrent}
+                  paidAt={s.paidAt}
+                  dueDate={s.dueDate}
+                  installmentTotal={s.installmentTotal}
+                  installmentNumber={s.installmentNumber}
+                  position={idx + 1}
+                  onMoveUp={!isSearching && idx > 0 ? () => onMove(s.category, s.id, "up") : undefined}
+                  onMoveDown={!isSearching && idx < g.items.length - 1 ? () => onMove(s.category, s.id, "down") : undefined}
+                  onEdit={() => onEdit(s)}
+                  onDelete={() => onDelete(s)}
+                  onTogglePaid={() => onTogglePaid(s)}
+                />
+              ))}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
@@ -1022,9 +1255,7 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
   );
 }
 
-function Desejos({ items, onAdd, onEdit, onDelete, onToggleDone }) {
-  const pending = items.filter((w) => !w.doneAt);
-  const done = items.filter((w) => w.doneAt);
+function Desejos({ pending, done, onAdd, onEdit, onDelete, onToggleDone, onMove }) {
   const totalPending = pending.reduce((s, w) => s + (Number(w.value) || 0), 0);
   const ordered = [...pending, ...done];
 
@@ -1048,25 +1279,62 @@ function Desejos({ items, onAdd, onEdit, onDelete, onToggleDone }) {
         <Empty text="Nenhum desejo cadastrado." />
       ) : (
         <Card className="divide-y divide-slate-100">
-          {ordered.map((w) => (
-            <WishRow
-              key={w.id}
-              item={w}
-              onEdit={() => onEdit(w)}
-              onDelete={() => onDelete(w)}
-              onToggleDone={() => onToggleDone(w)}
-            />
-          ))}
+          {ordered.map((w, idx) => {
+            const inPending = idx < pending.length;
+            const group = inPending ? pending : done;
+            const groupIdx = inPending ? idx : idx - pending.length;
+            return (
+              <WishRow
+                key={w.id}
+                item={w}
+                position={groupIdx + 1}
+                onMoveUp={groupIdx > 0 ? () => onMove(w.id, "up") : undefined}
+                onMoveDown={groupIdx < group.length - 1 ? () => onMove(w.id, "down") : undefined}
+                onEdit={() => onEdit(w)}
+                onDelete={() => onDelete(w)}
+                onToggleDone={() => onToggleDone(w)}
+              />
+            );
+          })}
         </Card>
       )}
     </div>
   );
 }
 
-function WishRow({ item, onEdit, onDelete, onToggleDone }) {
+function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onMoveDown }) {
   const isDone = !!item.doneAt;
   return (
     <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+      {position != null && (
+        <div className="flex flex-col items-center shrink-0">
+          {onMoveUp ? (
+            <button
+              onClick={onMoveUp}
+              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              title="Mover para cima"
+            >
+              <ChevronUp size={12} />
+            </button>
+          ) : (
+            <span className="h-4 w-4" />
+          )}
+          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1 tabular-nums leading-tight">
+            {position}
+          </span>
+          {onMoveDown ? (
+            <button
+              onClick={onMoveDown}
+              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+              title="Mover para baixo"
+            >
+              <ChevronDown size={12} />
+            </button>
+          ) : (
+            <span className="h-4 w-4" />
+          )}
+        </div>
+      )}
       <div className="flex-1 min-w-0">
         <p className={"text-sm truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
         {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
@@ -1288,7 +1556,7 @@ function WishModal({ item, onClose, onSave }) {
   );
 }
 
-function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone }) {
+function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone, onClearDone }) {
   const pending = items.filter((it) => !it.doneAt);
   const done = items.filter((it) => it.doneAt);
   const totalPending = pending.reduce((s, it) => s + (Number(it.value) || 0), 0);
@@ -1301,13 +1569,24 @@ function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone }) {
           <p className="text-xs text-slate-500">Total estimado</p>
           <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(totalPending)}</p>
         </div>
-        <button
-          onClick={onAdd}
-          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-          style={{ background: "#16382c" }}
-        >
-          <Plus size={16} /> Novo item
-        </button>
+        <div className="flex items-center gap-2">
+          {onClearDone && (
+            <button
+              onClick={onClearDone}
+              disabled={done.length === 0}
+              className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Trash2 size={16} /> Limpar
+            </button>
+          )}
+          <button
+            onClick={onAdd}
+            className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+            style={{ background: "#16382c" }}
+          >
+            <Plus size={16} /> Novo item
+          </button>
+        </div>
       </div>
 
       {ordered.length === 0 ? (
@@ -1459,10 +1738,13 @@ function ShoppingItemModal({ item, onClose, onSave }) {
 
 function EntryModal({ mode, item, onClose, onSave }) {
   const isExpense = mode === "expense";
-  const [desc, setDesc] = useState(item ? (isExpense ? item.description : item.source) : "");
-  const [category, setCategory] = useState(item?.category || CATS[0].name);
+  const isSerasa = mode === "serasa";
+  const hasCategory = isExpense || isSerasa;
+  const categoryList = isSerasa ? SERASA_CATS : CATS;
+  const [desc, setDesc] = useState(item ? (mode === "income" ? item.source : item.description) : "");
+  const [category, setCategory] = useState(item?.category || categoryList[0].name);
   const [categoryMode, setCategoryMode] = useState(() =>
-    CATS.some((c) => c.name === (item?.category || CATS[0].name)) ? "select" : "custom"
+    categoryList.some((c) => c.name === (item?.category || categoryList[0].name)) ? "select" : "custom"
   );
   const [value, setValue] = useState(item ? String(item.value) : "");
   const [note, setNote] = useState(item?.note || "");
@@ -1489,12 +1771,12 @@ function EntryModal({ mode, item, onClose, onSave }) {
     value !== "" &&
     !isNaN(parseFloat(value)) &&
     parseFloat(value) >= 0 &&
-    (!isExpense || category.trim() !== "") &&
-    (!isExpense || repeatMode !== "installments" || (Number.isInteger(installmentTotal) && installmentTotal >= 2));
+    (!hasCategory || category.trim() !== "") &&
+    (!hasCategory || repeatMode !== "installments" || (Number.isInteger(installmentTotal) && installmentTotal >= 2));
 
   const submit = () => {
     if (!canSave) return;
-    const data = isExpense
+    const data = hasCategory
       ? {
           description: desc.trim(),
           category: category.trim(),
@@ -1509,7 +1791,7 @@ function EntryModal({ mode, item, onClose, onSave }) {
     onSave(mode, data, item?.id);
   };
 
-  const title = `${item ? "Editar" : "Novo"} ${isExpense ? "gasto" : "ganho"}`;
+  const title = isSerasa ? (item ? "Editar dívida" : "Nova dívida") : `${item ? "Editar" : "Novo"} ${isExpense ? "gasto" : "ganho"}`;
 
   return (
     <Overlay onClose={onClose}>
@@ -1521,17 +1803,17 @@ function EntryModal({ mode, item, onClose, onSave }) {
       </div>
 
       <div className="space-y-3.5">
-        <Field label={isExpense ? "Descrição" : "Fonte de renda"}>
+        <Field label={mode === "income" ? "Fonte de renda" : "Descrição"}>
           <input
             ref={inputRef}
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
-            placeholder={isExpense ? "Ex.: Luz" : "Ex.: NeoGrid"}
+            placeholder={mode === "income" ? "Ex.: NeoGrid" : isSerasa ? "Ex.: Cartão Nubank" : "Ex.: Luz"}
             className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
           />
         </Field>
 
-        {isExpense && (
+        {hasCategory && (
           <Field label="Categoria">
             {categoryMode === "select" ? (
               <select
@@ -1546,7 +1828,7 @@ function EntryModal({ mode, item, onClose, onSave }) {
                 }}
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
               >
-                {CATS.map((c) => (
+                {categoryList.map((c) => (
                   <option key={c.name} value={c.name}>
                     {c.name}
                   </option>
@@ -1566,7 +1848,7 @@ function EntryModal({ mode, item, onClose, onSave }) {
                   type="button"
                   onClick={() => {
                     setCategoryMode("select");
-                    setCategory(CATS.some((c) => c.name === category) ? category : CATS[0].name);
+                    setCategory(categoryList.some((c) => c.name === category) ? category : categoryList[0].name);
                   }}
                   title="Cancelar"
                   className="h-[42px] w-[42px] shrink-0 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
@@ -1592,21 +1874,21 @@ function EntryModal({ mode, item, onClose, onSave }) {
           />
         </Field>
 
-        {isExpense ? (
-          <Field label="Data de vencimento (opcional)">
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-            />
-          </Field>
-        ) : (
+        {mode === "income" ? (
           <Field label="Data prevista de recebimento (opcional)">
             <input
               type="date"
               value={receiptDate}
               onChange={(e) => setReceiptDate(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+            />
+          </Field>
+        ) : (
+          <Field label="Data de vencimento (opcional)">
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(e) => setDueDate(e.target.value)}
               className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
             />
           </Field>
@@ -1621,7 +1903,7 @@ function EntryModal({ mode, item, onClose, onSave }) {
           />
         </Field>
 
-        {isExpense ? (
+        {hasCategory ? (
           <div className="block">
             <span className="text-xs font-medium text-slate-500 mb-1 block">Repetição</span>
             <div className="flex flex-col gap-2">
@@ -1683,7 +1965,7 @@ function EntryModal({ mode, item, onClose, onSave }) {
           onClick={submit}
           disabled={!canSave}
           className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: isExpense ? "#16382c" : "#059669" }}
+          style={{ background: mode === "income" ? "#059669" : "#16382c" }}
         >
           Salvar
         </button>

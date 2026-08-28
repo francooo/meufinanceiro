@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { getData, getMonths, replaceExpenses, replaceIncomes, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList } from "./db.js";
+import { getData, getMonths, replaceExpenses, replaceIncomes, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems } from "./db.js";
 import { verifyGoogleCredential, issueSessionCookie, clearSessionCookie, getSessionEmail, requireAuth } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -147,5 +147,29 @@ app.put("/api/shopping", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("PUT /api/shopping failed:", err);
     res.status(500).json({ error: "Falha ao salvar a lista." });
+  }
+});
+
+app.get("/api/serasa", requireAuth, async (_req, res) => {
+  try {
+    const items = await getSerasaItems();
+    res.json({ items });
+  } catch (err) {
+    console.error("GET /api/serasa failed:", err);
+    res.status(500).json({ error: "Falha ao carregar as dívidas do Serasa." });
+  }
+});
+
+app.put("/api/serasa", requireAuth, async (req, res) => {
+  const { items } = req.body || {};
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
+  }
+  try {
+    await replaceSerasaItems(items);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PUT /api/serasa failed:", err);
+    res.status(500).json({ error: "Falha ao salvar as dívidas do Serasa." });
   }
 });

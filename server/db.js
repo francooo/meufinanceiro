@@ -63,7 +63,8 @@ export async function migrate() {
       title TEXT NOT NULL,
       value NUMERIC NOT NULL DEFAULT 0,
       note TEXT DEFAULT '',
-      done_at TEXT DEFAULT NULL
+      done_at TEXT DEFAULT NULL,
+      order_index INTEGER DEFAULT NULL
     );
   `);
   await pool.query(`
@@ -74,6 +75,21 @@ export async function migrate() {
       value NUMERIC NOT NULL DEFAULT 0,
       note TEXT DEFAULT '',
       done_at TEXT DEFAULT NULL
+    );
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS serasa_items (
+      id TEXT PRIMARY KEY,
+      description TEXT NOT NULL,
+      category TEXT,
+      value NUMERIC NOT NULL DEFAULT 0,
+      note TEXT DEFAULT '',
+      recurrent BOOLEAN NOT NULL DEFAULT false,
+      paid_at TEXT DEFAULT NULL,
+      due_date TEXT DEFAULT NULL,
+      installment_total INTEGER DEFAULT NULL,
+      installment_number INTEGER DEFAULT NULL,
+      order_index INTEGER DEFAULT NULL
     );
   `);
 
@@ -88,6 +104,7 @@ export async function migrate() {
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS receipt_date TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE wishlist_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
 
   await pool.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [month]);
   await pool.query(`
@@ -259,9 +276,9 @@ export async function createMonth(newMonth) {
 
 export async function getWishlist() {
   const { rows } = await pool.query(
-    `SELECT id, title, value, note, done_at AS "doneAt"
+    `SELECT id, title, value, note, done_at AS "doneAt", order_index AS "order"
      FROM wishlist_items
-     ORDER BY (done_at IS NULL) DESC, title`
+     ORDER BY (done_at IS NULL) DESC, order_index NULLS LAST, title`
   );
   return rows.map((r) => ({ ...r, value: Number(r.value) }));
 }
@@ -273,8 +290,8 @@ export async function replaceWishlist(items) {
     await client.query("DELETE FROM wishlist_items");
     for (const it of items) {
       await client.query(
-        "INSERT INTO wishlist_items (id, title, value, note, done_at) VALUES ($1, $2, $3, $4, $5)",
-        [it.id, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null]
+        "INSERT INTO wishlist_items (id, title, value, note, done_at, order_index) VALUES ($1, $2, $3, $4, $5, $6)",
+        [it.id, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null, it.order ?? null]
       );
     }
     await client.query("COMMIT");
@@ -306,6 +323,49 @@ export async function replaceShoppingList(listType, items) {
       await client.query(
         "INSERT INTO shopping_items (id, list_type, title, value, note, done_at) VALUES ($1, $2, $3, $4, $5, $6)",
         [it.id, listType, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getSerasaItems() {
+  const { rows } = await pool.query(
+    `SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt", due_date AS "dueDate",
+            installment_total AS "installmentTotal", installment_number AS "installmentNumber",
+            order_index AS "order"
+     FROM serasa_items ORDER BY category, order_index NULLS LAST, description`
+  );
+  return rows.map((r) => ({ ...r, value: Number(r.value) }));
+}
+
+export async function replaceSerasaItems(items) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM serasa_items");
+    for (const it of items) {
+      await client.query(
+        `INSERT INTO serasa_items (id, description, category, value, note, recurrent, paid_at, due_date, installment_total, installment_number, order_index)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [
+          it.id,
+          it.description,
+          it.category,
+          Number(it.value) || 0,
+          it.note || "",
+          !!it.recurrent,
+          it.paidAt || null,
+          it.dueDate || null,
+          it.installmentTotal ?? null,
+          it.installmentNumber ?? null,
+          it.order ?? null,
+        ]
       );
     }
     await client.query("COMMIT");
