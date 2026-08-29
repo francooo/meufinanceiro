@@ -417,6 +417,16 @@ export default function App() {
       .sort((a, b) => b.subtotal - a.subtotal);
   }, [expenses]);
 
+  const extraExpenseCategories = useMemo(() => {
+    const known = new Set(CATS.map((c) => c.name));
+    return [...new Set(expenses.map((e) => e.category).filter((c) => c && !known.has(c)))].sort();
+  }, [expenses]);
+
+  const extraSerasaCategories = useMemo(() => {
+    const known = new Set(SERASA_CATS.map((c) => c.name));
+    return [...new Set(serasa.map((s) => s.category).filter((c) => c && !known.has(c)))].sort();
+  }, [serasa]);
+
   const wishGrouped = useMemo(() => {
     const sortFn = (a, b) => {
       if (a.order != null && b.order != null) return a.order - b.order;
@@ -654,18 +664,20 @@ export default function App() {
         </header>
 
         {nextIncomes.length > 0 && (
-          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-2xl px-4 py-3 mb-5">
-            <ArrowUpRight size={16} className="shrink-0" />
-            <span>
-              Você vai receber{" "}
-              {nextIncomes.map((inc, idx) => (
-                <React.Fragment key={inc.id}>
-                  {idx > 0 && (idx === nextIncomes.length - 1 ? " e " : ", ")}
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-2xl px-4 py-3 mb-5">
+            <div className="flex items-center gap-2 font-medium">
+              <ArrowUpRight size={16} className="shrink-0" />
+              <span>
+                Você vai receber no dia <strong>{formatDateBR(nextIncomes[0].receiptDate)}</strong>
+              </span>
+            </div>
+            <ul className="mt-2 pl-6 space-y-1 list-disc marker:text-emerald-400">
+              {nextIncomes.map((inc) => (
+                <li key={inc.id}>
                   <strong className="tabular-nums">{fmt(inc.value)}</strong> de <strong>{inc.source}</strong>
-                </React.Fragment>
+                </li>
               ))}
-              , no dia <strong>{formatDateBR(nextIncomes[0].receiptDate)}</strong>
-            </span>
+            </ul>
           </div>
         )}
 
@@ -817,6 +829,7 @@ export default function App() {
         <EntryModal
           mode={modal.mode}
           item={modal.item}
+          extraCategories={modal.mode === "serasa" ? extraSerasaCategories : extraExpenseCategories}
           onClose={() => setModal(null)}
           onSave={saveEntry}
         />
@@ -1544,7 +1557,7 @@ function Desejos({ pending, done, onAdd, onEdit, onDelete, onToggleDone, onMove 
 function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onMoveDown }) {
   const isDone = !!item.doneAt;
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+    <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
       {position != null && (
         <div className="flex flex-col items-center shrink-0">
           {onMoveUp ? (
@@ -1574,41 +1587,45 @@ function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onM
           )}
         </div>
       )}
-      <div className="flex-1 min-w-0">
-        <p className={"text-sm truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
-        {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
-        {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Realizado em {formatDateBR(item.doneAt)}</p>}
-      </div>
-      {item.value > 0 && (
-        <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
-          {fmt(item.value)}
-        </span>
-      )}
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={onToggleDone}
-          className={
-            "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
-            (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
-          }
-          title={isDone ? "Realizado — clique para desfazer" : "Confirmar realizado"}
-        >
-          <Check size={15} />
-        </button>
-        <button
-          onClick={onEdit}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-          title="Editar"
-        >
-          <Pencil size={15} />
-        </button>
-        <button
-          onClick={onDelete}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-          title="Excluir"
-        >
-          <Trash2 size={15} />
-        </button>
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="min-w-0 sm:flex-1">
+          <p className={"text-sm line-clamp-2 break-words sm:line-clamp-none sm:truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
+          {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
+          {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Realizado em {formatDateBR(item.doneAt)}</p>}
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
+          {item.value > 0 && (
+            <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
+              {fmt(item.value)}
+            </span>
+          )}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={onToggleDone}
+              className={
+                "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
+                (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
+              }
+              title={isDone ? "Realizado — clique para desfazer" : "Confirmar realizado"}
+            >
+              <Check size={15} />
+            </button>
+            <button
+              onClick={onEdit}
+              className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+              title="Editar"
+            >
+              <Pencil size={15} />
+            </button>
+            <button
+              onClick={onDelete}
+              className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+              title="Excluir"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1617,7 +1634,7 @@ function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onM
 function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, dueDate, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown, paidWithVoucher, paidWithCltPj }) {
   const isPaid = !!paidAt;
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+    <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
       {position != null && (
         <div className="flex flex-col items-center shrink-0">
           {onMoveUp ? (
@@ -1647,70 +1664,74 @@ function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, p
           )}
         </div>
       )}
-      <div className="flex-1 min-w-0">
-        <p className={"text-sm truncate flex items-center gap-1.5 " + (muted ? "text-slate-400" : "text-slate-800")}>
-          <span className="truncate">{title}</span>
-          {recurrent && <Repeat size={12} className="text-slate-400 shrink-0" aria-label="Recorrente" />}
-          {installmentTotal && (
-            <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 shrink-0 tabular-nums">
-              {installmentNumber}/{installmentTotal}
-            </span>
-          )}
-          {paidWithVoucher && (
-            <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 shrink-0" title="Vale alimentação">
-              VA
-            </span>
-          )}
-          {paidWithCltPj && (
-            <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100 rounded px-1.5 py-0.5 shrink-0" title="CLT/PJ">
-              CLT/PJ
-            </span>
-          )}
-        </p>
-        {note ? <p className="text-xs text-slate-400 truncate mt-0.5">{note}</p> : null}
-        {isPaid && <p className="text-xs text-emerald-600 truncate mt-0.5">Pago em {formatDateBR(paidAt)}</p>}
-      </div>
-      <span
-        className="text-sm font-semibold tabular-nums shrink-0"
-        style={{ color: muted ? "#94a3b8" : accent || "#1e293b" }}
-      >
-        {fmt(value)}
-      </span>
-      <div className="flex items-center gap-1 shrink-0">
-        {dueDate && (
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="min-w-0 sm:flex-1">
+          <p className={"text-sm flex flex-wrap items-start sm:items-center gap-x-1.5 gap-y-1 " + (muted ? "text-slate-400" : "text-slate-800")}>
+            <span className="basis-full sm:basis-auto line-clamp-2 break-words sm:line-clamp-none sm:truncate">{title}</span>
+            {recurrent && <Repeat size={12} className="text-slate-400 shrink-0" aria-label="Recorrente" />}
+            {installmentTotal && (
+              <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 shrink-0 tabular-nums">
+                {installmentNumber}/{installmentTotal}
+              </span>
+            )}
+            {paidWithVoucher && (
+              <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 shrink-0" title="Vale alimentação">
+                VA
+              </span>
+            )}
+            {paidWithCltPj && (
+              <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100 rounded px-1.5 py-0.5 shrink-0" title="CLT/PJ">
+                CLT/PJ
+              </span>
+            )}
+          </p>
+          {note ? <p className="text-xs text-slate-400 truncate mt-0.5">{note}</p> : null}
+          {isPaid && <p className="text-xs text-emerald-600 truncate mt-0.5">Pago em {formatDateBR(paidAt)}</p>}
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
           <span
-            className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 tabular-nums"
-            title="Vencimento"
+            className="text-sm font-semibold tabular-nums shrink-0"
+            style={{ color: muted ? "#94a3b8" : accent || "#1e293b" }}
           >
-            {formatDateBR(dueDate)}
+            {fmt(value)}
           </span>
-        )}
-        {onTogglePaid && (
-          <button
-            onClick={onTogglePaid}
-            className={
-              "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
-              (isPaid ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
-            }
-            title={isPaid ? "Pagamento confirmado — clique para desfazer" : "Confirmar pagamento"}
-          >
-            <Check size={15} />
-          </button>
-        )}
-        <button
-          onClick={onEdit}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-          title="Editar"
-        >
-          <Pencil size={15} />
-        </button>
-        <button
-          onClick={onDelete}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-          title="Excluir"
-        >
-          <Trash2 size={15} />
-        </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {dueDate && (
+              <span
+                className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 tabular-nums"
+                title="Vencimento"
+              >
+                {formatDateBR(dueDate)}
+              </span>
+            )}
+            {onTogglePaid && (
+              <button
+                onClick={onTogglePaid}
+                className={
+                  "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
+                  (isPaid ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
+                }
+                title={isPaid ? "Pagamento confirmado — clique para desfazer" : "Confirmar pagamento"}
+              >
+                <Check size={15} />
+              </button>
+            )}
+            <button
+              onClick={onEdit}
+              className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+              title="Editar"
+            >
+              <Pencil size={15} />
+            </button>
+            <button
+              onClick={onDelete}
+              className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+              title="Excluir"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1860,42 +1881,44 @@ function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone, onClear
 function ShoppingItemRow({ item, onEdit, onDelete, onToggleDone }) {
   const isDone = !!item.doneAt;
   return (
-    <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-      <div className="flex-1 min-w-0">
-        <p className={"text-sm truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
+    <div className="group flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+      <div className="min-w-0 sm:flex-1">
+        <p className={"text-sm line-clamp-2 break-words sm:line-clamp-none sm:truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
         {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
         {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Comprado em {formatDateBR(item.doneAt)}</p>}
       </div>
-      {item.value > 0 && (
-        <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
-          {fmt(item.value)}
-        </span>
-      )}
-      <div className="flex items-center gap-1 shrink-0">
-        <button
-          onClick={onToggleDone}
-          className={
-            "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
-            (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
-          }
-          title={isDone ? "Comprado — clique para desfazer" : "Confirmar compra"}
-        >
-          <Check size={15} />
-        </button>
-        <button
-          onClick={onEdit}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-          title="Editar"
-        >
-          <Pencil size={15} />
-        </button>
-        <button
-          onClick={onDelete}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-          title="Excluir"
-        >
-          <Trash2 size={15} />
-        </button>
+      <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
+        {item.value > 0 && (
+          <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
+            {fmt(item.value)}
+          </span>
+        )}
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            onClick={onToggleDone}
+            className={
+              "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
+              (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
+            }
+            title={isDone ? "Comprado — clique para desfazer" : "Confirmar compra"}
+          >
+            <Check size={15} />
+          </button>
+          <button
+            onClick={onEdit}
+            className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+            title="Editar"
+          >
+            <Pencil size={15} />
+          </button>
+          <button
+            onClick={onDelete}
+            className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+            title="Excluir"
+          >
+            <Trash2 size={15} />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1985,11 +2008,20 @@ function ShoppingItemModal({ item, onClose, onSave }) {
   );
 }
 
-function EntryModal({ mode, item, onClose, onSave }) {
+function EntryModal({ mode, item, onClose, onSave, extraCategories = [] }) {
   const isExpense = mode === "expense";
   const isSerasa = mode === "serasa";
   const hasCategory = isExpense || isSerasa;
-  const categoryList = isSerasa ? SERASA_CATS : CATS;
+  const baseCategoryList = isSerasa ? SERASA_CATS : CATS;
+  const categoryList = useMemo(
+    () => [
+      ...baseCategoryList,
+      ...extraCategories
+        .filter((name) => !baseCategoryList.some((c) => c.name === name))
+        .map((name) => ({ name, ...FALLBACK })),
+    ],
+    [baseCategoryList, extraCategories]
+  );
   const [desc, setDesc] = useState(item ? (mode === "income" ? item.source : item.description) : "");
   const [category, setCategory] = useState(item?.category || categoryList[0].name);
   const [categoryMode, setCategoryMode] = useState(() =>
