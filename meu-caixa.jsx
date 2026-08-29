@@ -5,7 +5,7 @@ import {
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
   DollarSign, LogOut, Search, ChevronUp, ChevronDown,
-  HandCoins, FileText, AlertTriangle,
+  HandCoins, FileText, AlertTriangle, Shirt,
 } from "lucide-react";
 
 /* ---------- dados de referência ---------- */
@@ -23,6 +23,43 @@ const CATS = [
 ];
 const FALLBACK = { color: "#64748B", icon: Tag };
 const catMeta = (n) => CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };
+
+const CARTOES_CATEGORY = "Cartões / Financeiro";
+const PAYMENT_METHODS = ["Pix", "Cartão Nubank Fran", "Cartão Nubank Andrews", "Cartão Sams", "Cartão Renner"];
+const PAYMENT_METHOD_FALLBACK = "Sem forma de pagamento";
+
+/* ícones de marca (fonte: simple-icons.org, cores oficiais das marcas) */
+function PixIcon({ size = 16, className }) {
+  return (
+    <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+      <path d="M5.283 18.36a3.505 3.505 0 0 0 2.493-1.032l3.6-3.6a.684.684 0 0 1 .946 0l3.613 3.613a3.504 3.504 0 0 0 2.493 1.032h.71l-4.56 4.56a3.647 3.647 0 0 1-5.156 0L4.85 18.36ZM18.428 5.627a3.505 3.505 0 0 0-2.493 1.032l-3.613 3.614a.67.67 0 0 1-.946 0l-3.6-3.6A3.505 3.505 0 0 0 5.283 5.64h-.434l4.573-4.572a3.646 3.646 0 0 1 5.156 0l4.559 4.559ZM1.068 9.422 3.79 6.699h1.492a2.483 2.483 0 0 1 1.744.722l3.6 3.6a1.73 1.73 0 0 0 2.443 0l3.614-3.613a2.482 2.482 0 0 1 1.744-.723h1.767l2.737 2.737a3.646 3.646 0 0 1 0 5.156l-2.736 2.736h-1.768a2.482 2.482 0 0 1-1.744-.722l-3.613-3.613a1.77 1.77 0 0 0-2.444 0l-3.6 3.6a2.483 2.483 0 0 1-1.744.722H3.791l-2.723-2.723a3.646 3.646 0 0 1 0-5.156" />
+    </svg>
+  );
+}
+function NubankIcon({ size = 16, className }) {
+  return (
+    <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+      <path d="M7.2795 5.4336c-1.1815 0-2.1846.4628-2.9432 1.252h-.002c-.0541-.0022-.1074-.002-.162-.002-1.5436 0-2.9925.8835-3.699 2.2559-.3088.5996-.4234 1.2442-.459 1.9003-.0321.589 0 1.1863 0 1.7696v5.6523H3.184s.0022-2.784 0-5.1777c-.0014-1.6112-.0118-3.0471 0-3.3418.056-1.3937.4372-2.3053 1.1484-3.0508 2.3585.0018 3.8852 1.6091 3.9705 4.168.0196.5874.0254 3.7304.0254 3.7304v3.672h3.1678v-4.965c0-1.5007.0127-2.8006-.0918-3.6952-.292-2.5-1.821-4.168-4.1248-4.168zm8.3903.3008l-3.166.0039v4.9648c0 1.5009-.0127 2.8007.0919 3.6953.2921 2.5001 1.821 4.168 4.1248 4.168 1.1815 0 2.1846-.4628 2.9432-1.252.0003-.0003.0016.0004.002 0 .0542.0023.1093.002.164.002 1.5435 0 2.9905-.8835 3.6971-2.2558.3088-.5997.4233-1.2442.459-1.9004.032-.5889 0-1.1862 0-1.7695V5.7383H20.816s-.0022 2.784 0 5.1777c.0015 1.6113.0119 3.047 0 3.3418-.056 1.3935-.4372 2.3053-1.1483 3.0508-2.3586-.0018-3.8853-1.6091-3.9706-4.168-.0196-.5874-.0273-2.0437-.0273-3.7324Z" />
+    </svg>
+  );
+}
+function SamsClubIcon({ size = 16, className }) {
+  return (
+    <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
+      <path d="m14.275 1.71 9.403 9.504a1.119 1.119 0 0 1 .001 1.569l-9.401 9.507-1.624-1.64a1.136 1.136 0 0 1 0-1.596L19.631 12l-6.917-6.99a1.225 1.225 0 0 1 0-1.72l1.56-1.579zm-3.026 1.572L9.695 1.71.34 11.17a1.186 1.186 0 0 0 0 1.663l9.356 9.457 1.553-1.57a1.237 1.237 0 0 0 0-1.737L4.341 12l6.909-6.985a1.235 1.235 0 0 0-.001-1.734z" />
+    </svg>
+  );
+}
+
+const PAYMENT_METHOD_META = {
+  "Pix": { icon: PixIcon, color: "#77B6A8" },
+  "Cartão Nubank Fran": { icon: NubankIcon, color: "#820AD1" },
+  "Cartão Nubank Andrews": { icon: NubankIcon, color: "#820AD1" },
+  "Cartão Sams": { icon: SamsClubIcon, color: "#0067A0" },
+  "Cartão Renner": { icon: Shirt, color: "#E4002B" },
+};
+const PAYMENT_METHOD_FALLBACK_META = { icon: CreditCard, color: "#64748B" };
+const paymentMethodMeta = (name) => PAYMENT_METHOD_META[name] || PAYMENT_METHOD_FALLBACK_META;
 
 const SERASA_CATS = [
   { name: "Cartão de crédito", color: "#D6493B", icon: CreditCard },
@@ -316,14 +353,35 @@ export default function App() {
 
   const totalGastos = useMemo(() => expenses.reduce((s, e) => s + (Number(e.value) || 0), 0), [expenses]);
   const totalGanhos = useMemo(() => incomes.reduce((s, i) => s + (Number(i.value) || 0), 0), [incomes]);
-  const saldo = totalGanhos - totalGastos;
 
-  const nextIncome = useMemo(() => {
+  const vaRecebido = useMemo(
+    () => incomes.filter((i) => i.voucherIncome).reduce((s, i) => s + (Number(i.value) || 0), 0),
+    [incomes]
+  );
+  const vaUsado = useMemo(
+    () => expenses.filter((e) => e.paidWithVoucher).reduce((s, e) => s + (Number(e.value) || 0), 0),
+    [expenses]
+  );
+  const vaRestante = vaRecebido - vaUsado;
+
+  const cltPjRecebido = useMemo(
+    () => incomes.filter((i) => i.cltPjIncome).reduce((s, i) => s + (Number(i.value) || 0), 0),
+    [incomes]
+  );
+  const cltPjGasto = useMemo(
+    () => expenses.filter((e) => e.paidWithCltPj).reduce((s, e) => s + (Number(e.value) || 0), 0),
+    [expenses]
+  );
+  const cltPjSobra = cltPjRecebido - cltPjGasto;
+
+  const nextIncomes = useMemo(() => {
     const today = todayISO();
     const upcoming = incomes
       .filter((i) => i.receiptDate && i.receiptDate >= today)
       .sort((a, b) => (a.receiptDate < b.receiptDate ? -1 : 1));
-    return upcoming[0] || null;
+    if (upcoming.length === 0) return [];
+    const nextDate = upcoming[0].receiptDate;
+    return upcoming.filter((i) => i.receiptDate === nextDate);
   }, [incomes]);
 
   const byCat = useMemo(() => {
@@ -394,9 +452,6 @@ export default function App() {
   }, [serasa]);
   const totalSerasa = useMemo(() => serasa.reduce((s, i) => s + (Number(i.value) || 0), 0), [serasa]);
 
-  const pctGasto = totalGanhos > 0 ? Math.min(100, (totalGastos / totalGanhos) * 100) : (totalGastos > 0 ? 100 : 0);
-  const taxaSobra = totalGanhos > 0 ? Math.round((saldo / totalGanhos) * 100) : 0;
-
   /* CRUD */
   const saveEntry = (mode, data, id) => {
     if (mode === "expense") {
@@ -431,6 +486,27 @@ export default function App() {
     const group = gastosGrouped.find((g) => g.name === category);
     if (!group) return;
     const items = group.items;
+    const idx = items.findIndex((e) => e.id === id);
+    const targetIdx = idx + (direction === "up" ? -1 : 1);
+    if (idx === -1 || targetIdx < 0 || targetIdx >= items.length) return;
+    const reordered = [...items];
+    [reordered[idx], reordered[targetIdx]] = [reordered[targetIdx], reordered[idx]];
+    const orderById = new Map(reordered.map((e, i) => [e.id, i]));
+    setExpenses((prev) =>
+      prev.map((e) => (orderById.has(e.id) ? { ...e, order: orderById.get(e.id) } : e))
+    );
+  };
+  const moveExpensePaymentMethod = (category, paymentMethod, id, direction) => {
+    const group = gastosGrouped.find((g) => g.name === category);
+    if (!group) return;
+    const items = group.items
+      .filter((e) => (e.paymentMethod || PAYMENT_METHOD_FALLBACK) === paymentMethod)
+      .sort((a, b) => {
+        if (a.order != null && b.order != null) return a.order - b.order;
+        if (a.order != null) return -1;
+        if (b.order != null) return 1;
+        return (b.value || 0) - (a.value || 0);
+      });
     const idx = items.findIndex((e) => e.id === id);
     const targetIdx = idx + (direction === "up" ? -1 : 1);
     if (idx === -1 || targetIdx < 0 || targetIdx >= items.length) return;
@@ -577,42 +653,49 @@ export default function App() {
           </div>
         </header>
 
-        {nextIncome && (
+        {nextIncomes.length > 0 && (
           <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-2xl px-4 py-3 mb-5">
             <ArrowUpRight size={16} className="shrink-0" />
             <span>
-              Você vai receber <strong className="tabular-nums">{fmt(nextIncome.value)}</strong> de{" "}
-              <strong>{nextIncome.source}</strong>, no dia{" "}
-              <strong>{formatDateBR(nextIncome.receiptDate)}</strong>
+              Você vai receber{" "}
+              {nextIncomes.map((inc, idx) => (
+                <React.Fragment key={inc.id}>
+                  {idx > 0 && (idx === nextIncomes.length - 1 ? " e " : ", ")}
+                  <strong className="tabular-nums">{fmt(inc.value)}</strong> de <strong>{inc.source}</strong>
+                </React.Fragment>
+              ))}
+              , no dia <strong>{formatDateBR(nextIncomes[0].receiptDate)}</strong>
             </span>
           </div>
         )}
 
-        {/* hero saldo */}
+        {/* hero: carteiras */}
         <section
           className="rounded-3xl p-6 text-white shadow-lg mb-5"
           style={{ background: "linear-gradient(135deg,#0f2e25 0%,#16382c 55%,#1e4a38 100%)" }}
         >
-          <p className="text-xs uppercase tracking-wider text-emerald-200/80 mb-1">Saldo do mês</p>
-          <div className={"text-4xl font-bold tabular-nums " + (saldo >= 0 ? "text-white" : "text-rose-300")}>
-            {fmt(saldo)}
+          <div>
+            <p className="text-xs uppercase tracking-wider text-emerald-200/80 mb-3">Vale Alimentação</p>
+            <div className="flex items-center justify-between gap-3">
+              <HeroStat icon={<ArrowUpRight size={15} />} label="Recebido" value={fmt(vaRecebido)} tone="up" />
+              <div className="h-8 w-px bg-white/15" />
+              <HeroStat icon={<ArrowDownRight size={15} />} label="Usado" value={fmt(vaUsado)} tone="down" />
+              <div className="h-8 w-px bg-white/15" />
+              <HeroStat icon={<PiggyBank size={15} />} label="Restante" value={fmt(vaRestante)} tone={vaRestante >= 0 ? "up" : "down"} />
+            </div>
           </div>
-          <p className="text-xs text-emerald-100/70 mt-1">
-            {saldo >= 0
-              ? `Você guarda ${taxaSobra}% do que ganha`
-              : "Atenção: gastos acima da renda"}
-          </p>
 
-          {/* barra proporção */}
-          <div className="mt-5 h-2.5 w-full rounded-full overflow-hidden" style={{ background: "rgba(16,159,110,0.28)" }}>
-            <div className="h-full rounded-full" style={{ width: `${pctGasto}%`, background: "#f0665a" }} />
-          </div>
-          <div className="flex items-center justify-between mt-4 gap-3">
-            <HeroStat icon={<ArrowUpRight size={15} />} label="Ganhos" value={fmt(totalGanhos)} tone="up" />
-            <div className="h-8 w-px bg-white/15" />
-            <HeroStat icon={<ArrowDownRight size={15} />} label="Gastos" value={fmt(totalGastos)} tone="down" />
-            <div className="h-8 w-px bg-white/15" />
-            <HeroStat icon={<PiggyBank size={15} />} label="Sobra" value={`${taxaSobra}%`} subValue={fmt(saldo)} tone="up" />
+          <div className="h-px bg-white/10 my-5" />
+
+          <div>
+            <p className="text-xs uppercase tracking-wider text-emerald-200/80 mb-3">CLT/PJ</p>
+            <div className="flex items-center justify-between gap-3">
+              <HeroStat icon={<ArrowUpRight size={15} />} label="Recebido" value={fmt(cltPjRecebido)} tone="up" />
+              <div className="h-8 w-px bg-white/15" />
+              <HeroStat icon={<ArrowDownRight size={15} />} label="Gasto" value={fmt(cltPjGasto)} tone="down" />
+              <div className="h-8 w-px bg-white/15" />
+              <HeroStat icon={<PiggyBank size={15} />} label="Sobra" value={fmt(cltPjSobra)} tone={cltPjSobra >= 0 ? "up" : "down"} />
+            </div>
           </div>
         </section>
 
@@ -654,6 +737,7 @@ export default function App() {
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "expense", payload: item })}
             onTogglePaid={(item) => togglePaid(item.id)}
             onMove={moveExpense}
+            onMovePaymentMethod={moveExpensePaymentMethod}
           />
         )}
 
@@ -844,6 +928,7 @@ function LoginScreen({ onLogin }) {
 /* ---------- subcomponentes ---------- */
 const ADD_NEXT_MONTH = "__add_next__";
 const NEW_CATEGORY = "__new_category__";
+const NEW_PAYMENT_METHOD = "__new_payment_method__";
 
 function MonthDropdown({ months, month, nextMonthKey, onChange, onAddNext, disabled }) {
   return (
@@ -986,20 +1071,76 @@ function Overview({ byCat, totalGastos, expenses }) {
   );
 }
 
-function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove }) {
+function sortByValueSort(items, valueSort) {
+  if (valueSort === "desc") return [...items].sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
+  if (valueSort === "asc") return [...items].sort((a, b) => (Number(a.value) || 0) - (Number(b.value) || 0));
+  return items;
+}
+
+function groupByPaymentMethod(items, valueSort = "none") {
+  const m = new Map();
+  for (const e of items) {
+    const key = e.paymentMethod || PAYMENT_METHOD_FALLBACK;
+    if (!m.has(key)) m.set(key, []);
+    m.get(key).push(e);
+  }
+  return [...m.entries()]
+    .map(([name, groupItems]) => ({
+      name,
+      items:
+        valueSort !== "none"
+          ? sortByValueSort(groupItems, valueSort)
+          : [...groupItems].sort((a, b) => {
+              if (a.order != null && b.order != null) return a.order - b.order;
+              if (a.order != null) return -1;
+              if (b.order != null) return 1;
+              return (b.value || 0) - (a.value || 0);
+            }),
+      subtotal: groupItems.reduce((s, i) => s + (Number(i.value) || 0), 0),
+    }))
+    .sort((a, b) => b.subtotal - a.subtotal);
+}
+
+function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, onMovePaymentMethod }) {
   const [search, setSearch] = useState("");
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
+  const [dueDateFrom, setDueDateFrom] = useState("");
+  const [dueDateTo, setDueDateTo] = useState("");
+  const [valueSort, setValueSort] = useState("none");
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
+  const filtersActive =
+    isSearching || paymentMethodFilter !== "" || dueDateFrom !== "" || dueDateTo !== "" || valueSort !== "none";
+
+  const clearFilters = () => {
+    setSearch("");
+    setPaymentMethodFilter("");
+    setDueDateFrom("");
+    setDueDateTo("");
+    setValueSort("none");
+  };
 
   const filteredGrouped = useMemo(() => {
-    if (!query) return grouped;
-    return grouped
-      .map((g) => {
-        const items = g.items.filter((e) => e.description.toLowerCase().includes(query));
-        return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
-      })
-      .filter((g) => g.items.length > 0);
-  }, [grouped, query]);
+    let result = grouped;
+    if (query || paymentMethodFilter || dueDateFrom || dueDateTo) {
+      result = grouped
+        .map((g) => {
+          let items = g.items;
+          if (query) items = items.filter((e) => e.description.toLowerCase().includes(query));
+          if (paymentMethodFilter) {
+            items = items.filter((e) => (e.paymentMethod || PAYMENT_METHOD_FALLBACK) === paymentMethodFilter);
+          }
+          if (dueDateFrom) items = items.filter((e) => e.dueDate && e.dueDate >= dueDateFrom);
+          if (dueDateTo) items = items.filter((e) => e.dueDate && e.dueDate <= dueDateTo);
+          return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
+        })
+        .filter((g) => g.items.length > 0);
+    }
+    if (valueSort !== "none") {
+      result = result.map((g) => ({ ...g, items: sortByValueSort(g.items, valueSort) }));
+    }
+    return result;
+  }, [grouped, query, paymentMethodFilter, dueDateFrom, dueDateTo, valueSort]);
 
   const visibleTotal = useMemo(
     () => filteredGrouped.reduce((s, g) => s + g.subtotal, 0),
@@ -1010,8 +1151,8 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove 
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-slate-500">{isSearching ? "Total encontrado" : "Total de gastos"}</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(isSearching ? visibleTotal : total)}</p>
+          <p className="text-xs text-slate-500">{filtersActive ? "Total encontrado" : "Total de gastos"}</p>
+          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(filtersActive ? visibleTotal : total)}</p>
         </div>
         <button
           onClick={onAdd}
@@ -1041,8 +1182,60 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove 
         )}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={paymentMethodFilter}
+          onChange={(e) => setPaymentMethodFilter(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+        >
+          <option value="">Todas as formas de pagamento</option>
+          {PAYMENT_METHODS.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+          <option value={PAYMENT_METHOD_FALLBACK}>{PAYMENT_METHOD_FALLBACK}</option>
+        </select>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-slate-500">Vencimento</span>
+          <input
+            type="date"
+            value={dueDateFrom}
+            onChange={(e) => setDueDateFrom(e.target.value)}
+            className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+          <span className="text-xs text-slate-400">até</span>
+          <input
+            type="date"
+            value={dueDateTo}
+            onChange={(e) => setDueDateTo(e.target.value)}
+            className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </div>
+
+        <select
+          value={valueSort}
+          onChange={(e) => setValueSort(e.target.value)}
+          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+        >
+          <option value="none">Ordem padrão</option>
+          <option value="desc">Maior valor primeiro</option>
+          <option value="asc">Menor valor primeiro</option>
+        </select>
+
+        {filtersActive && (
+          <button
+            onClick={clearFilters}
+            className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <X size={12} /> Limpar filtros
+          </button>
+        )}
+      </div>
+
       {filteredGrouped.length === 0 && (
-        <Empty text={isSearching ? "Nenhum gasto encontrado." : "Nenhum gasto cadastrado."} />
+        <Empty text={filtersActive ? "Nenhum gasto encontrado." : "Nenhum gasto cadastrado."} />
       )}
 
       {filteredGrouped.map((g) => {
@@ -1057,26 +1250,70 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove 
               <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(g.subtotal)}</span>
             </div>
             <div className="divide-y divide-slate-100">
-              {g.items.map((e, idx) => (
-                <Row
-                  key={e.id}
-                  title={e.description}
-                  note={e.note}
-                  value={e.value}
-                  muted={!e.value}
-                  recurrent={e.recurrent}
-                  paidAt={e.paidAt}
-                  dueDate={e.dueDate}
-                  installmentTotal={e.installmentTotal}
-                  installmentNumber={e.installmentNumber}
-                  position={idx + 1}
-                  onMoveUp={!isSearching && idx > 0 ? () => onMove(e.category, e.id, "up") : undefined}
-                  onMoveDown={!isSearching && idx < g.items.length - 1 ? () => onMove(e.category, e.id, "down") : undefined}
-                  onEdit={() => onEdit(e)}
-                  onDelete={() => onDelete(e)}
-                  onTogglePaid={() => onTogglePaid(e)}
-                />
-              ))}
+              {g.name === CARTOES_CATEGORY ? (
+                groupByPaymentMethod(g.items, valueSort).map((pm) => {
+                  const pmMeta = paymentMethodMeta(pm.name);
+                  const PmIcon = pmMeta.icon;
+                  return (
+                  <div key={pm.name}>
+                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-50">
+                      <span className="h-5 w-5 rounded flex items-center justify-center shrink-0" style={{ background: pmMeta.color + "1F", color: pmMeta.color }}>
+                        <PmIcon size={12} />
+                      </span>
+                      <span className="text-xs font-medium text-slate-500 flex-1">{pm.name}</span>
+                      <span className="text-xs font-semibold text-slate-600 tabular-nums">{fmt(pm.subtotal)}</span>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {pm.items.map((e, idx) => (
+                        <Row
+                          key={e.id}
+                          title={e.description}
+                          note={e.note}
+                          value={e.value}
+                          muted={!e.value}
+                          recurrent={e.recurrent}
+                          paidAt={e.paidAt}
+                          dueDate={e.dueDate}
+                          installmentTotal={e.installmentTotal}
+                          installmentNumber={e.installmentNumber}
+                          paidWithVoucher={e.paidWithVoucher}
+                          paidWithCltPj={e.paidWithCltPj}
+                          position={idx + 1}
+                          onMoveUp={!filtersActive && idx > 0 ? () => onMovePaymentMethod(g.name, pm.name, e.id, "up") : undefined}
+                          onMoveDown={!filtersActive && idx < pm.items.length - 1 ? () => onMovePaymentMethod(g.name, pm.name, e.id, "down") : undefined}
+                          onEdit={() => onEdit(e)}
+                          onDelete={() => onDelete(e)}
+                          onTogglePaid={() => onTogglePaid(e)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  );
+                })
+              ) : (
+                g.items.map((e, idx) => (
+                  <Row
+                    key={e.id}
+                    title={e.description}
+                    note={e.note}
+                    value={e.value}
+                    muted={!e.value}
+                    recurrent={e.recurrent}
+                    paidAt={e.paidAt}
+                    dueDate={e.dueDate}
+                    installmentTotal={e.installmentTotal}
+                    installmentNumber={e.installmentNumber}
+                    paidWithVoucher={e.paidWithVoucher}
+                    paidWithCltPj={e.paidWithCltPj}
+                    position={idx + 1}
+                    onMoveUp={!filtersActive && idx > 0 ? () => onMove(e.category, e.id, "up") : undefined}
+                    onMoveDown={!filtersActive && idx < g.items.length - 1 ? () => onMove(e.category, e.id, "down") : undefined}
+                    onEdit={() => onEdit(e)}
+                    onDelete={() => onDelete(e)}
+                    onTogglePaid={() => onTogglePaid(e)}
+                  />
+                ))
+              )}
             </div>
           </Card>
         );
@@ -1245,6 +1482,8 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
               value={i.value}
               accent="#059669"
               recurrent={i.recurrent}
+              paidWithVoucher={i.voucherIncome}
+              paidWithCltPj={i.cltPjIncome}
               onEdit={() => onEdit(i)}
               onDelete={() => onDelete(i)}
             />
@@ -1375,7 +1614,7 @@ function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onM
   );
 }
 
-function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, dueDate, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown }) {
+function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, dueDate, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown, paidWithVoucher, paidWithCltPj }) {
   const isPaid = !!paidAt;
   return (
     <div className="group flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
@@ -1415,6 +1654,16 @@ function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, p
           {installmentTotal && (
             <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 shrink-0 tabular-nums">
               {installmentNumber}/{installmentTotal}
+            </span>
+          )}
+          {paidWithVoucher && (
+            <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 shrink-0" title="Vale alimentação">
+              VA
+            </span>
+          )}
+          {paidWithCltPj && (
+            <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100 rounded px-1.5 py-0.5 shrink-0" title="CLT/PJ">
+              CLT/PJ
             </span>
           )}
         </p>
@@ -1757,6 +2006,14 @@ function EntryModal({ mode, item, onClose, onSave }) {
     return "none";
   });
   const [installmentTotal, setInstallmentTotal] = useState(item?.installmentTotal || 2);
+  const [paidWithVoucher, setPaidWithVoucher] = useState(item?.paidWithVoucher || false);
+  const [paidWithCltPj, setPaidWithCltPj] = useState(item?.paidWithCltPj || false);
+  const [voucherIncome, setVoucherIncome] = useState(item?.voucherIncome || false);
+  const [cltPjIncome, setCltPjIncome] = useState(item?.cltPjIncome || false);
+  const [paymentMethod, setPaymentMethod] = useState(item?.paymentMethod || "");
+  const [paymentMethodMode, setPaymentMethodMode] = useState(() =>
+    !item?.paymentMethod || PAYMENT_METHODS.includes(item.paymentMethod) ? "select" : "custom"
+  );
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -1786,8 +2043,9 @@ function EntryModal({ mode, item, onClose, onSave }) {
           recurrent: repeatMode === "recurrent",
           installmentTotal: repeatMode === "installments" ? installmentTotal : null,
           installmentNumber: repeatMode === "installments" ? item?.installmentNumber || 1 : null,
+          ...(isExpense ? { paidWithVoucher, paidWithCltPj, paymentMethod: paymentMethod.trim() || null } : {}),
         }
-      : { source: desc.trim(), value: parseFloat(value), note: note.trim(), receiptDate: receiptDate || null, recurrent };
+      : { source: desc.trim(), value: parseFloat(value), note: note.trim(), receiptDate: receiptDate || null, recurrent, voucherIncome, cltPjIncome };
     onSave(mode, data, item?.id);
   };
 
@@ -1849,6 +2107,54 @@ function EntryModal({ mode, item, onClose, onSave }) {
                   onClick={() => {
                     setCategoryMode("select");
                     setCategory(categoryList.some((c) => c.name === category) ? category : categoryList[0].name);
+                  }}
+                  title="Cancelar"
+                  className="h-[42px] w-[42px] shrink-0 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+          </Field>
+        )}
+
+        {isExpense && (
+          <Field label="Forma de pagamento (opcional)">
+            {paymentMethodMode === "select" ? (
+              <select
+                value={paymentMethod}
+                onChange={(e) => {
+                  if (e.target.value === NEW_PAYMENT_METHOD) {
+                    setPaymentMethodMode("custom");
+                    setPaymentMethod("");
+                  } else {
+                    setPaymentMethod(e.target.value);
+                  }
+                }}
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+              >
+                <option value="">Nenhuma</option>
+                {PAYMENT_METHODS.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+                <option value={NEW_PAYMENT_METHOD}>+ Adicionar forma de pagamento</option>
+              </select>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  autoFocus
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  placeholder="Nome da forma de pagamento"
+                  className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMethodMode("select");
+                    setPaymentMethod(PAYMENT_METHODS.includes(paymentMethod) ? paymentMethod : "");
                   }}
                   title="Cancelar"
                   className="h-[42px] w-[42px] shrink-0 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
@@ -1942,15 +2248,58 @@ function EntryModal({ mode, item, onClose, onSave }) {
             </div>
           </div>
         ) : (
-          <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-            <input
-              type="checkbox"
-              checked={recurrent}
-              onChange={(e) => setRecurrent(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-            />
-            Recorrente (repete todo mês)
-          </label>
+          <div className="flex flex-col gap-2">
+            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={recurrent}
+                onChange={(e) => setRecurrent(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+              />
+              Recorrente (repete todo mês)
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={voucherIncome}
+                onChange={(e) => setVoucherIncome(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+              />
+              Este valor é do vale alimentação
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cltPjIncome}
+                onChange={(e) => setCltPjIncome(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+              />
+              Este valor é CLT/PJ
+            </label>
+          </div>
+        )}
+
+        {isExpense && (
+          <div className="flex flex-col gap-2 pt-1">
+            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={paidWithVoucher}
+                onChange={(e) => setPaidWithVoucher(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+              />
+              Pago com vale alimentação
+            </label>
+            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={paidWithCltPj}
+                onChange={(e) => setPaidWithCltPj(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
+              />
+              Pago com valor CLT/PJ
+            </label>
+          </div>
         )}
       </div>
 
@@ -2011,7 +2360,7 @@ function Overlay({ children, onClose }) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-xl"
+        className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {children}

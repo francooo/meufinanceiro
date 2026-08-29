@@ -43,7 +43,10 @@ export async function migrate() {
       paid_at TEXT DEFAULT NULL,
       due_date TEXT DEFAULT NULL,
       installment_total INTEGER DEFAULT NULL,
-      installment_number INTEGER DEFAULT NULL
+      installment_number INTEGER DEFAULT NULL,
+      paid_with_voucher BOOLEAN NOT NULL DEFAULT false,
+      paid_with_clt_pj BOOLEAN NOT NULL DEFAULT false,
+      payment_method TEXT DEFAULT NULL
     );
   `);
   await pool.query(`
@@ -54,6 +57,8 @@ export async function migrate() {
       note TEXT DEFAULT '',
       month TEXT NOT NULL DEFAULT '${month}',
       recurrent BOOLEAN NOT NULL DEFAULT false,
+      voucher_income BOOLEAN NOT NULL DEFAULT false,
+      clt_pj_income BOOLEAN NOT NULL DEFAULT false,
       receipt_date TEXT DEFAULT NULL
     );
   `);
@@ -101,9 +106,14 @@ export async function migrate() {
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_number INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS due_date TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_with_voucher BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_with_clt_pj BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS receipt_date TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS voucher_income BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS clt_pj_income BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE wishlist_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
 
   await pool.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [month]);
@@ -133,12 +143,15 @@ export async function getData(month) {
   const { rows: expenses } = await pool.query(
     `SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt", due_date AS "dueDate",
             installment_total AS "installmentTotal", installment_number AS "installmentNumber",
-            order_index AS "order"
+            order_index AS "order", paid_with_voucher AS "paidWithVoucher", paid_with_clt_pj AS "paidWithCltPj",
+            payment_method AS "paymentMethod"
      FROM expenses WHERE month = $1 ORDER BY category, order_index NULLS LAST, description`,
     [month]
   );
   const { rows: incomes } = await pool.query(
-    'SELECT id, source, value, note, recurrent, receipt_date AS "receiptDate" FROM incomes WHERE month = $1 ORDER BY source',
+    `SELECT id, source, value, note, recurrent, receipt_date AS "receiptDate",
+            voucher_income AS "voucherIncome", clt_pj_income AS "cltPjIncome"
+     FROM incomes WHERE month = $1 ORDER BY source`,
     [month]
   );
   return {
@@ -155,8 +168,8 @@ export async function replaceExpenses(month, expenses) {
     await client.query("DELETE FROM expenses WHERE month = $1", [month]);
     for (const e of expenses) {
       await client.query(
-        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, due_date, installment_total, installment_number, order_index)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
         [
           e.id,
           e.description,
@@ -170,6 +183,9 @@ export async function replaceExpenses(month, expenses) {
           e.installmentTotal ?? null,
           e.installmentNumber ?? null,
           e.order ?? null,
+          !!e.paidWithVoucher,
+          !!e.paidWithCltPj,
+          e.paymentMethod || null,
         ]
       );
     }
@@ -190,8 +206,8 @@ export async function replaceIncomes(month, incomes) {
     await client.query("DELETE FROM incomes WHERE month = $1", [month]);
     for (const i of incomes) {
       await client.query(
-        "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent, i.receiptDate || null]
+        "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent, i.receiptDate || null, !!i.voucherIncome, !!i.cltPjIncome]
       );
     }
     await client.query("COMMIT");
@@ -224,7 +240,8 @@ export async function createMonth(newMonth) {
       const { rows: carryForwardExpenses } = await client.query(
         `SELECT description, category, value, note, recurrent, due_date AS "dueDate",
                 installment_total AS "installmentTotal", installment_number AS "installmentNumber",
-                order_index AS "order"
+                order_index AS "order", paid_with_voucher AS "paidWithVoucher", paid_with_clt_pj AS "paidWithCltPj",
+                payment_method AS "paymentMethod"
          FROM expenses
          WHERE month = $1
            AND (recurrent = true OR (installment_total IS NOT NULL AND installment_number < installment_total))`,
@@ -233,8 +250,8 @@ export async function createMonth(newMonth) {
       for (const e of carryForwardExpenses) {
         const isInstallment = e.installmentTotal != null;
         await client.query(
-          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, order_index)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [
             randomUUID(),
             e.description,
@@ -247,18 +264,22 @@ export async function createMonth(newMonth) {
             isInstallment ? e.installmentTotal : null,
             isInstallment ? e.installmentNumber + 1 : null,
             e.order ?? null,
+            e.paidWithVoucher,
+            e.paidWithCltPj,
+            e.paymentMethod,
           ]
         );
       }
 
       const { rows: recurIncomes } = await client.query(
-        'SELECT source, value, note, receipt_date AS "receiptDate" FROM incomes WHERE month = $1 AND recurrent = true',
+        `SELECT source, value, note, receipt_date AS "receiptDate", voucher_income AS "voucherIncome", clt_pj_income AS "cltPjIncome"
+         FROM incomes WHERE month = $1 AND recurrent = true`,
         [sourceMonth]
       );
       for (const i of recurIncomes) {
         await client.query(
-          "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date) VALUES ($1, $2, $3, $4, $5, true, $6)",
-          [randomUUID(), i.source, i.value, i.note, newMonth, addOneMonthToDate(i.receiptDate)]
+          "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income) VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)",
+          [randomUUID(), i.source, i.value, i.note, newMonth, addOneMonthToDate(i.receiptDate), i.voucherIncome, i.cltPjIncome]
         );
       }
     }
