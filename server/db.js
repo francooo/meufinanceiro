@@ -224,6 +224,27 @@ export async function replaceIncomes(month, incomes) {
   }
 }
 
+export async function moveExpenseToMonth(id, targetMonth) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [targetMonth]);
+    const { rows } = await client.query(
+      "UPDATE expenses SET month = $1, order_index = NULL WHERE id = $2 RETURNING id",
+      [targetMonth, id]
+    );
+    if (rows.length === 0) {
+      throw new Error("Gasto não encontrado.");
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function createMonth(newMonth) {
   const { rows: exists } = await pool.query("SELECT 1 FROM months WHERE month = $1", [newMonth]);
   if (exists.length > 0) {

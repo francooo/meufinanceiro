@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { getData, getMonths, replaceExpenses, replaceIncomes, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems } from "./db.js";
+import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems } from "./db.js";
 import { verifyGoogleCredential, issueSessionCookie, clearSessionCookie, getSessionEmail, requireAuth } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -89,6 +89,21 @@ app.put("/api/data", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("PUT /api/data failed:", err);
     res.status(500).json({ error: "Falha ao salvar dados no banco." });
+  }
+});
+
+app.put("/api/expenses/:id/month", requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { month } = req.body || {};
+  if (typeof month !== "string" || !MONTH_RE.test(month)) {
+    return res.status(400).json({ error: "Mês inválido. Use o formato AAAA-MM." });
+  }
+  try {
+    await moveExpenseToMonth(id, month);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PUT /api/expenses/:id/month failed:", err);
+    res.status(500).json({ error: "Falha ao mover o gasto para o mês selecionado." });
   }
 });
 

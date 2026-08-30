@@ -512,19 +512,10 @@ export default function App() {
     );
   };
   const moveExpenseToMonth = async (item, targetMonth) => {
-    const targetData = await store.load(targetMonth);
-    if (!targetData || !Array.isArray(targetData.expenses)) {
-      throw new Error("Não foi possível carregar o mês de destino.");
-    }
-    const movedItem = { ...item, order: null };
-    const res = await fetch("/api/data", {
+    const res = await fetch(`/api/expenses/${encodeURIComponent(item.id)}/month`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        month: targetMonth,
-        expenses: [...targetData.expenses, movedItem],
-        incomes: targetData.incomes,
-      }),
+      body: JSON.stringify({ month: targetMonth }),
     });
     if (!res.ok) {
       throw new Error("Não foi possível mover o gasto para o mês selecionado.");
