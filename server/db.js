@@ -46,7 +46,8 @@ export async function migrate() {
       installment_number INTEGER DEFAULT NULL,
       paid_with_voucher BOOLEAN NOT NULL DEFAULT false,
       paid_with_clt_pj BOOLEAN NOT NULL DEFAULT false,
-      payment_method TEXT DEFAULT NULL
+      payment_method TEXT DEFAULT NULL,
+      created_at TIMESTAMPTZ DEFAULT NULL
     );
   `);
   await pool.query(`
@@ -59,7 +60,8 @@ export async function migrate() {
       recurrent BOOLEAN NOT NULL DEFAULT false,
       voucher_income BOOLEAN NOT NULL DEFAULT false,
       clt_pj_income BOOLEAN NOT NULL DEFAULT false,
-      receipt_date TEXT DEFAULT NULL
+      receipt_date TEXT DEFAULT NULL,
+      created_at TIMESTAMPTZ DEFAULT NULL
     );
   `);
   await pool.query(`
@@ -109,11 +111,13 @@ export async function migrate() {
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_with_voucher BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_with_clt_pj BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NULL`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS recurrent BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS receipt_date TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS voucher_income BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS clt_pj_income BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NULL`);
   await pool.query(`ALTER TABLE wishlist_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
 
   await pool.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [month]);
@@ -144,13 +148,13 @@ export async function getData(month) {
     `SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt", due_date AS "dueDate",
             installment_total AS "installmentTotal", installment_number AS "installmentNumber",
             order_index AS "order", paid_with_voucher AS "paidWithVoucher", paid_with_clt_pj AS "paidWithCltPj",
-            payment_method AS "paymentMethod"
+            payment_method AS "paymentMethod", created_at AS "createdAt"
      FROM expenses WHERE month = $1 ORDER BY category, order_index NULLS LAST, description`,
     [month]
   );
   const { rows: incomes } = await pool.query(
     `SELECT id, source, value, note, recurrent, receipt_date AS "receiptDate",
-            voucher_income AS "voucherIncome", clt_pj_income AS "cltPjIncome"
+            voucher_income AS "voucherIncome", clt_pj_income AS "cltPjIncome", created_at AS "createdAt"
      FROM incomes WHERE month = $1 ORDER BY source`,
     [month]
   );
@@ -168,8 +172,8 @@ export async function replaceExpenses(month, expenses) {
     await client.query("DELETE FROM expenses WHERE month = $1", [month]);
     for (const e of expenses) {
       await client.query(
-        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
         [
           e.id,
           e.description,
@@ -186,6 +190,7 @@ export async function replaceExpenses(month, expenses) {
           !!e.paidWithVoucher,
           !!e.paidWithCltPj,
           e.paymentMethod || null,
+          e.createdAt || new Date().toISOString(),
         ]
       );
     }
@@ -206,8 +211,8 @@ export async function replaceIncomes(month, incomes) {
     await client.query("DELETE FROM incomes WHERE month = $1", [month]);
     for (const i of incomes) {
       await client.query(
-        "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent, i.receiptDate || null, !!i.voucherIncome, !!i.cltPjIncome]
+        "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent, i.receiptDate || null, !!i.voucherIncome, !!i.cltPjIncome, i.createdAt || new Date().toISOString()]
       );
     }
     await client.query("COMMIT");
@@ -250,8 +255,8 @@ export async function createMonth(newMonth) {
       for (const e of carryForwardExpenses) {
         const isInstallment = e.installmentTotal != null;
         await client.query(
-          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
           [
             randomUUID(),
             e.description,
@@ -267,6 +272,7 @@ export async function createMonth(newMonth) {
             e.paidWithVoucher,
             e.paidWithCltPj,
             e.paymentMethod,
+            new Date().toISOString(),
           ]
         );
       }
@@ -278,8 +284,8 @@ export async function createMonth(newMonth) {
       );
       for (const i of recurIncomes) {
         await client.query(
-          "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income) VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)",
-          [randomUUID(), i.source, i.value, i.note, newMonth, addOneMonthToDate(i.receiptDate), i.voucherIncome, i.cltPjIncome]
+          "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income, created_at) VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8, $9)",
+          [randomUUID(), i.source, i.value, i.note, newMonth, addOneMonthToDate(i.receiptDate), i.voucherIncome, i.cltPjIncome, new Date().toISOString()]
         );
       }
     }

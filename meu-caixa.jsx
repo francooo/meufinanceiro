@@ -5,7 +5,7 @@ import {
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
   DollarSign, LogOut, Search, ChevronUp, ChevronDown,
-  HandCoins, FileText, AlertTriangle, Shirt,
+  HandCoins, FileText, AlertTriangle, Shirt, History,
 } from "lucide-react";
 
 /* ---------- dados de referência ---------- */
@@ -87,6 +87,21 @@ const todayISO = () => {
 const formatDateBR = (iso) => {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
+};
+
+const formatRelativeTime = (iso) => {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const diffMin = Math.floor((Date.now() - date.getTime()) / 60000);
+  if (diffMin < 1) return "agora mesmo";
+  if (diffMin < 60) return `há ${diffMin} min`;
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `há ${diffHour}h`;
+  const diffDay = Math.floor(diffHour / 24);
+  if (diffDay === 1) return "ontem";
+  if (diffDay < 7) return `há ${diffDay} dias`;
+  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
 };
 
 const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -466,7 +481,9 @@ export default function App() {
   const saveEntry = (mode, data, id) => {
     if (mode === "expense") {
       setExpenses((prev) =>
-        id ? prev.map((e) => (e.id === id ? { ...e, ...data } : e)) : [...prev, { id: uid(), ...data }]
+        id
+          ? prev.map((e) => (e.id === id ? { ...e, ...data } : e))
+          : [...prev, { id: uid(), createdAt: new Date().toISOString(), ...data }]
       );
     } else if (mode === "serasa") {
       setSerasa((prev) =>
@@ -474,7 +491,9 @@ export default function App() {
       );
     } else {
       setIncomes((prev) =>
-        id ? prev.map((i) => (i.id === id ? { ...i, ...data } : i)) : [...prev, { id: uid(), ...data }]
+        id
+          ? prev.map((i) => (i.id === id ? { ...i, ...data } : i))
+          : [...prev, { id: uid(), createdAt: new Date().toISOString(), ...data }]
       );
     }
     setModal(null);
@@ -491,6 +510,27 @@ export default function App() {
     setExpenses((prev) =>
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
     );
+  };
+  const moveExpenseToMonth = async (item, targetMonth) => {
+    const targetData = await store.load(targetMonth);
+    if (!targetData || !Array.isArray(targetData.expenses)) {
+      throw new Error("Não foi possível carregar o mês de destino.");
+    }
+    const movedItem = { ...item, order: null };
+    const res = await fetch("/api/data", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        month: targetMonth,
+        expenses: [...targetData.expenses, movedItem],
+        incomes: targetData.incomes,
+      }),
+    });
+    if (!res.ok) {
+      throw new Error("Não foi possível mover o gasto para o mês selecionado.");
+    }
+    setExpenses((prev) => prev.filter((e) => e.id !== item.id));
+    setModal(null);
   };
   const moveExpense = (category, id, direction) => {
     const group = gastosGrouped.find((g) => g.name === category);
@@ -737,7 +777,7 @@ export default function App() {
         </div>
 
         {tab === "overview" && (
-          <Overview byCat={byCat} totalGastos={totalGastos} expenses={expenses} />
+          <Overview byCat={byCat} totalGastos={totalGastos} expenses={expenses} incomes={incomes} />
         )}
 
         {tab === "gastos" && (
@@ -832,6 +872,9 @@ export default function App() {
           extraCategories={modal.mode === "serasa" ? extraSerasaCategories : extraExpenseCategories}
           onClose={() => setModal(null)}
           onSave={saveEntry}
+          months={months}
+          currentMonth={month}
+          onMoveMonth={moveExpenseToMonth}
         />
       )}
 
@@ -983,7 +1026,7 @@ function Card({ children, className = "" }) {
   );
 }
 
-function Overview({ byCat, totalGastos, expenses }) {
+function Overview({ byCat, totalGastos, expenses, incomes }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
@@ -1003,8 +1046,48 @@ function Overview({ byCat, totalGastos, expenses }) {
     [listedGastos]
   );
 
+  const recentItems = useMemo(() => {
+    const combined = [
+      ...expenses.map((e) => ({ id: e.id, kind: "expense", label: e.description, value: e.value, createdAt: e.createdAt })),
+      ...incomes.map((i) => ({ id: i.id, kind: "income", label: i.source, value: i.value, createdAt: i.createdAt })),
+    ].filter((it) => it.createdAt);
+    return combined.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 8);
+  }, [expenses, incomes]);
+
   return (
     <div className="space-y-5">
+      <Card className="p-5">
+        <h2 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <History size={15} className="text-slate-400" />
+          Adicionados recentemente
+        </h2>
+        {recentItems.length === 0 ? (
+          <Empty text="Nenhum item adicionado ainda neste mês." />
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {recentItems.map((it) => (
+              <div key={`${it.kind}-${it.id}`} className="flex items-center gap-3 py-2.5">
+                <span
+                  className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+                  style={
+                    it.kind === "expense"
+                      ? { background: "#D6493B1F", color: "#D6493B" }
+                      : { background: "#2F9E441F", color: "#2F9E44" }
+                  }
+                >
+                  {it.kind === "expense" ? <ArrowDownRight size={15} /> : <ArrowUpRight size={15} />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-slate-700 truncate">{it.label}</p>
+                  <p className="text-xs text-slate-400">{formatRelativeTime(it.createdAt)}</p>
+                </div>
+                <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(it.value)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
       <Card className="p-5">
         <h2 className="text-sm font-semibold text-slate-800 mb-4">Para onde vai o dinheiro</h2>
         {byCat.length === 0 ? (
@@ -2008,7 +2091,7 @@ function ShoppingItemModal({ item, onClose, onSave }) {
   );
 }
 
-function EntryModal({ mode, item, onClose, onSave, extraCategories = [] }) {
+function EntryModal({ mode, item, onClose, onSave, extraCategories = [], months = [], currentMonth, onMoveMonth }) {
   const isExpense = mode === "expense";
   const isSerasa = mode === "serasa";
   const hasCategory = isExpense || isSerasa;
@@ -2046,7 +2129,27 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [] }) {
   const [paymentMethodMode, setPaymentMethodMode] = useState(() =>
     !item?.paymentMethod || PAYMENT_METHODS.includes(item.paymentMethod) ? "select" : "custom"
   );
+  const [moveTarget, setMoveTarget] = useState("");
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState("");
   const inputRef = useRef(null);
+
+  const otherMonths = useMemo(
+    () => months.filter((m) => m !== currentMonth).sort(),
+    [months, currentMonth]
+  );
+
+  const handleMove = async () => {
+    if (!moveTarget || moving) return;
+    setMoving(true);
+    setMoveError("");
+    try {
+      await onMoveMonth(item, moveTarget);
+    } catch (err) {
+      setMoveError(err.message || "Falha ao mover o gasto.");
+      setMoving(false);
+    }
+  };
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -2331,6 +2434,38 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [] }) {
               />
               Pago com valor CLT/PJ
             </label>
+          </div>
+        )}
+
+        {isExpense && item && otherMonths.length > 0 && (
+          <div className="rounded-xl border border-slate-200 p-3.5">
+            <span className="text-xs font-medium text-slate-500 mb-2 block">Mover para outro mês</span>
+            <div className="flex gap-2">
+              <select
+                value={moveTarget}
+                onChange={(e) => {
+                  setMoveTarget(e.target.value);
+                  setMoveError("");
+                }}
+                className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+              >
+                <option value="">Selecione o mês</option>
+                {otherMonths.map((m) => (
+                  <option key={m} value={m}>
+                    {monthLabel(m)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={handleMove}
+                disabled={!moveTarget || moving}
+                className="shrink-0 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {moving ? "Movendo…" : "Mover"}
+              </button>
+            </div>
+            {moveError && <p className="text-xs text-rose-600 mt-2">{moveError}</p>}
           </div>
         )}
       </div>
