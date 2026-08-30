@@ -1194,10 +1194,12 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
   const [dueDateFrom, setDueDateFrom] = useState("");
   const [dueDateTo, setDueDateTo] = useState("");
   const [valueSort, setValueSort] = useState("none");
+  const [hidePaid, setHidePaid] = useState(false);
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
-  const filtersActive =
+  const otherFiltersActive =
     isSearching || paymentMethodFilter !== "" || dueDateFrom !== "" || dueDateTo !== "" || valueSort !== "none";
+  const filtersActive = otherFiltersActive || hidePaid;
 
   const clearFilters = () => {
     setSearch("");
@@ -1205,20 +1207,31 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
     setDueDateFrom("");
     setDueDateTo("");
     setValueSort("none");
+    setHidePaid(false);
+  };
+
+  const applyCommonFilters = (list) => {
+    if (!(query || paymentMethodFilter || dueDateFrom || dueDateTo)) return list;
+    return list
+      .map((g) => {
+        let items = g.items;
+        if (query) items = items.filter((e) => e.description.toLowerCase().includes(query));
+        if (paymentMethodFilter) {
+          items = items.filter((e) => (e.paymentMethod || PAYMENT_METHOD_FALLBACK) === paymentMethodFilter);
+        }
+        if (dueDateFrom) items = items.filter((e) => e.dueDate && e.dueDate >= dueDateFrom);
+        if (dueDateTo) items = items.filter((e) => e.dueDate && e.dueDate <= dueDateTo);
+        return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
+      })
+      .filter((g) => g.items.length > 0);
   };
 
   const filteredGrouped = useMemo(() => {
-    let result = grouped;
-    if (query || paymentMethodFilter || dueDateFrom || dueDateTo) {
-      result = grouped
+    let result = applyCommonFilters(grouped);
+    if (hidePaid) {
+      result = result
         .map((g) => {
-          let items = g.items;
-          if (query) items = items.filter((e) => e.description.toLowerCase().includes(query));
-          if (paymentMethodFilter) {
-            items = items.filter((e) => (e.paymentMethod || PAYMENT_METHOD_FALLBACK) === paymentMethodFilter);
-          }
-          if (dueDateFrom) items = items.filter((e) => e.dueDate && e.dueDate >= dueDateFrom);
-          if (dueDateTo) items = items.filter((e) => e.dueDate && e.dueDate <= dueDateTo);
+          const items = g.items.filter((e) => !e.paidAt);
           return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
         })
         .filter((g) => g.items.length > 0);
@@ -1227,19 +1240,26 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
       result = result.map((g) => ({ ...g, items: sortByValueSort(g.items, valueSort) }));
     }
     return result;
-  }, [grouped, query, paymentMethodFilter, dueDateFrom, dueDateTo, valueSort]);
+  }, [grouped, query, paymentMethodFilter, dueDateFrom, dueDateTo, valueSort, hidePaid]);
+
+  // Total exibido nunca reflete o "ocultar pagos": esse recurso é só uma lente visual
+  // sobre o que ainda falta pagar, não deve mudar o total de gastos do mês.
+  const totalGroupedForDisplay = useMemo(
+    () => applyCommonFilters(grouped),
+    [grouped, query, paymentMethodFilter, dueDateFrom, dueDateTo]
+  );
 
   const visibleTotal = useMemo(
-    () => filteredGrouped.reduce((s, g) => s + g.subtotal, 0),
-    [filteredGrouped]
+    () => totalGroupedForDisplay.reduce((s, g) => s + g.subtotal, 0),
+    [totalGroupedForDisplay]
   );
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs text-slate-500">{filtersActive ? "Total encontrado" : "Total de gastos"}</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(filtersActive ? visibleTotal : total)}</p>
+          <p className="text-xs text-slate-500">{otherFiltersActive ? "Total encontrado" : "Total de gastos"}</p>
+          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(otherFiltersActive ? visibleTotal : total)}</p>
         </div>
         <button
           onClick={onAdd}
@@ -1270,6 +1290,19 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setHidePaid((v) => !v)}
+          className={
+            "flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 " +
+            (hidePaid ? "text-white border-transparent" : "text-slate-700 bg-white border-slate-200 hover:bg-slate-50")
+          }
+          style={hidePaid ? { background: "#16382c" } : undefined}
+        >
+          <Check size={13} />
+          {hidePaid ? "Mostrar pagos" : "Ocultar pagos"}
+        </button>
+
         <select
           value={paymentMethodFilter}
           onChange={(e) => setPaymentMethodFilter(e.target.value)}
