@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems } from "./db.js";
+import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems } from "./db.js";
 import { verifyGoogleCredential, issueSessionCookie, clearSessionCookie, getSessionEmail, requireAuth } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -89,6 +89,16 @@ app.put("/api/data", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("PUT /api/data failed:", err);
     res.status(500).json({ error: "Falha ao salvar dados no banco." });
+  }
+});
+
+app.get("/api/payment-methods", requireAuth, async (req, res) => {
+  try {
+    const methods = await getPaymentMethods();
+    res.json({ methods });
+  } catch (err) {
+    console.error("GET /api/payment-methods failed:", err);
+    res.status(500).json({ error: "Falha ao carregar as formas de pagamento." });
   }
 });
 

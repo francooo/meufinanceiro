@@ -161,6 +161,16 @@ const store = {
     }
     return res.json();
   },
+  async loadPaymentMethods() {
+    try {
+      const res = await fetch("/api/payment-methods");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.methods) ? data.methods : [];
+    } catch {
+      return [];
+    }
+  },
   async loadWishlist() {
     try {
       const res = await fetch("/api/wishlist");
@@ -239,6 +249,7 @@ export default function App() {
   const [wishlist, setWishlist] = useState([]);
   const [shoppingLists, setShoppingLists] = useState({ mercado: [], farmacia: [] });
   const [serasa, setSerasa] = useState([]);
+  const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState("overview");
@@ -293,6 +304,7 @@ export default function App() {
         ]);
         setShoppingLists({ mercado, farmacia });
         setSerasa(await store.loadSerasa());
+        setSavedPaymentMethods(await store.loadPaymentMethods());
         setLoaded(true);
       } else {
         setLoadError(true);
@@ -436,6 +448,14 @@ export default function App() {
     const known = new Set(CATS.map((c) => c.name));
     return [...new Set(expenses.map((e) => e.category).filter((c) => c && !known.has(c)))].sort();
   }, [expenses]);
+
+  // formas de pagamento personalizadas: as já gravadas no banco (de qualquer mês) somadas às
+  // do mês carregado, para que um cartão criado uma vez continue aparecendo na lista depois
+  const extraPaymentMethods = useMemo(() => {
+    const known = new Set(PAYMENT_METHODS);
+    const all = [...savedPaymentMethods, ...expenses.map((e) => e.paymentMethod)];
+    return [...new Set(all.filter((p) => p && !known.has(p)))].sort();
+  }, [savedPaymentMethods, expenses]);
 
   const extraSerasaCategories = useMemo(() => {
     const known = new Set(SERASA_CATS.map((c) => c.name));
@@ -768,13 +788,21 @@ export default function App() {
         </div>
 
         {tab === "overview" && (
-          <Overview byCat={byCat} totalGastos={totalGastos} expenses={expenses} incomes={incomes} />
+          <Overview
+            byCat={byCat}
+            totalGastos={totalGastos}
+            expenses={expenses}
+            incomes={incomes}
+            onEditItem={(mode, item) => setModal({ mode, item })}
+            onDeleteItem={(mode, item) => setConfirmState({ kind: "delete", mode, payload: item })}
+          />
         )}
 
         {tab === "gastos" && (
           <Gastos
             grouped={gastosGrouped}
             total={totalGastos}
+            extraPaymentMethods={extraPaymentMethods}
             onAdd={() => setModal({ mode: "expense", item: null })}
             onEdit={(item) => setModal({ mode: "expense", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "expense", payload: item })}
@@ -861,6 +889,7 @@ export default function App() {
           mode={modal.mode}
           item={modal.item}
           extraCategories={modal.mode === "serasa" ? extraSerasaCategories : extraExpenseCategories}
+          extraPaymentMethods={extraPaymentMethods}
           onClose={() => setModal(null)}
           onSave={saveEntry}
           months={months}
@@ -1017,7 +1046,7 @@ function Card({ children, className = "" }) {
   );
 }
 
-function Overview({ byCat, totalGastos, expenses, incomes }) {
+function Overview({ byCat, totalGastos, expenses, incomes, onEditItem, onDeleteItem }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
@@ -1039,10 +1068,10 @@ function Overview({ byCat, totalGastos, expenses, incomes }) {
 
   const recentItems = useMemo(() => {
     const combined = [
-      ...expenses.map((e) => ({ id: e.id, kind: "expense", label: e.description, value: e.value, createdAt: e.createdAt })),
-      ...incomes.map((i) => ({ id: i.id, kind: "income", label: i.source, value: i.value, createdAt: i.createdAt })),
-    ].filter((it) => it.createdAt);
-    return combined.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 8);
+      ...expenses.map((e) => ({ kind: "expense", label: e.description, item: e })),
+      ...incomes.map((i) => ({ kind: "income", label: i.source, item: i })),
+    ].filter((it) => it.item.createdAt);
+    return combined.sort((a, b) => (a.item.createdAt < b.item.createdAt ? 1 : -1)).slice(0, 8);
   }, [expenses, incomes]);
 
   return (
@@ -1057,7 +1086,7 @@ function Overview({ byCat, totalGastos, expenses, incomes }) {
         ) : (
           <div className="divide-y divide-slate-100">
             {recentItems.map((it) => (
-              <div key={`${it.kind}-${it.id}`} className="flex items-center gap-3 py-2.5">
+              <div key={`${it.kind}-${it.item.id}`} className="flex items-center gap-3 py-2.5">
                 <span
                   className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
                   style={
@@ -1070,9 +1099,25 @@ function Overview({ byCat, totalGastos, expenses, incomes }) {
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-slate-700 truncate">{it.label}</p>
-                  <p className="text-xs text-slate-400">{formatRelativeTime(it.createdAt)}</p>
+                  <p className="text-xs text-slate-400">{formatRelativeTime(it.item.createdAt)}</p>
                 </div>
-                <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(it.value)}</span>
+                <span className="text-sm font-semibold text-slate-800 tabular-nums shrink-0">{fmt(it.item.value)}</span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => onEditItem(it.kind, it.item)}
+                    className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+                    title="Editar"
+                  >
+                    <Pencil size={15} />
+                  </button>
+                  <button
+                    onClick={() => onDeleteItem(it.kind, it.item)}
+                    className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+                    title="Excluir"
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -1188,13 +1233,17 @@ function groupByPaymentMethod(items, valueSort = "none") {
     .sort((a, b) => b.subtotal - a.subtotal);
 }
 
-function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, onMovePaymentMethod }) {
+function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, onMovePaymentMethod, extraPaymentMethods = [] }) {
   const [search, setSearch] = useState("");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
   const [dueDateFrom, setDueDateFrom] = useState("");
   const [dueDateTo, setDueDateTo] = useState("");
   const [valueSort, setValueSort] = useState("none");
   const [hidePaid, setHidePaid] = useState(false);
+  const paymentMethodOptions = useMemo(
+    () => [...PAYMENT_METHODS, ...extraPaymentMethods.filter((p) => !PAYMENT_METHODS.includes(p))],
+    [extraPaymentMethods]
+  );
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
   const otherFiltersActive =
@@ -1309,7 +1358,7 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
           className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
         >
           <option value="">Todas as formas de pagamento</option>
-          {PAYMENT_METHODS.map((p) => (
+          {paymentMethodOptions.map((p) => (
             <option key={p} value={p}>
               {p}
             </option>
@@ -2115,7 +2164,7 @@ function ShoppingItemModal({ item, onClose, onSave }) {
   );
 }
 
-function EntryModal({ mode, item, onClose, onSave, extraCategories = [], months = [], currentMonth, onMoveMonth }) {
+function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPaymentMethods = [], months = [], currentMonth, onMoveMonth }) {
   const isExpense = mode === "expense";
   const isSerasa = mode === "serasa";
   const hasCategory = isExpense || isSerasa;
@@ -2128,6 +2177,10 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], months 
         .map((name) => ({ name, ...FALLBACK })),
     ],
     [baseCategoryList, extraCategories]
+  );
+  const paymentMethodList = useMemo(
+    () => [...PAYMENT_METHODS, ...extraPaymentMethods.filter((p) => !PAYMENT_METHODS.includes(p))],
+    [extraPaymentMethods]
   );
   const [desc, setDesc] = useState(item ? (mode === "income" ? item.source : item.description) : "");
   const [category, setCategory] = useState(item?.category || categoryList[0].name);
@@ -2151,7 +2204,7 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], months 
   const [cltPjIncome, setCltPjIncome] = useState(item?.cltPjIncome || false);
   const [paymentMethod, setPaymentMethod] = useState(item?.paymentMethod || "");
   const [paymentMethodMode, setPaymentMethodMode] = useState(() =>
-    !item?.paymentMethod || PAYMENT_METHODS.includes(item.paymentMethod) ? "select" : "custom"
+    !item?.paymentMethod || paymentMethodList.includes(item.paymentMethod) ? "select" : "custom"
   );
   const [moveTarget, setMoveTarget] = useState("");
   const [moving, setMoving] = useState(false);
@@ -2293,7 +2346,7 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], months 
                 className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
               >
                 <option value="">Nenhuma</option>
-                {PAYMENT_METHODS.map((p) => (
+                {paymentMethodList.map((p) => (
                   <option key={p} value={p}>
                     {p}
                   </option>
@@ -2313,7 +2366,7 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], months 
                   type="button"
                   onClick={() => {
                     setPaymentMethodMode("select");
-                    setPaymentMethod(PAYMENT_METHODS.includes(paymentMethod) ? paymentMethod : "");
+                    setPaymentMethod(paymentMethodList.includes(paymentMethod) ? paymentMethod : "");
                   }}
                   title="Cancelar"
                   className="h-[42px] w-[42px] shrink-0 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"

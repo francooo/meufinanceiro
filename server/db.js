@@ -224,6 +224,15 @@ export async function replaceIncomes(month, incomes) {
   }
 }
 
+export async function getPaymentMethods() {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT payment_method FROM expenses
+     WHERE payment_method IS NOT NULL AND payment_method <> ''
+     ORDER BY payment_method`
+  );
+  return rows.map((r) => r.payment_method);
+}
+
 export async function moveExpenseToMonth(id, targetMonth) {
   const client = await pool.connect();
   try {
