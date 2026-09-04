@@ -5,7 +5,7 @@ import {
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
   DollarSign, LogOut, Search, ChevronUp, ChevronDown,
-  HandCoins, FileText, AlertTriangle, Shirt, History,
+  HandCoins, FileText, AlertTriangle, Shirt, History, Calculator,
 } from "lucide-react";
 
 /* ---------- dados de referência ---------- */
@@ -27,6 +27,18 @@ const catMeta = (n) => CATS.find((c) => c.name === n) || { name: n, ...FALLBACK 
 const CARTOES_CATEGORY = "Cartões / Financeiro";
 const PAYMENT_METHODS = ["Pix", "Cartão Nubank Fran", "Cartão Nubank Andrews", "Cartão Sams", "Cartão Renner"];
 const PAYMENT_METHOD_FALLBACK = "Sem forma de pagamento";
+
+/* ---------- calculadora de seleção ---------- */
+/* `kind` reusa o mesmo vocabulário de modal.mode. direction: +1 entra, -1 sai. */
+const SELECTION_SOURCES = {
+  expense: { direction: -1, one: "gasto", many: "gastos" },
+  income: { direction: 1, one: "ganho", many: "ganhos" },
+  wish: { direction: -1, one: "desejo", many: "desejos" },
+  mercado: { direction: -1, one: "item de mercado", many: "itens de mercado" },
+  farmacia: { direction: -1, one: "item de farmácia", many: "itens de farmácia" },
+  serasa: { direction: -1, one: "dívida", many: "dívidas" },
+};
+const selKey = (kind, id) => `${kind}:${id}`;
 
 /* ícones de marca (fonte: simple-icons.org, cores oficiais das marcas) */
 function PixIcon({ size = 16, className }) {
@@ -258,6 +270,28 @@ export default function App() {
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef(null);
 
+  // Seleção da calculadora: estado de UI puro, compartilhado entre abas.
+  // Nunca vai para os objetos de dados — os autosaves abaixo reenviariam a
+  // coleção inteira ao banco a cada clique no checkbox.
+  const [selecting, setSelecting] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+
+  const toggleSelected = (kind, id) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev); // clonar é obrigatório: devolver `prev` mutado não re-renderiza
+      const k = selKey(kind, id);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+
+  const clearSelection = () => setSelectedKeys((prev) => (prev.size === 0 ? prev : new Set()));
+
+  const exitSelection = () => {
+    setSelecting(false);
+    clearSelection();
+  };
+
   const handleLogin = () => {
     setAuthed(true);
   };
@@ -270,6 +304,7 @@ export default function App() {
     }
     setAuthed(false);
     setLoaded(false);
+    exitSelection();
   };
 
   useEffect(() => {
@@ -345,6 +380,16 @@ export default function App() {
     savedTimer.current = setTimeout(() => setSaved(false), 1400);
   }, [serasa, loaded, authed]);
 
+  // wishlist/mercado/farmácia/serasa são globais; só expenses e incomes trocam com o mês,
+  // então o reset da seleção é cirúrgico: apenas as chaves do mês saem.
+  useEffect(() => {
+    setSelectedKeys((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set([...prev].filter((k) => !k.startsWith("expense:") && !k.startsWith("income:")));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [month]);
+
   const nextMonthKey = useMemo(
     () => addMonths(months.length > 0 ? months[months.length - 1] : month, 1),
     [months, month]
@@ -380,6 +425,51 @@ export default function App() {
 
   const totalGastos = useMemo(() => expenses.reduce((s, e) => s + (Number(e.value) || 0), 0), [expenses]);
   const totalGanhos = useMemo(() => incomes.reduce((s, i) => s + (Number(i.value) || 0), 0), [incomes]);
+
+  // Soma sobre as coleções completas, nunca sobre as listas já filtradas de cada aba:
+  // filtro é lente (ver comentário em Gastos), então buscar não pode mexer no total.
+  // A contagem usa itens realmente encontrados, então chave órfã de item excluído
+  // some sozinha da conta — por isso não existe efeito de "limpeza" das coleções.
+  const selectionStats = useMemo(() => {
+    let count = 0;
+    let inflow = 0;
+    let outflow = 0;
+    const byKind = [];
+    if (selectedKeys.size > 0) {
+      const buckets = [
+        ["expense", expenses],
+        ["income", incomes],
+        ["wish", wishlist],
+        ["mercado", shoppingLists.mercado],
+        ["farmacia", shoppingLists.farmacia],
+        ["serasa", serasa],
+      ];
+      for (const [kind, list] of buckets) {
+        let n = 0;
+        for (const it of list || []) {
+          if (!selectedKeys.has(selKey(kind, it.id))) continue;
+          n += 1;
+          const v = Number(it.value) || 0;
+          if (SELECTION_SOURCES[kind].direction > 0) inflow += v;
+          else outflow += v;
+        }
+        if (n > 0) byKind.push({ kind, n });
+        count += n;
+      }
+    }
+    return { count, inflow, outflow, net: inflow - outflow, mixed: inflow > 0 && outflow > 0, byKind };
+  }, [selectedKeys, expenses, incomes, wishlist, shoppingLists, serasa]);
+
+  // Com uma origem só a quebra já é a contagem ("2 gastos"); com várias, o total
+  // vem na frente para sobreviver ao `truncate` da barra em telas estreitas.
+  const selectionLabel = useMemo(() => {
+    const parts = selectionStats.byKind.map(
+      ({ kind, n }) => `${n} ${n === 1 ? SELECTION_SOURCES[kind].one : SELECTION_SOURCES[kind].many}`
+    );
+    const breakdown = parts.join(" · ");
+    if (parts.length <= 1) return breakdown;
+    return `${selectionStats.count} itens · ${breakdown}`;
+  }, [selectionStats]);
 
   const vaRecebido = useMemo(
     () => incomes.filter((i) => i.voucherIncome).reduce((s, i) => s + (Number(i.value) || 0), 0),
@@ -809,6 +899,9 @@ export default function App() {
             onTogglePaid={(item) => togglePaid(item.id)}
             onMove={moveExpense}
             onMovePaymentMethod={moveExpensePaymentMethod}
+            selecting={selecting}
+            isSelected={(id) => selectedKeys.has(selKey("expense", id))}
+            onToggleSelect={(id) => toggleSelected("expense", id)}
           />
         )}
 
@@ -819,6 +912,9 @@ export default function App() {
             onAdd={() => setModal({ mode: "income", item: null })}
             onEdit={(item) => setModal({ mode: "income", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "income", payload: item })}
+            selecting={selecting}
+            isSelected={(id) => selectedKeys.has(selKey("income", id))}
+            onToggleSelect={(id) => toggleSelected("income", id)}
           />
         )}
 
@@ -831,6 +927,9 @@ export default function App() {
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "wish", payload: item })}
             onToggleDone={(item) => toggleWishDone(item.id)}
             onMove={moveWish}
+            selecting={selecting}
+            isSelected={(id) => selectedKeys.has(selKey("wish", id))}
+            onToggleSelect={(id) => toggleSelected("wish", id)}
           />
         )}
 
@@ -842,6 +941,9 @@ export default function App() {
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "mercado", payload: item })}
             onToggleDone={(item) => toggleShoppingItemDone("mercado", item.id)}
             onClearDone={() => clearDoneShoppingItems("mercado")}
+            selecting={selecting}
+            isSelected={(id) => selectedKeys.has(selKey("mercado", id))}
+            onToggleSelect={(id) => toggleSelected("mercado", id)}
           />
         )}
 
@@ -852,6 +954,9 @@ export default function App() {
             onEdit={(item) => setModal({ mode: "farmacia", item })}
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "farmacia", payload: item })}
             onToggleDone={(item) => toggleShoppingItemDone("farmacia", item.id)}
+            selecting={selecting}
+            isSelected={(id) => selectedKeys.has(selKey("farmacia", id))}
+            onToggleSelect={(id) => toggleSelected("farmacia", id)}
           />
         )}
 
@@ -864,9 +969,90 @@ export default function App() {
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "serasa", payload: item })}
             onTogglePaid={(item) => toggleSerasaPaid(item.id)}
             onMove={moveSerasaItem}
+            selecting={selecting}
+            isSelected={(id) => selectedKeys.has(selKey("serasa", id))}
+            onToggleSelect={(id) => toggleSelected("serasa", id)}
           />
         )}
       </div>
+
+      {/* calculadora de seleção — z-40 fica sob o Overlay dos modais (z-50) */}
+      {!selecting && tab !== "overview" && (
+        <div className="fixed bottom-0 inset-x-0 z-40 pointer-events-none">
+          <div className="max-w-2xl mx-auto px-4 pb-5 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setSelecting(true)}
+              title="Somar itens"
+              aria-label="Somar itens"
+              className="pointer-events-auto h-14 w-14 rounded-2xl text-white shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+              style={{ background: "#16382c" }}
+            >
+              <Calculator size={22} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selecting && (
+        <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)]">
+          <div className="max-w-2xl mx-auto px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] text-slate-500 truncate">
+                {selectionStats.count === 0 ? "Marque itens para somar" : selectionLabel}
+              </p>
+              <p
+                className={
+                  "text-lg font-bold tabular-nums leading-tight " +
+                  (selectionStats.mixed
+                    ? selectionStats.net >= 0
+                      ? "text-emerald-600"
+                      : "text-rose-600"
+                    : selectionStats.inflow > 0
+                    ? "text-emerald-600"
+                    : "text-slate-800")
+                }
+              >
+                <span className="text-[11px] font-medium text-slate-500 mr-1.5">
+                  {selectionStats.mixed ? "Saldo" : "Total"}
+                </span>
+                {selectionStats.mixed
+                  ? `${selectionStats.net >= 0 ? "+ " : "− "}${fmt(Math.abs(selectionStats.net))}`
+                  : fmt(selectionStats.inflow > 0 ? selectionStats.inflow : selectionStats.outflow)}
+              </p>
+              {selectionStats.mixed && (
+                <p className="text-[11px] text-slate-500 tabular-nums flex items-center gap-2.5 leading-tight">
+                  <span className="flex items-center gap-0.5">
+                    <ArrowUpRight size={11} className="text-emerald-600" />
+                    entra {fmt(selectionStats.inflow)}
+                  </span>
+                  <span className="flex items-center gap-0.5">
+                    <ArrowDownRight size={11} className="text-rose-500" />
+                    sai {fmt(selectionStats.outflow)}
+                  </span>
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={clearSelection}
+              disabled={selectionStats.count === 0}
+              className="shrink-0 text-xs font-medium text-slate-500 px-2.5 py-2 rounded-lg hover:text-slate-800 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              Limpar
+            </button>
+            <button
+              type="button"
+              onClick={exitSelection}
+              title="Fechar calculadora"
+              aria-label="Fechar calculadora"
+              className="shrink-0 h-9 w-9 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:bg-slate-200 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {modal && modal.mode === "wish" && (
         <WishModal
@@ -1233,7 +1419,7 @@ function groupByPaymentMethod(items, valueSort = "none") {
     .sort((a, b) => b.subtotal - a.subtotal);
 }
 
-function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, onMovePaymentMethod, extraPaymentMethods = [] }) {
+function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, onMovePaymentMethod, extraPaymentMethods = [], selecting, isSelected, onToggleSelect }) {
   const [search, setSearch] = useState("");
   const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
   const [dueDateFrom, setDueDateFrom] = useState("");
@@ -1448,6 +1634,8 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
                           paidWithVoucher={e.paidWithVoucher}
                           paidWithCltPj={e.paidWithCltPj}
                           position={idx + 1}
+                          selected={isSelected(e.id)}
+                          onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
                           onMoveUp={!filtersActive && idx > 0 ? () => onMovePaymentMethod(g.name, pm.name, e.id, "up") : undefined}
                           onMoveDown={!filtersActive && idx < pm.items.length - 1 ? () => onMovePaymentMethod(g.name, pm.name, e.id, "down") : undefined}
                           onEdit={() => onEdit(e)}
@@ -1475,6 +1663,8 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
                     paidWithVoucher={e.paidWithVoucher}
                     paidWithCltPj={e.paidWithCltPj}
                     position={idx + 1}
+                    selected={isSelected(e.id)}
+                    onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
                     onMoveUp={!filtersActive && idx > 0 ? () => onMove(e.category, e.id, "up") : undefined}
                     onMoveDown={!filtersActive && idx < g.items.length - 1 ? () => onMove(e.category, e.id, "down") : undefined}
                     onEdit={() => onEdit(e)}
@@ -1491,7 +1681,7 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
   );
 }
 
-function Serasa({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove }) {
+function Serasa({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, selecting, isSelected, onToggleSelect }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
@@ -1575,6 +1765,8 @@ function Serasa({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove 
                   installmentTotal={s.installmentTotal}
                   installmentNumber={s.installmentNumber}
                   position={idx + 1}
+                  selected={isSelected(s.id)}
+                  onToggleSelect={selecting ? () => onToggleSelect(s.id) : undefined}
                   onMoveUp={!isSearching && idx > 0 ? () => onMove(s.category, s.id, "up") : undefined}
                   onMoveDown={!isSearching && idx < g.items.length - 1 ? () => onMove(s.category, s.id, "down") : undefined}
                   onEdit={() => onEdit(s)}
@@ -1590,7 +1782,7 @@ function Serasa({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove 
   );
 }
 
-function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
+function Ganhos({ incomes, total, onAdd, onEdit, onDelete, selecting, isSelected, onToggleSelect }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const isSearching = query !== "";
@@ -1653,6 +1845,8 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
               recurrent={i.recurrent}
               paidWithVoucher={i.voucherIncome}
               paidWithCltPj={i.cltPjIncome}
+              selected={isSelected(i.id)}
+              onToggleSelect={selecting ? () => onToggleSelect(i.id) : undefined}
               onEdit={() => onEdit(i)}
               onDelete={() => onDelete(i)}
             />
@@ -1663,7 +1857,7 @@ function Ganhos({ incomes, total, onAdd, onEdit, onDelete }) {
   );
 }
 
-function Desejos({ pending, done, onAdd, onEdit, onDelete, onToggleDone, onMove }) {
+function Desejos({ pending, done, onAdd, onEdit, onDelete, onToggleDone, onMove, selecting, isSelected, onToggleSelect }) {
   const totalPending = pending.reduce((s, w) => s + (Number(w.value) || 0), 0);
   const ordered = [...pending, ...done];
 
@@ -1696,6 +1890,8 @@ function Desejos({ pending, done, onAdd, onEdit, onDelete, onToggleDone, onMove 
                 key={w.id}
                 item={w}
                 position={groupIdx + 1}
+                selected={isSelected(w.id)}
+                onToggleSelect={selecting ? () => onToggleSelect(w.id) : undefined}
                 onMoveUp={groupIdx > 0 ? () => onMove(w.id, "up") : undefined}
                 onMoveDown={groupIdx < group.length - 1 ? () => onMove(w.id, "down") : undefined}
                 onEdit={() => onEdit(w)}
@@ -1710,11 +1906,13 @@ function Desejos({ pending, done, onAdd, onEdit, onDelete, onToggleDone, onMove 
   );
 }
 
-function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onMoveDown }) {
+function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onMoveDown, selected, onToggleSelect }) {
   const isDone = !!item.doneAt;
   return (
     <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-      {position != null && (
+      {onToggleSelect ? (
+        <SelectCheckbox selected={selected} onToggle={onToggleSelect} label={item.title} />
+      ) : position != null ? (
         <div className="flex flex-col items-center shrink-0">
           {onMoveUp ? (
             <button
@@ -1742,7 +1940,7 @@ function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onM
             <span className="h-4 w-4" />
           )}
         </div>
-      )}
+      ) : null}
       <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 sm:flex-1">
           <p className={"text-sm line-clamp-2 break-words sm:line-clamp-none sm:truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
@@ -1787,11 +1985,37 @@ function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onM
   );
 }
 
-function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, dueDate, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown, paidWithVoucher, paidWithCltPj }) {
+function SelectCheckbox({ selected, onToggle, label }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      role="checkbox"
+      aria-checked={!!selected}
+      aria-label={`Selecionar ${label}`}
+      title={selected ? "Remover da seleção" : "Adicionar à seleção"}
+      className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+    >
+      <span
+        className={
+          "h-5 w-5 rounded-md border flex items-center justify-center transition-colors " +
+          (selected ? "border-transparent text-white" : "bg-white border-slate-300 text-transparent")
+        }
+        style={selected ? { background: "#16382c" } : undefined}
+      >
+        <Check size={13} strokeWidth={3} />
+      </span>
+    </button>
+  );
+}
+
+function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, dueDate, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown, paidWithVoucher, paidWithCltPj, selected, onToggleSelect }) {
   const isPaid = !!paidAt;
   return (
     <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-      {position != null && (
+      {onToggleSelect ? (
+        <SelectCheckbox selected={selected} onToggle={onToggleSelect} label={title} />
+      ) : position != null ? (
         <div className="flex flex-col items-center shrink-0">
           {onMoveUp ? (
             <button
@@ -1819,7 +2043,7 @@ function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, p
             <span className="h-4 w-4" />
           )}
         </div>
-      )}
+      ) : null}
       <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
         <div className="min-w-0 sm:flex-1">
           <p className={"text-sm flex flex-wrap items-start sm:items-center gap-x-1.5 gap-y-1 " + (muted ? "text-slate-400" : "text-slate-800")}>
@@ -1982,7 +2206,7 @@ function WishModal({ item, onClose, onSave }) {
   );
 }
 
-function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone, onClearDone }) {
+function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone, onClearDone, selecting, isSelected, onToggleSelect }) {
   const pending = items.filter((it) => !it.doneAt);
   const done = items.filter((it) => it.doneAt);
   const totalPending = pending.reduce((s, it) => s + (Number(it.value) || 0), 0);
@@ -2023,6 +2247,8 @@ function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone, onClear
             <ShoppingItemRow
               key={it.id}
               item={it}
+              selected={isSelected(it.id)}
+              onToggleSelect={selecting ? () => onToggleSelect(it.id) : undefined}
               onEdit={() => onEdit(it)}
               onDelete={() => onDelete(it)}
               onToggleDone={() => onToggleDone(it)}
@@ -2034,46 +2260,49 @@ function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone, onClear
   );
 }
 
-function ShoppingItemRow({ item, onEdit, onDelete, onToggleDone }) {
+function ShoppingItemRow({ item, onEdit, onDelete, onToggleDone, selected, onToggleSelect }) {
   const isDone = !!item.doneAt;
   return (
-    <div className="group flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-      <div className="min-w-0 sm:flex-1">
-        <p className={"text-sm line-clamp-2 break-words sm:line-clamp-none sm:truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
-        {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
-        {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Comprado em {formatDateBR(item.doneAt)}</p>}
-      </div>
-      <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
-        {item.value > 0 && (
-          <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
-            {fmt(item.value)}
-          </span>
-        )}
-        <div className="flex items-center gap-1 shrink-0">
-          <button
-            onClick={onToggleDone}
-            className={
-              "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
-              (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
-            }
-            title={isDone ? "Comprado — clique para desfazer" : "Confirmar compra"}
-          >
-            <Check size={15} />
-          </button>
-          <button
-            onClick={onEdit}
-            className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-            title="Editar"
-          >
-            <Pencil size={15} />
-          </button>
-          <button
-            onClick={onDelete}
-            className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-            title="Excluir"
-          >
-            <Trash2 size={15} />
-          </button>
+    <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
+      {onToggleSelect && <SelectCheckbox selected={selected} onToggle={onToggleSelect} label={item.title} />}
+      <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
+        <div className="min-w-0 sm:flex-1">
+          <p className={"text-sm line-clamp-2 break-words sm:line-clamp-none sm:truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
+          {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
+          {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Comprado em {formatDateBR(item.doneAt)}</p>}
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
+          {item.value > 0 && (
+            <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
+              {fmt(item.value)}
+            </span>
+          )}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={onToggleDone}
+              className={
+                "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
+                (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
+              }
+              title={isDone ? "Comprado — clique para desfazer" : "Confirmar compra"}
+            >
+              <Check size={15} />
+            </button>
+            <button
+              onClick={onEdit}
+              className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+              title="Editar"
+            >
+              <Pencil size={15} />
+            </button>
+            <button
+              onClick={onDelete}
+              className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+              title="Excluir"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
