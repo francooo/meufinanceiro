@@ -977,18 +977,19 @@ export default function App() {
       </div>
 
       {/* calculadora de seleção — z-40 fica sob o Overlay dos modais (z-50) */}
-      {!selecting && tab !== "overview" && (
+      {!selecting && (
         <div className="fixed bottom-0 inset-x-0 z-40 pointer-events-none">
-          <div className="max-w-2xl mx-auto px-4 pb-5 flex justify-end">
+          {/* pb maior no mobile: 20px deixavam o botao atras da barra do navegador */}
+          <div className="max-w-2xl mx-auto px-4 pb-8 sm:pb-5 flex justify-end">
             <button
               type="button"
               onClick={() => setSelecting(true)}
               title="Somar itens"
               aria-label="Somar itens"
-              className="pointer-events-auto h-14 w-14 rounded-2xl text-white shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+              className="pointer-events-auto touch-manipulation h-16 w-16 sm:h-14 sm:w-14 rounded-2xl text-white shadow-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
               style={{ background: "#16382c" }}
             >
-              <Calculator size={22} />
+              <Calculator className="h-7 w-7 sm:h-[22px] sm:w-[22px]" />
             </button>
           </div>
         </div>
