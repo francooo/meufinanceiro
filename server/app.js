@@ -3,7 +3,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems } from "./db.js";
-import { verifyGoogleCredential, issueSessionCookie, clearSessionCookie, getSessionEmail, requireAuth } from "./auth.js";
+import { verifyGoogleCredential, signSession, setSessionCookie, clearSessionCookie, getSessionEmail, requireAuth } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
@@ -13,14 +13,21 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.post("/api/auth/google", async (req, res) => {
-  const { credential } = req.body || {};
+  const { credential, client } = req.body || {};
   if (typeof credential !== "string" || !credential) {
     return res.status(400).json({ error: "Credencial ausente." });
   }
   try {
     const email = await verifyGoogleCredential(credential);
-    issueSessionCookie(res, email);
-    res.json({ ok: true, email });
+    const { token, expiresAt } = signSession(email);
+
+    // O cookie continua sendo emitido sempre — é o que o front web usa.
+    setSessionCookie(res, token);
+
+    // O token no CORPO só vai para cliente não-browser. Devolvê-lo a uma
+    // página anularia o httpOnly: um XSS poderia exfiltrar a sessão.
+    const isMobile = client === "mobile";
+    res.json({ ok: true, email, ...(isMobile ? { token, expiresAt } : null) });
   } catch (err) {
     res.status(401).json({ error: err.message || "Falha na autenticação." });
   }
