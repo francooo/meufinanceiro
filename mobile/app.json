@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Meu financeiro",
+    "slug": "meu-caixa",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "scheme": "meucaixa",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "io.fluidapi.meucaixa"
+    },
+    "android": {
+      "package": "io.fluidapi.meucaixa",
+      "adaptiveIcon": {
+        "backgroundColor": "#16382c",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "apiUrl": "https://meufinanceiro-v2.vercel.app"
+    }
+  }
+}

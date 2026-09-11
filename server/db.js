@@ -108,6 +108,18 @@ export async function migrate() {
       note TEXT DEFAULT ''
     );
   `);
+  // Pareamento de celular. Guarda o HMAC do código, nunca o código: com 40 bits
+  // de entropia um hash sem chave cai em segundos numa GPU, então só a chave
+  // torna um vazamento do banco inútil. A validade é comparada com now() do
+  // Postgres, nunca com Date.now() da lambda — zero desvio de relógio.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pairing_codes (
+      code_hash  TEXT PRIMARY KEY,
+      email      TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ NOT NULL
+    );
+  `);
 
   // bancos criados antes das colunas month/recurrent existirem
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
@@ -475,4 +487,43 @@ export async function replaceCards(items) {
   } finally {
     client.release();
   }
+}
+
+export async function createPairingCode(email, codeHash, ttlMinutes) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    /* Um código vivo por vez + varredura dos expirados. Efeito colateral
+       intencional: a tabela nunca passa de uma linha, então não existe backlog
+       para limpar e nenhum cron precisa existir. */
+    await client.query(
+      "DELETE FROM pairing_codes WHERE email = $1 OR expires_at <= now()",
+      [email]
+    );
+    const { rows } = await client.query(
+      `INSERT INTO pairing_codes (code_hash, email, expires_at)
+       VALUES ($1, $2, now() + ($3::int * interval '1 minute'))
+       RETURNING expires_at`,
+      [codeHash, email, ttlMinutes]
+    );
+    await client.query("COMMIT");
+    return { expiresAt: rows[0].expires_at.getTime() };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/* DELETE ... RETURNING é a troca atômica. Um SELECT seguido de UPDATE teria
+   corrida entre lambdas: duas instâncias leriam a mesma linha viva e emitiriam
+   dois tokens. Aqui só uma recebe linha de volta — uso único sai de graça, e a
+   limpeza da linha consumida vem junto. */
+export async function consumePairingCode(codeHash) {
+  const { rows } = await pool.query(
+    "DELETE FROM pairing_codes WHERE code_hash = $1 AND expires_at > now() RETURNING email",
+    [codeHash]
+  );
+  return rows[0]?.email || null;
 }

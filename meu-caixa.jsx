@@ -881,6 +881,13 @@ export default function App() {
               <Check size={13} /> Salvo
             </span>
             <button
+              onClick={() => setModal({ mode: "pair" })}
+              title="Parear celular"
+              className="h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+            >
+              <Smartphone size={16} />
+            </button>
+            <button
               onClick={handleLogout}
               title="Sair"
               className="h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
@@ -1177,6 +1184,8 @@ export default function App() {
           onSave={(data, id) => saveShoppingItem(modal.mode, data, id)}
         />
       )}
+
+      {modal && modal.mode === "pair" && <PairModal onClose={() => setModal(null)} />}
 
       {modal && modal.mode === "card" && (
         <CardModal
@@ -2658,6 +2667,85 @@ function ShoppingItemModal({ item, onClose, onSave }) {
           Salvar
         </button>
       </div>
+    </Overlay>
+  );
+}
+
+function PairModal({ onClose }) {
+  const [state, setState] = useState({ status: "loading" });
+  const [now, setNow] = useState(() => Date.now());
+
+  const generate = useCallback(async () => {
+    setState({ status: "loading" });
+    try {
+      const res = await fetch("/api/auth/pair", { method: "POST" });
+      if (!res.ok) throw new Error();
+      const { code, expiresAt } = await res.json();
+      setState({ status: "ready", code, expiresAt });
+    } catch {
+      setState({ status: "error" });
+    }
+  }, []);
+
+  useEffect(() => {
+    generate();
+  }, [generate]);
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      clearInterval(t);
+    };
+  }, [onClose]);
+
+  /* A contagem aqui e so aviso: quem decide a validade e o expires_at do banco,
+     comparado com now() do Postgres na hora do resgate. */
+  const left = state.status === "ready" ? Math.max(0, Math.ceil((state.expiresAt - now) / 1000)) : 0;
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-bold text-slate-800">Parear celular</h3>
+        <button
+          onClick={onClose}
+          className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+        >
+          <X size={18} />
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 mb-4">
+        Digite este código no aplicativo do celular. Ele vale uma única vez.
+      </p>
+
+      {state.status === "loading" && <p className="text-sm text-slate-400 py-8 text-center">Gerando…</p>}
+      {state.status === "error" && (
+        <p className="text-sm text-rose-500 py-8 text-center">Falha ao gerar o código.</p>
+      )}
+      {state.status === "ready" && (
+        <>
+          <div className="rounded-2xl bg-slate-50 border border-slate-200 py-6 text-center mb-3">
+            <span className="text-3xl font-bold tracking-[0.2em] text-slate-800 tabular-nums select-all">
+              {state.code}
+            </span>
+          </div>
+          <p className={"text-xs text-center mb-4 " + (left > 0 ? "text-slate-400" : "text-rose-500")}>
+            {left > 0
+              ? `Expira em ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`
+              : "Código expirado."}
+          </p>
+        </>
+      )}
+
+      <button
+        onClick={generate}
+        disabled={state.status === "loading"}
+        className="w-full py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
+      >
+        Gerar novo código
+      </button>
     </Overlay>
   );
 }

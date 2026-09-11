@@ -8,7 +8,9 @@
     "server": "node server/index.js",
     "dev:all": "concurrently -n web,api -c blue,green \"npm:dev\" \"npm:server\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "mobile": "npm --prefix mobile run start",
+    "mobile:install": "npm --prefix mobile install"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

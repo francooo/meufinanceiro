@@ -2,8 +2,8 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems, getCards, replaceCards } from "./db.js";
-import { verifyGoogleCredential, signSession, setSessionCookie, clearSessionCookie, getSessionEmail, requireAuth } from "./auth.js";
+import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems, getCards, replaceCards, createPairingCode, consumePairingCode } from "./db.js";
+import { verifyGoogleCredential, signSession, setSessionCookie, clearSessionCookie, getSessionEmail, requireAuth, isAllowedEmail, generatePairingCode, formatPairingCode, normalizePairingCode, isPairingCodeShaped, hashPairingCode, PAIR_TTL_MINUTES } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
@@ -42,6 +42,46 @@ app.get("/api/auth/me", (req, res) => {
 app.post("/api/auth/logout", (_req, res) => {
   clearSessionCookie(res);
   res.json({ ok: true });
+});
+
+// Pareia um celular sem OAuth: o Expo Go não consegue fazer login Google
+// (não dá para customizar o scheme do app), então a web — já autenticada —
+// emite um código de uso único que o celular troca por um token Bearer.
+app.post("/api/auth/pair", requireAuth, async (req, res) => {
+  try {
+    const code = generatePairingCode();
+    const { expiresAt } = await createPairingCode(
+      req.userEmail,
+      hashPairingCode(code),
+      PAIR_TTL_MINUTES
+    );
+    // O código em claro só existe aqui e na tela: o banco guarda o HMAC.
+    res.json({ code: formatPairingCode(code), expiresAt });
+  } catch (err) {
+    console.error("POST /api/auth/pair failed:", err);
+    res.status(500).json({ error: "Falha ao gerar o código de pareamento." });
+  }
+});
+
+app.post("/api/auth/pair/redeem", async (req, res) => {
+  const code = normalizePairingCode(req.body?.code);
+  // Uma resposta só para formato inválido, código errado, expirado e já usado:
+  // distinguir qualquer um deles entrega um oráculo a quem varre o endpoint.
+  const deny = () => res.status(400).json({ error: "Código inválido ou expirado." });
+  if (!isPairingCodeShaped(code)) return deny();
+  try {
+    const email = await consumePairingCode(hashPairingCode(code));
+    // Reconferido aqui e não só na emissão: código gerado antes de ALLOWED_EMAIL
+    // mudar não pode virar sessão de 30 dias para a conta antiga.
+    if (!email || !isAllowedEmail(email)) return deny();
+    // Sem setSessionCookie: esta resposta vai para um cliente nativo, nunca para
+    // uma página — dois mecanismos de sessão sobrepostos só criariam confusão.
+    const { token, expiresAt } = signSession(email);
+    res.json({ token, expiresAt, email });
+  } catch (err) {
+    console.error("POST /api/auth/pair/redeem failed:", err);
+    res.status(500).json({ error: "Falha ao parear o dispositivo." });
+  }
 });
 
 app.get("/api/months", requireAuth, async (_req, res) => {
