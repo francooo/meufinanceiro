@@ -23,9 +23,6 @@
         "policy": "appVersion"
       }
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
     "extra": {
       "apiUrl": "https://meufinanceiro-v2.vercel.app",
       "eas": {
@@ -35,6 +32,13 @@
     "owner": "francooo",
     "updates": {
       "url": "https://u.expo.dev/eef46586-916d-428d-8c7c-567ac2c41e98"
-    }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "platforms": [
+      "ios",
+      "android"
+    ]
   }
 }
