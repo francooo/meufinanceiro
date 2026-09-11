@@ -99,6 +99,15 @@ export async function migrate() {
       order_index INTEGER DEFAULT NULL
     );
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cards (
+      id TEXT PRIMARY KEY,
+      payment_method TEXT NOT NULL,
+      balance NUMERIC NOT NULL DEFAULT 0,
+      reference_date TEXT NOT NULL,
+      note TEXT DEFAULT ''
+    );
+  `);
 
   // bancos criados antes das colunas month/recurrent existirem
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS month TEXT NOT NULL DEFAULT '${month}'`);
@@ -423,6 +432,40 @@ export async function replaceSerasaItems(items) {
           it.installmentNumber ?? null,
           it.order ?? null,
         ]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getCards() {
+  const { rows } = await pool.query(
+    `SELECT id, payment_method AS "paymentMethod", balance, reference_date AS "referenceDate", note
+     FROM cards ORDER BY payment_method`
+  );
+  return rows.map((r) => ({ ...r, balance: Number(r.balance) }));
+}
+
+export async function replaceCards(items) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM cards");
+    // uma forma de pagamento = um saldo: duas linhas descontariam o mesmo gasto duas vezes
+    const seen = new Set();
+    for (const it of items) {
+      const method = (it.paymentMethod || "").trim();
+      if (!method || !it.referenceDate || seen.has(method)) continue;
+      seen.add(method);
+      await client.query(
+        `INSERT INTO cards (id, payment_method, balance, reference_date, note)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [it.id, method, Number(it.balance) || 0, it.referenceDate, it.note || ""]
       );
     }
     await client.query("COMMIT");

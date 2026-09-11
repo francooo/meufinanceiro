@@ -73,6 +73,12 @@ const PAYMENT_METHOD_META = {
 const PAYMENT_METHOD_FALLBACK_META = { icon: CreditCard, color: "#64748B" };
 const paymentMethodMeta = (name) => PAYMENT_METHOD_META[name] || PAYMENT_METHOD_FALLBACK_META;
 
+/* lista completa: as formas fixas primeiro, as criadas pelo usuário depois */
+const allPaymentMethods = (extra = []) => [
+  ...PAYMENT_METHODS,
+  ...extra.filter((p) => !PAYMENT_METHODS.includes(p)),
+];
+
 const SERASA_CATS = [
   { name: "Cartão de crédito", color: "#D6493B", icon: CreditCard },
   { name: "Empréstimo", color: "#7A5AF8", icon: HandCoins },
@@ -246,6 +252,27 @@ const store = {
       /* silencioso: segue em memória, sem persistir no banco */
     }
   },
+  async loadCards() {
+    try {
+      const res = await fetch("/api/cards");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.items) ? data.items : [];
+    } catch {
+      return [];
+    }
+  },
+  async saveCards(items) {
+    try {
+      await fetch("/api/cards", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+    } catch {
+      /* silencioso: segue em memória, sem persistir no banco */
+    }
+  },
 };
 
 /* ---------- app ---------- */
@@ -261,6 +288,7 @@ export default function App() {
   const [wishlist, setWishlist] = useState([]);
   const [shoppingLists, setShoppingLists] = useState({ mercado: [], farmacia: [] });
   const [serasa, setSerasa] = useState([]);
+  const [cards, setCards] = useState([]);
   const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -339,6 +367,7 @@ export default function App() {
         ]);
         setShoppingLists({ mercado, farmacia });
         setSerasa(await store.loadSerasa());
+        setCards(await store.loadCards());
         setSavedPaymentMethods(await store.loadPaymentMethods());
         setLoaded(true);
       } else {
@@ -379,6 +408,14 @@ export default function App() {
     clearTimeout(savedTimer.current);
     savedTimer.current = setTimeout(() => setSaved(false), 1400);
   }, [serasa, loaded, authed]);
+
+  useEffect(() => {
+    if (!authed || !loaded) return;
+    store.saveCards(cards);
+    setSaved(true);
+    clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1400);
+  }, [cards, loaded, authed]);
 
   // wishlist/mercado/farmácia/serasa são globais; só expenses e incomes trocam com o mês,
   // então o reset da seleção é cirúrgico: apenas as chaves do mês saem.
@@ -587,6 +624,48 @@ export default function App() {
   }, [serasa]);
   const totalSerasa = useMemo(() => serasa.reduce((s, i) => s + (Number(i.value) || 0), 0), [serasa]);
 
+  // Uso do cartão: gastos do mês carregado com aquela forma de pagamento — de QUALQUER
+  // categoria (paymentMethod é independente de category) e pagos ou não (paidAt é ignorado
+  // de propósito: o gasto já saiu do saldo do cartão mesmo depois de quitado).
+  // Só o mês em memória entra: `expenses` nunca contém outros meses.
+  const spentByPaymentMethod = useMemo(() => {
+    const m = new Map();
+    for (const e of expenses) {
+      if (!e.paymentMethod) continue;
+      m.set(e.paymentMethod, (m.get(e.paymentMethod) || 0) + (Number(e.value) || 0));
+    }
+    return m;
+  }, [expenses]);
+
+  const cardsWithUsage = useMemo(
+    () =>
+      cards
+        .filter((c) => c.paymentMethod && c.referenceDate) // blinda formatDateBR(null), que quebraria a aba
+        .map((c) => {
+          const spent = spentByPaymentMethod.get(c.paymentMethod) || 0;
+          const refMonth = c.referenceDate.slice(0, 7);
+          // saldo anotado depois do mês visto já embute esses gastos: não descontar de novo
+          const scope = month < refMonth ? "before" : month === refMonth ? "same" : "after";
+          const balance = Number(c.balance) || 0;
+          return { ...c, spent, scope, remaining: scope === "before" ? balance : balance - spent };
+        })
+        .sort((a, b) => a.paymentMethod.localeCompare(b.paymentMethod)),
+    [cards, spentByPaymentMethod, month]
+  );
+
+  const unregisteredMethodSpend = useMemo(() => {
+    const registered = new Set(cards.map((c) => c.paymentMethod));
+    return [...spentByPaymentMethod.entries()]
+      .filter(([name]) => !registered.has(name))
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [cards, spentByPaymentMethod]);
+
+  const canAddCard = useMemo(() => {
+    const taken = new Set(cards.map((c) => c.paymentMethod));
+    return allPaymentMethods(extraPaymentMethods).some((p) => !taken.has(p));
+  }, [cards, extraPaymentMethods]);
+
   /* CRUD */
   const saveEntry = (mode, data, id) => {
     if (mode === "expense") {
@@ -613,8 +692,15 @@ export default function App() {
     else if (mode === "income") setIncomes((p) => p.filter((i) => i.id !== id));
     else if (mode === "wish") setWishlist((p) => p.filter((w) => w.id !== id));
     else if (mode === "serasa") setSerasa((p) => p.filter((s) => s.id !== id));
+    else if (mode === "card") setCards((p) => p.filter((c) => c.id !== id));
     else setShoppingLists((prev) => ({ ...prev, [mode]: prev[mode].filter((it) => it.id !== id) }));
     setConfirmState(null);
+  };
+  const saveCard = (data, id) => {
+    setCards((prev) =>
+      id ? prev.map((c) => (c.id === id ? { ...c, ...data } : c)) : [...prev, { id: uid(), ...data }]
+    );
+    setModal(null);
   };
   const togglePaid = (id) => {
     setExpenses((prev) =>
@@ -862,6 +948,7 @@ export default function App() {
             ["mercado", "Mercado"],
             ["farmacia", "Farmácia"],
             ["serasa", "Serasa"],
+            ["cartoes", "Cartões"],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -974,6 +1061,26 @@ export default function App() {
             onToggleSelect={(id) => toggleSelected("serasa", id)}
           />
         )}
+
+        {/* sem props de seleção: saldo de cartão não é item de fluxo de caixa, então
+            nada entra em SELECTION_SOURCES — uma chave `card:` quebraria selectionStats */}
+        {tab === "cartoes" && (
+          <Cartoes
+            cards={cardsWithUsage}
+            unregistered={unregisteredMethodSpend}
+            month={month}
+            canAdd={canAddCard}
+            onAdd={(presetMethod) =>
+              setModal({
+                mode: "card",
+                item: null,
+                presetMethod: typeof presetMethod === "string" ? presetMethod : undefined,
+              })
+            }
+            onEdit={(item) => setModal({ mode: "card", item })}
+            onDelete={(item) => setConfirmState({ kind: "delete", mode: "card", payload: item })}
+          />
+        )}
       </div>
 
       {/* calculadora de seleção — z-40 fica sob o Overlay dos modais (z-50) */}
@@ -1068,6 +1175,17 @@ export default function App() {
           item={modal.item}
           onClose={() => setModal(null)}
           onSave={(data, id) => saveShoppingItem(modal.mode, data, id)}
+        />
+      )}
+
+      {modal && modal.mode === "card" && (
+        <CardModal
+          item={modal.item}
+          presetMethod={modal.presetMethod}
+          cards={cards}
+          extraPaymentMethods={extraPaymentMethods}
+          onClose={() => setModal(null)}
+          onSave={saveCard}
         />
       )}
 
@@ -1428,7 +1546,7 @@ function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
   const [valueSort, setValueSort] = useState("none");
   const [hidePaid, setHidePaid] = useState(false);
   const paymentMethodOptions = useMemo(
-    () => [...PAYMENT_METHODS, ...extraPaymentMethods.filter((p) => !PAYMENT_METHODS.includes(p))],
+    () => allPaymentMethods(extraPaymentMethods),
     [extraPaymentMethods]
   );
   const query = search.trim().toLowerCase();
@@ -1779,6 +1897,156 @@ function Serasa({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove,
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+function Cartoes({ cards, unregistered, month, canAdd, onAdd, onEdit, onDelete }) {
+  const totalRestante = cards.reduce((s, c) => s + c.remaining, 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-slate-500">Sobra somada em {monthLabel(month)}</p>
+          <p className={"text-xl font-bold tabular-nums " + (totalRestante >= 0 ? "text-slate-800" : "text-rose-600")}>
+            {fmt(totalRestante)}
+          </p>
+        </div>
+        <button
+          onClick={() => onAdd()}
+          disabled={!canAdd}
+          title={canAdd ? undefined : "Todas as formas de pagamento já têm saldo cadastrado."}
+          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "#16382c" }}
+        >
+          <Plus size={16} /> Novo cartão
+        </button>
+      </div>
+
+      {cards.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-2xl px-4 py-3 flex items-start gap-2">
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
+          <span>
+            Cada cartão mostra o saldo que você registrou menos os gastos lançados em{" "}
+            <strong>{monthLabel(month)}</strong>. Gastos de outros meses não entram nesta conta.
+          </span>
+        </div>
+      )}
+
+      {cards.length === 0 && (
+        <Empty text="Nenhum cartão cadastrado. Registre o saldo disponível de um cartão para acompanhar quanto sobra." />
+      )}
+
+      {cards.map((c) => {
+        // paymentMethodMeta não devolve `name` (diferente de catMeta): o nome vem do próprio cartão
+        const meta = paymentMethodMeta(c.paymentMethod);
+        const Icon = meta.icon;
+        const skipped = c.scope === "before";
+        return (
+          <Card key={c.id} className="overflow-hidden">
+            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
+              <span
+                className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: meta.color + "1F", color: meta.color }}
+              >
+                <Icon size={15} />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-slate-700 truncate">{c.paymentMethod}</p>
+                {c.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{c.note}</p> : null}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => onEdit(c)}
+                  title="Editar"
+                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  onClick={() => onDelete(c)}
+                  title="Excluir"
+                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="px-4 py-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-slate-500">Saldo registrado em {formatDateBR(c.referenceDate)}</span>
+                <span className="text-slate-700 tabular-nums shrink-0">{fmt(c.balance)}</span>
+              </div>
+              {!skipped && (
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="text-slate-500">Gastos de {monthLabel(month)}</span>
+                  <span className="text-rose-600 tabular-nums shrink-0">- {fmt(c.spent)}</span>
+                </div>
+              )}
+            </div>
+
+            {skipped ? (
+              <p className="px-4 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-500">
+                Saldo registrado em {formatDateBR(c.referenceDate)}, depois de {monthLabel(month)} — os gastos deste
+                mês já estavam descontados quando você anotou o saldo.
+              </p>
+            ) : (
+              <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="text-xs font-medium text-slate-600">Sobra em {monthLabel(month)}</span>
+                  <span
+                    className={"text-lg font-bold tabular-nums " + (c.remaining >= 0 ? "text-slate-800" : "text-rose-600")}
+                  >
+                    {fmt(c.remaining)}
+                  </span>
+                </div>
+                {c.scope === "same" && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Pode incluir gastos anteriores a {formatDateBR(c.referenceDate)}, já descontados do saldo.
+                  </p>
+                )}
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      {unregistered.length > 0 && (
+        <Card className="overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100">
+            <p className="text-sm font-semibold text-slate-700">Sem saldo cadastrado</p>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Estas formas de pagamento tiveram gastos em {monthLabel(month)} e não entram na conta acima.
+            </p>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {unregistered.map((u) => {
+              const meta = paymentMethodMeta(u.name);
+              const Icon = meta.icon;
+              return (
+                <div key={u.name} className="flex items-center gap-2.5 px-4 py-2.5">
+                  <span
+                    className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: meta.color + "1F", color: meta.color }}
+                  >
+                    <Icon size={15} />
+                  </span>
+                  <span className="text-sm text-slate-700 flex-1 min-w-0 truncate">{u.name}</span>
+                  <span className="text-sm text-slate-500 tabular-nums shrink-0">{fmt(u.value)}</span>
+                  <button
+                    onClick={() => onAdd(u.name)}
+                    className="shrink-0 text-xs font-medium text-slate-500 px-2.5 py-1.5 rounded-lg hover:text-slate-800 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  >
+                    Cadastrar saldo
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -2394,6 +2662,131 @@ function ShoppingItemModal({ item, onClose, onSave }) {
   );
 }
 
+function CardModal({ item, presetMethod, cards = [], extraPaymentMethods = [], onClose, onSave }) {
+  const methodOptions = useMemo(() => {
+    const taken = new Set(cards.filter((c) => c.id !== item?.id).map((c) => c.paymentMethod));
+    const list = allPaymentMethods(extraPaymentMethods).filter((p) => !taken.has(p));
+    // forma de pagamento que sumiu da lista (último gasto apagado) segue editável no cartão que já a usa
+    return item?.paymentMethod && !list.includes(item.paymentMethod) ? [item.paymentMethod, ...list] : list;
+  }, [cards, item, extraPaymentMethods]);
+
+  const [paymentMethod, setPaymentMethod] = useState(
+    () =>
+      item?.paymentMethod ||
+      (presetMethod && methodOptions.includes(presetMethod) ? presetMethod : methodOptions[0] || "")
+  );
+  const [balance, setBalance] = useState(item ? String(item.balance ?? "") : "");
+  const [referenceDate, setReferenceDate] = useState(item?.referenceDate || todayISO());
+  const [note, setNote] = useState(item?.note || "");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const canSave =
+    paymentMethod !== "" &&
+    referenceDate !== "" &&
+    balance !== "" &&
+    !isNaN(parseFloat(balance)) &&
+    parseFloat(balance) >= 0;
+
+  const submit = () => {
+    if (!canSave) return;
+    onSave({ paymentMethod, balance: parseFloat(balance), referenceDate, note: note.trim() }, item?.id);
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-bold text-slate-800">{item ? "Editar cartão" : "Novo cartão"}</h3>
+        <button
+          onClick={onClose}
+          className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
+        >
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="space-y-3.5">
+        <Field label="Forma de pagamento">
+          {methodOptions.length === 0 ? (
+            <span className="block text-sm text-slate-400">Todas as formas de pagamento já têm saldo cadastrado.</span>
+          ) : (
+            <select
+              value={paymentMethod}
+              onChange={(e) => setPaymentMethod(e.target.value)}
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+            >
+              {methodOptions.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          )}
+        </Field>
+
+        <Field label="Saldo disponível (R$)">
+          <input
+            ref={inputRef}
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={balance}
+            onChange={(e) => setBalance(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="0,00"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+
+        <Field label="Data do saldo">
+          <input
+            type="date"
+            value={referenceDate}
+            onChange={(e) => setReferenceDate(e.target.value)}
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+          <span className="block text-[11px] text-slate-400 mt-1">
+            Quando você consultou esse saldo no app do cartão.
+          </span>
+        </Field>
+
+        <Field label="Observação (opcional)">
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Ex.: fecha dia 10"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+      </div>
+
+      <div className="flex gap-2 mt-5">
+        <button
+          onClick={onClose}
+          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={submit}
+          disabled={!canSave}
+          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "#16382c" }}
+        >
+          Salvar
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
 function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPaymentMethods = [], months = [], currentMonth, onMoveMonth }) {
   const isExpense = mode === "expense";
   const isSerasa = mode === "serasa";
@@ -2409,7 +2802,7 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPa
     [baseCategoryList, extraCategories]
   );
   const paymentMethodList = useMemo(
-    () => [...PAYMENT_METHODS, ...extraPaymentMethods.filter((p) => !PAYMENT_METHODS.includes(p))],
+    () => allPaymentMethods(extraPaymentMethods),
     [extraPaymentMethods]
   );
   const [desc, setDesc] = useState(item ? (mode === "income" ? item.source : item.description) : "");
@@ -2807,7 +3200,7 @@ function ConfirmModal({ state, onCancel, onConfirm }) {
     <Overlay onClose={onCancel}>
       <h3 className='text-base font-bold text-slate-800 mb-1'>Excluir lançamento?</h3>
       <p className='text-sm text-slate-500 mb-5'>
-        “{state.payload.description || state.payload.source || state.payload.title}” será removido. Não dá pra desfazer.
+        “{state.payload.description || state.payload.source || state.payload.title || state.payload.paymentMethod}” será removido. Não dá pra desfazer.
       </p>
       <div className='flex gap-2'>
         <button
