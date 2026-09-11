@@ -1,12 +1,12 @@
 import "./global.css";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
-import { LogOut } from "lucide-react-native";
 import { fetchMe, setToken, setUnauthorizedHandler } from "./src/api/client";
 import { clearToken, loadToken, saveToken } from "./src/api/session";
 import PairScreen from "./src/screens/PairScreen";
+import HomeScreen from "./src/screens/HomeScreen";
 
 export default function App() {
   const [status, setStatus] = useState("checking"); // checking | pairing | ready
@@ -62,34 +62,8 @@ export default function App() {
 
         {status === "pairing" && <PairScreen onPaired={activate} />}
 
-        {status === "ready" && (
-          <View className="flex-1 px-4 pt-4 gap-4">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-1 min-w-0">
-                <Text className="text-lg font-bold text-slate-800">Meu financeiro</Text>
-                <Text className="text-xs text-slate-500" numberOfLines={1}>
-                  {email}
-                </Text>
-              </View>
-              {/* Logout aqui é só local: /api/auth/logout limpa cookie, que o
-                  celular nunca teve. Chamá-lo daria a falsa impressão de que o
-                  servidor revogou alguma coisa. */}
-              <Pressable
-                onPress={signOut}
-                className="h-9 w-9 rounded-xl bg-white border border-slate-200 items-center justify-center"
-              >
-                <LogOut size={16} color="#64748b" />
-              </Pressable>
-            </View>
+        {status === "ready" && <HomeScreen email={email} onSignOut={signOut} />}
 
-            <View className="flex-1 items-center justify-center gap-2">
-              <Text className="text-base font-semibold text-slate-700">Celular pareado</Text>
-              <Text className="text-sm text-slate-500 text-center px-6">
-                Fase 2 concluída. As telas de Visão geral e Gastos vêm a seguir.
-              </Text>
-            </View>
-          </View>
-        )}
         <StatusBar style="dark" />
       </SafeAreaView>
     </SafeAreaProvider>
