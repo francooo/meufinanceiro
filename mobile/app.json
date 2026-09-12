@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Meu financeiro",
-    "slug": "meu-financeiro-aplicativo",
+    "slug": "meu-caixa",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -26,19 +26,19 @@
     "extra": {
       "apiUrl": "https://meufinanceiro-v2.vercel.app",
       "eas": {
-        "projectId": "eef46586-916d-428d-8c7c-567ac2c41e98"
+        "projectId": "f843fd63-73ab-4514-9454-8a75c7fab5a4"
       }
     },
     "owner": "francooo",
-    "updates": {
-      "url": "https://u.expo.dev/eef46586-916d-428d-8c7c-567ac2c41e98"
-    },
-    "runtimeVersion": {
-      "policy": "appVersion"
-    },
     "platforms": [
       "ios",
       "android"
-    ]
+    ],
+    "updates": {
+      "url": "https://u.expo.dev/f843fd63-73ab-4514-9454-8a75c7fab5a4"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
   }
 }
