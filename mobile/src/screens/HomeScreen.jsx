@@ -14,6 +14,7 @@ import { fmt, monthKey, monthLabel } from "../core/format";
 import { totalOf } from "../core/group";
 import { store } from "../api/store";
 import OverviewTab from "./OverviewTab";
+import GastosTab from "./GastosTab";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 
@@ -41,6 +42,8 @@ export default function HomeScreen({ email, onSignOut }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+  /* Mesma abordagem da web: um useState de aba, sem router. */
+  const [tab, setTab] = useState("overview");
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -219,12 +222,28 @@ export default function HomeScreen({ email, onSignOut }) {
         </ScrollView>
       )}
 
-      <View className="mb-4">
-        <Text className="text-xs text-slate-500">Total de gastos</Text>
-        <Text className="text-xl font-bold text-slate-800" style={NUM}>
-          {fmt(totalOf(expenses))}
-        </Text>
-      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+        <View className="flex-row gap-1 bg-white rounded-full p-1 border border-slate-200">
+          {[
+            ["overview", "Visão geral"],
+            ["gastos", "Gastos"],
+          ].map(([id, label]) => {
+            const active = tab === id;
+            return (
+              <Pressable
+                key={id}
+                onPress={() => setTab(id)}
+                className="px-4 py-2 rounded-full"
+                style={active ? { backgroundColor: "#16382c" } : undefined}
+              >
+                <Text className={"text-sm font-medium " + (active ? "text-white" : "text-slate-500")}>
+                  {label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
 
       {error ? <Text className="text-sm text-rose-600 text-center py-8">{error}</Text> : null}
 
@@ -233,8 +252,17 @@ export default function HomeScreen({ email, onSignOut }) {
           <ActivityIndicator color="#16382c" />
           <Text className="text-sm text-slate-500">Carregando...</Text>
         </View>
-      ) : (
+      ) : tab === "overview" ? (
         <OverviewTab expenses={expenses} incomes={incomes} />
+      ) : (
+        <GastosTab
+          expenses={expenses}
+          total={totalOf(expenses)}
+          onAdd={() => {}}
+          onEdit={() => {}}
+          onDelete={() => {}}
+          onTogglePaid={() => {}}
+        />
       )}
     </ScrollView>
   );
