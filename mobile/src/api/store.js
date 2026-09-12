@@ -12,6 +12,12 @@ export const store = {
     const d = await request(`/api/data?month=${encodeURIComponent(month)}`);
     return d && Array.isArray(d.expenses) ? d : null;
   },
+  save: (month, data) =>
+    request("/api/data", { method: "PUT", body: { month, ...data } }),
+  loadPaymentMethods: async () => {
+    const d = await request("/api/payment-methods");
+    return Array.isArray(d.methods) ? d.methods : [];
+  },
   loadCards: async () => {
     const d = await request("/api/cards");
     return Array.isArray(d.items) ? d.items : [];

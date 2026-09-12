@@ -12,9 +12,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-native";
 import { fmt, monthKey, monthLabel } from "../core/format";
 import { totalOf } from "../core/group";
+import { CATS, PAYMENT_METHODS } from "../core/catalog";
 import { store } from "../api/store";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
+import EntryModal from "../modals/EntryModal";
+import ConfirmModal from "../modals/ConfirmModal";
+import { useDebouncedSave } from "../hooks/useDebouncedSave";
+import { uid } from "../core/uid";
+import { todayISO } from "../core/format";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 
@@ -44,6 +50,9 @@ export default function HomeScreen({ email, onSignOut }) {
   const [error, setError] = useState("");
   /* Mesma abordagem da web: um useState de aba, sem router. */
   const [tab, setTab] = useState("overview");
+  const [modal, setModal] = useState(null);        // {item} | null
+  const [confirming, setConfirming] = useState(null);
+  const [savedMethods, setSavedMethods] = useState([]);
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -68,6 +77,7 @@ export default function HomeScreen({ email, onSignOut }) {
         setMonth(initial);
         monthRef.current = initial;
         await loadMonth(initial);
+        setSavedMethods(await store.loadPaymentMethods().catch(() => []));
       } catch (err) {
         /* 401 ja foi tratado globalmente pelo client (volta ao pareamento) */
         if (err.message !== "unauthorized") setError("Nao foi possivel carregar seus dados.");
@@ -89,6 +99,9 @@ export default function HomeScreen({ email, onSignOut }) {
 
   const switchMonth = async (key) => {
     if (key === month) return;
+    /* Grava o pendente ANTES de trocar: o snapshot do debounce carrega o mes
+       antigo, mas esperar o timer perderia a ultima edicao. */
+    flushSave();
     setMonth(key);
     monthRef.current = key;
     setLoading(true);
@@ -109,6 +122,45 @@ export default function HomeScreen({ email, onSignOut }) {
       setRefreshing(false);
     }
   };
+
+  /* Memoizado porque entra no array de dependencias do debounce: um objeto novo
+     a cada render reagendaria a gravacao para sempre. */
+  const payload = useMemo(() => ({ month, expenses, incomes }), [month, expenses, incomes]);
+  const flushSave = useDebouncedSave(
+    payload,
+    (snap) => store.save(snap.month, { expenses: snap.expenses, incomes: snap.incomes }).catch(() => {}),
+    { enabled: !loading && !error }
+  );
+
+  const saveEntry = (data, id) => {
+    setExpenses((prev) =>
+      id
+        ? prev.map((e) => (e.id === id ? { ...e, ...data } : e))
+        : [...prev, { id: uid(), createdAt: new Date().toISOString(), ...data }]
+    );
+    setModal(null);
+  };
+
+  const removeEntry = (id) => {
+    setExpenses((prev) => prev.filter((e) => e.id !== id));
+    setConfirming(null);
+  };
+
+  const togglePaid = (id) =>
+    setExpenses((prev) =>
+      prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
+    );
+
+  const extraCategories = useMemo(() => {
+    const known = new Set(CATS.map((c) => c.name));
+    return [...new Set(expenses.map((e) => e.category).filter((c) => c && !known.has(c)))].sort();
+  }, [expenses]);
+
+  const extraPaymentMethods = useMemo(() => {
+    const known = new Set(PAYMENT_METHODS);
+    const all = [...savedMethods, ...expenses.map((e) => e.paymentMethod)];
+    return [...new Set(all.filter((p) => p && !known.has(p)))].sort();
+  }, [savedMethods, expenses]);
 
   const vaRecebido = useMemo(() => totalOf(incomes.filter((i) => i.voucherIncome)), [incomes]);
   const vaUsado = useMemo(() => totalOf(expenses.filter((e) => e.paidWithVoucher)), [expenses]);
@@ -133,7 +185,10 @@ export default function HomeScreen({ email, onSignOut }) {
           </Text>
         </View>
         <Pressable
-          onPress={onSignOut}
+          onPress={() => {
+            flushSave();
+            onSignOut();
+          }}
           className="h-9 w-9 rounded-xl bg-white border border-slate-200 items-center justify-center"
         >
           <LogOut size={16} color="#64748b" />
@@ -258,12 +313,33 @@ export default function HomeScreen({ email, onSignOut }) {
         <GastosTab
           expenses={expenses}
           total={totalOf(expenses)}
-          onAdd={() => {}}
-          onEdit={() => {}}
-          onDelete={() => {}}
-          onTogglePaid={() => {}}
+          onAdd={() => setModal({ item: null })}
+          onEdit={(e) => setModal({ item: e })}
+          onDelete={(e) => setConfirming(e)}
+          onTogglePaid={(e) => togglePaid(e.id)}
         />
       )}
+
+      {modal ? (
+        <EntryModal
+          visible
+          /* key remonta o modal por item: sem isso os useState iniciais
+             ficariam presos no primeiro gasto aberto. */
+          key={modal.item?.id || "novo"}
+          item={modal.item}
+          extraCategories={extraCategories}
+          extraPaymentMethods={extraPaymentMethods}
+          onClose={() => setModal(null)}
+          onSave={saveEntry}
+        />
+      ) : null}
+
+      <ConfirmModal
+        visible={!!confirming}
+        item={confirming}
+        onCancel={() => setConfirming(null)}
+        onConfirm={() => removeEntry(confirming.id)}
+      />
     </ScrollView>
   );
 }
