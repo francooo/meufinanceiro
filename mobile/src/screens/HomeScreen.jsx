@@ -29,6 +29,7 @@ import ChecklistModal from "../modals/ChecklistModal";
 import EntryModal from "../modals/EntryModal";
 import ConfirmModal from "../modals/ConfirmModal";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
+import { useSaveStatus } from "../hooks/useSaveStatus";
 import { uid } from "../core/uid";
 import { todayISO } from "../core/format";
 
@@ -77,6 +78,8 @@ export default function HomeScreen({ email, onSignOut }) {
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
      dependencia do efeito — e para descartar resposta de um mes ja trocado. */
+  const { status: saveStatus, track } = useSaveStatus();
+
   const monthRef = useRef(month);
   monthRef.current = month;
 
@@ -145,12 +148,26 @@ export default function HomeScreen({ email, onSignOut }) {
     }
   };
 
+  /* Recarrega tudo, nao so o mes: desejos, listas, serasa e cartoes sao
+     colecoes globais e ficariam paradas num puxao de atualizar. */
   const refresh = async () => {
     setRefreshing(true);
     try {
+      const [w, mer, far, ser, crd] = await Promise.all([
+        store.loadWishlist(),
+        store.loadShoppingList("mercado"),
+        store.loadShoppingList("farmacia"),
+        store.loadSerasa(),
+        store.loadCards(),
+      ]);
       await loadMonth(monthRef.current);
+      setWishlist(w);
+      setShopping({ mercado: mer, farmacia: far });
+      setSerasa(ser);
+      setCards(crd);
     } catch {
-      /* silencioso: o pull-to-refresh volta ao normal sozinho */
+      /* silencioso: o indicador de gravacao ja cobre o que importa, e o
+         puxao volta ao normal sozinho */
     } finally {
       setRefreshing(false);
     }
@@ -161,7 +178,7 @@ export default function HomeScreen({ email, onSignOut }) {
   const payload = useMemo(() => ({ month, expenses, incomes }), [month, expenses, incomes]);
   const flushSave = useDebouncedSave(
     payload,
-    (snap) => store.save(snap.month, { expenses: snap.expenses, incomes: snap.incomes }).catch(() => {}),
+    (snap) => track(store.save(snap.month, { expenses: snap.expenses, incomes: snap.incomes })),
     { enabled: !loading && !error }
   );
 
@@ -169,7 +186,7 @@ export default function HomeScreen({ email, onSignOut }) {
      autosave e separado do payload mensal. */
   const flushSerasa = useDebouncedSave(
     serasa,
-    (snap) => store.saveSerasa(snap).catch(() => {}),
+    (snap) => track(store.saveSerasa(snap)),
     { enabled: !loading && !error }
   );
 
@@ -185,13 +202,13 @@ export default function HomeScreen({ email, onSignOut }) {
   /* Cartoes tambem e colecao GLOBAL, com endpoint proprio. */
   const flushCards = useDebouncedSave(
     cards,
-    (snap) => store.saveCards(snap).catch(() => {}),
+    (snap) => track(store.saveCards(snap)),
     { enabled: !loading && !error }
   );
 
   const flushWishlist = useDebouncedSave(
     wishlist,
-    (snap) => store.saveWishlist(snap).catch(() => {}),
+    (snap) => track(store.saveWishlist(snap)),
     { enabled: !loading && !error }
   );
   /* Uma lista muda, as duas sao gravadas — igual a web, que tem um efeito so
@@ -199,8 +216,8 @@ export default function HomeScreen({ email, onSignOut }) {
   const flushShopping = useDebouncedSave(
     shopping,
     (snap) => {
-      store.saveShoppingList("mercado", snap.mercado).catch(() => {});
-      store.saveShoppingList("farmacia", snap.farmacia).catch(() => {});
+      track(store.saveShoppingList("mercado", snap.mercado));
+      track(store.saveShoppingList("farmacia", snap.farmacia));
     },
     { enabled: !loading && !error }
   );
@@ -332,9 +349,29 @@ export default function HomeScreen({ email, onSignOut }) {
       <View className="flex-row items-center justify-between mb-4">
         <View className="flex-1 min-w-0">
           <Text className="text-lg font-bold text-slate-800">Meu financeiro</Text>
-          <Text className="text-xs text-slate-500" numberOfLines={1}>
-            {email}
-          </Text>
+          {saveStatus === "idle" ? (
+            <Text className="text-xs text-slate-500" numberOfLines={1}>
+              {email}
+            </Text>
+          ) : (
+            <Text
+              className={
+                "text-xs " +
+                (saveStatus === "error"
+                  ? "text-rose-600 font-medium"
+                  : saveStatus === "saved"
+                  ? "text-emerald-600"
+                  : "text-slate-400")
+              }
+              numberOfLines={1}
+            >
+              {saveStatus === "saving"
+                ? "Salvando…"
+                : saveStatus === "saved"
+                ? "Salvo"
+                : "Falha ao salvar — sem conexão?"}
+            </Text>
+          )}
         </View>
         <Pressable
           onPress={() => {

@@ -1,4 +1,5 @@
 import { Pressable, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowDownRight, ArrowUpRight, Calculator, Check, X } from "lucide-react-native";
 import { fmt } from "../core/format";
 import { selectionLabel } from "../core/selection";
@@ -26,8 +27,11 @@ export function SelectCheckbox({ selected, onToggle }) {
 }
 
 export function SelectionFab({ onPress }) {
+  const insets = useSafeAreaInsets();
   return (
-    <View className="absolute right-5 bottom-6">
+    /* Em celular com navegacao por gestos, bottom fixo deixaria o botao sob a
+       barra do sistema. O inset e 0 onde nao existe. */
+    <View className="absolute right-5" style={{ bottom: 24 + insets.bottom }}>
       <Pressable
         onPress={onPress}
         className="h-16 w-16 rounded-2xl items-center justify-center"
@@ -41,6 +45,7 @@ export function SelectionFab({ onPress }) {
 
 export function SelectionBar({ stats, onClear, onClose }) {
   const { count, inflow, outflow, net, mixed } = stats;
+  const insets = useSafeAreaInsets();
 
   /* O caso comum — só saídas — fica idêntico a uma soma simples, sem sinal nem
      ruído. Só quando entra e sai se misturam o número vira saldo. */
@@ -54,8 +59,15 @@ export function SelectionBar({ stats, onClear, onClose }) {
 
   return (
     <View
-      className="absolute left-0 right-0 bottom-0 bg-white border-t border-slate-200 px-4 pt-3 pb-6"
-      style={{ elevation: 12, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 12, shadowOffset: { width: 0, height: -4 } }}
+      className="absolute left-0 right-0 bottom-0 bg-white border-t border-slate-200 px-4 pt-3"
+      style={{
+        paddingBottom: 12 + insets.bottom,
+        elevation: 12,
+        shadowColor: "#000",
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: -4 },
+      }}
     >
       <View className="flex-row items-center gap-3">
         <View className="flex-1 min-w-0">
