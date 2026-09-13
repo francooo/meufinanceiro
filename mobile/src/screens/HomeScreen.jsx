@@ -12,10 +12,12 @@ import { LinearGradient } from "expo-linear-gradient";
 import { ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-native";
 import { fmt, monthKey, monthLabel } from "../core/format";
 import { totalOf } from "../core/group";
-import { CATS, PAYMENT_METHODS } from "../core/catalog";
+import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
 import { store } from "../api/store";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
+import GanhosTab from "./GanhosTab";
+import SerasaTab from "./SerasaTab";
 import EntryModal from "../modals/EntryModal";
 import ConfirmModal from "../modals/ConfirmModal";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
@@ -50,9 +52,10 @@ export default function HomeScreen({ email, onSignOut }) {
   const [error, setError] = useState("");
   /* Mesma abordagem da web: um useState de aba, sem router. */
   const [tab, setTab] = useState("overview");
-  const [modal, setModal] = useState(null);        // {item} | null
+  const [modal, setModal] = useState(null);        // {mode, item} | null
   const [confirming, setConfirming] = useState(null);
   const [savedMethods, setSavedMethods] = useState([]);
+  const [serasa, setSerasa] = useState([]);
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -78,6 +81,7 @@ export default function HomeScreen({ email, onSignOut }) {
         monthRef.current = initial;
         await loadMonth(initial);
         setSavedMethods(await store.loadPaymentMethods().catch(() => []));
+        setSerasa(await store.loadSerasa().catch(() => []));
       } catch (err) {
         /* 401 ja foi tratado globalmente pelo client (volta ao pareamento) */
         if (err.message !== "unauthorized") setError("Nao foi possivel carregar seus dados.");
@@ -132,8 +136,20 @@ export default function HomeScreen({ email, onSignOut }) {
     { enabled: !loading && !error }
   );
 
+  /* Serasa e colecao GLOBAL (sem mes) e tem endpoint proprio, entao seu
+     autosave e separado do payload mensal. */
+  const flushSerasa = useDebouncedSave(
+    serasa,
+    (snap) => store.saveSerasa(snap).catch(() => {}),
+    { enabled: !loading && !error }
+  );
+
+  const setterFor = (mode) =>
+    ({ expense: setExpenses, income: setIncomes, serasa: setSerasa })[mode];
+
   const saveEntry = (data, id) => {
-    setExpenses((prev) =>
+    const set = setterFor(modal.mode);
+    set((prev) =>
       id
         ? prev.map((e) => (e.id === id ? { ...e, ...data } : e))
         : [...prev, { id: uid(), createdAt: new Date().toISOString(), ...data }]
@@ -141,13 +157,13 @@ export default function HomeScreen({ email, onSignOut }) {
     setModal(null);
   };
 
-  const removeEntry = (id) => {
-    setExpenses((prev) => prev.filter((e) => e.id !== id));
+  const removeEntry = () => {
+    setterFor(confirming.mode)((prev) => prev.filter((e) => e.id !== confirming.item.id));
     setConfirming(null);
   };
 
-  const togglePaid = (id) =>
-    setExpenses((prev) =>
+  const togglePaid = (mode, id) =>
+    setterFor(mode)((prev) =>
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
     );
 
@@ -155,6 +171,11 @@ export default function HomeScreen({ email, onSignOut }) {
     const known = new Set(CATS.map((c) => c.name));
     return [...new Set(expenses.map((e) => e.category).filter((c) => c && !known.has(c)))].sort();
   }, [expenses]);
+
+  const extraSerasaCategories = useMemo(() => {
+    const known = new Set(SERASA_CATS.map((c) => c.name));
+    return [...new Set(serasa.map((s) => s.category).filter((c) => c && !known.has(c)))].sort();
+  }, [serasa]);
 
   const extraPaymentMethods = useMemo(() => {
     const known = new Set(PAYMENT_METHODS);
@@ -187,6 +208,7 @@ export default function HomeScreen({ email, onSignOut }) {
         <Pressable
           onPress={() => {
             flushSave();
+            flushSerasa();
             onSignOut();
           }}
           className="h-9 w-9 rounded-xl bg-white border border-slate-200 items-center justify-center"
@@ -282,6 +304,8 @@ export default function HomeScreen({ email, onSignOut }) {
           {[
             ["overview", "Visão geral"],
             ["gastos", "Gastos"],
+            ["ganhos", "Ganhos"],
+            ["serasa", "Serasa"],
           ].map(([id, label]) => {
             const active = tab === id;
             return (
@@ -309,14 +333,29 @@ export default function HomeScreen({ email, onSignOut }) {
         </View>
       ) : tab === "overview" ? (
         <OverviewTab expenses={expenses} incomes={incomes} />
-      ) : (
+      ) : tab === "gastos" ? (
         <GastosTab
           expenses={expenses}
           total={totalOf(expenses)}
-          onAdd={() => setModal({ item: null })}
-          onEdit={(e) => setModal({ item: e })}
-          onDelete={(e) => setConfirming(e)}
-          onTogglePaid={(e) => togglePaid(e.id)}
+          onAdd={() => setModal({ mode: "expense", item: null })}
+          onEdit={(e) => setModal({ mode: "expense", item: e })}
+          onDelete={(e) => setConfirming({ mode: "expense", item: e })}
+          onTogglePaid={(e) => togglePaid("expense", e.id)}
+        />
+      ) : tab === "ganhos" ? (
+        <GanhosTab
+          incomes={incomes}
+          onAdd={() => setModal({ mode: "income", item: null })}
+          onEdit={(i) => setModal({ mode: "income", item: i })}
+          onDelete={(i) => setConfirming({ mode: "income", item: i })}
+        />
+      ) : (
+        <SerasaTab
+          serasa={serasa}
+          onAdd={() => setModal({ mode: "serasa", item: null })}
+          onEdit={(x) => setModal({ mode: "serasa", item: x })}
+          onDelete={(x) => setConfirming({ mode: "serasa", item: x })}
+          onTogglePaid={(x) => togglePaid("serasa", x.id)}
         />
       )}
 
@@ -325,9 +364,10 @@ export default function HomeScreen({ email, onSignOut }) {
           visible
           /* key remonta o modal por item: sem isso os useState iniciais
              ficariam presos no primeiro gasto aberto. */
-          key={modal.item?.id || "novo"}
+          key={(modal.mode || "") + (modal.item?.id || "novo")}
+          mode={modal.mode}
           item={modal.item}
-          extraCategories={extraCategories}
+          extraCategories={modal.mode === "serasa" ? extraSerasaCategories : extraCategories}
           extraPaymentMethods={extraPaymentMethods}
           onClose={() => setModal(null)}
           onSave={saveEntry}
@@ -336,9 +376,9 @@ export default function HomeScreen({ email, onSignOut }) {
 
       <ConfirmModal
         visible={!!confirming}
-        item={confirming}
+        item={confirming?.item}
         onCancel={() => setConfirming(null)}
-        onConfirm={() => removeEntry(confirming.id)}
+        onConfirm={removeEntry}
       />
     </ScrollView>
   );

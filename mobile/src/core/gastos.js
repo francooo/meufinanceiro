@@ -36,22 +36,26 @@ export function groupByPaymentMethod(items, valueSort = "none") {
     .sort((a, b) => b.subtotal - a.subtotal);
 }
 
-/* Espelha o memo gastosGrouped da web (meu-caixa.jsx:553). */
-export function buildGastosGrouped(expenses) {
+/* A aba Serasa agrupa igual a Gastos, so muda a tabela de metadados da
+   categoria — por isso a funcao recebe `meta` em vez de existir duas vezes. */
+export function buildGroupedBy(items, meta) {
   const m = new Map();
-  for (const e of expenses) {
+  for (const e of items) {
     if (!m.has(e.category)) m.set(e.category, []);
     m.get(e.category).push(e);
   }
   return [...m.entries()]
-    .map(([name, items]) => ({
+    .map(([name, group]) => ({
       name,
-      ...catMeta(name),
-      items: [...items].sort(byOrderThenValue),
-      subtotal: sum(items),
+      ...meta(name),
+      items: [...group].sort(byOrderThenValue),
+      subtotal: sum(group),
     }))
     .sort((a, b) => b.subtotal - a.subtotal);
 }
+
+/* Espelha o memo gastosGrouped da web (meu-caixa.jsx:553). */
+export const buildGastosGrouped = (expenses) => buildGroupedBy(expenses, catMeta);
 
 /* Os filtros da aba Gastos da web, na mesma ordem: busca, forma de pagamento,
    intervalo de vencimento, depois ocultar pagos e ordenacao por valor.

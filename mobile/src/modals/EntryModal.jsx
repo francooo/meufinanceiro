@@ -11,28 +11,76 @@ import {
 import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
 import { brToIso, isDateInputValid, isoToBr } from "../core/dateinput";
-import { CATS, allPaymentMethods } from "../core/catalog";
+import { CATS, SERASA_CATS, allPaymentMethods } from "../core/catalog";
 import { AmountField, DateField, Field, SelectField, SwitchRow, TextField } from "../ui/fields";
 
 const NENHUMA = "Nenhuma";
 
-export default function EntryModal({ visible, item, extraCategories = [], extraPaymentMethods = [], onClose, onSave }) {
-  const editing = !!item;
+/* Um modal para os tres modos, como na web: gasto, ganho e divida do Serasa
+   compartilham descricao, valor, observacao e uma data — o que muda e o nome
+   dos campos e quais extras aparecem. */
+const MODES = {
+  expense: {
+    novo: "Novo gasto",
+    editar: "Editar gasto",
+    titulo: "Descrição",
+    placeholder: "Ex.: Aluguel",
+    dataLabel: "Vencimento (opcional)",
+    cats: CATS,
+    temCategoria: true,
+    temFormaPagamento: true,
+    temCarteiras: true,
+  },
+  income: {
+    novo: "Novo ganho",
+    editar: "Editar ganho",
+    titulo: "Fonte",
+    placeholder: "Ex.: Salário",
+    dataLabel: "Recebimento (opcional)",
+    temCategoria: false,
+    temFormaPagamento: false,
+    temCarteiras: true,
+  },
+  serasa: {
+    novo: "Nova dívida",
+    editar: "Editar dívida",
+    titulo: "Descrição",
+    placeholder: "Ex.: Cartão antigo",
+    dataLabel: "Vencimento (opcional)",
+    cats: SERASA_CATS,
+    temCategoria: true,
+    temFormaPagamento: false,
+    temCarteiras: false,
+  },
+};
 
-  const [desc, setDesc] = useState(item?.description || "");
-  const [category, setCategory] = useState(item?.category || CATS[0].name);
+export default function EntryModal({
+  visible,
+  mode = "expense",
+  item,
+  extraCategories = [],
+  extraPaymentMethods = [],
+  onClose,
+  onSave,
+}) {
+  const cfg = MODES[mode];
+  const editing = !!item;
+  const isIncome = mode === "income";
+
+  const [desc, setDesc] = useState(isIncome ? item?.source || "" : item?.description || "");
+  const [category, setCategory] = useState(item?.category || cfg.cats?.[0]?.name || "");
   const [value, setValue] = useState(item ? String(item.value ?? "") : "");
   const [note, setNote] = useState(item?.note || "");
-  const [dueDate, setDueDate] = useState(isoToBr(item?.dueDate));
+  const [date, setDate] = useState(isoToBr(isIncome ? item?.receiptDate : item?.dueDate));
   const [paymentMethod, setPaymentMethod] = useState(item?.paymentMethod || "");
-  const [paidWithVoucher, setPaidWithVoucher] = useState(!!item?.paidWithVoucher);
-  const [paidWithCltPj, setPaidWithCltPj] = useState(!!item?.paidWithCltPj);
+  const [voucher, setVoucher] = useState(!!(isIncome ? item?.voucherIncome : item?.paidWithVoucher));
+  const [cltPj, setCltPj] = useState(!!(isIncome ? item?.cltPjIncome : item?.paidWithCltPj));
   const [recurrent, setRecurrent] = useState(!!item?.recurrent);
 
   const categories = useMemo(() => {
-    const base = CATS.map((c) => c.name);
+    const base = (cfg.cats || []).map((c) => c.name);
     return [...base, ...extraCategories.filter((c) => !base.includes(c))];
-  }, [extraCategories]);
+  }, [cfg.cats, extraCategories]);
 
   const methods = useMemo(
     () => [NENHUMA, ...allPaymentMethods(extraPaymentMethods)],
@@ -40,29 +88,32 @@ export default function EntryModal({ visible, item, extraCategories = [], extraP
   );
 
   const amount = parseAmount(value);
-  const dateOk = isDateInputValid(dueDate);
+  const dateOk = isDateInputValid(date);
   const canSave = desc.trim() !== "" && !Number.isNaN(amount) && amount >= 0 && dateOk;
 
   const submit = () => {
     if (!canSave) return;
-    onSave(
-      {
-        description: desc.trim(),
-        category,
-        /* parseAmount, nunca parseFloat: o teclado pt-BR entrega "1.234,56" e
-           parseFloat leria 1.234 — sem erro e sem NaN para canSave detectar. */
-        value: amount,
-        note: note.trim(),
-        dueDate: brToIso(dueDate),
-        recurrent,
-        paidWithVoucher,
-        paidWithCltPj,
-        paymentMethod: paymentMethod === NENHUMA ? null : paymentMethod || null,
-        installmentTotal: item?.installmentTotal ?? null,
-        installmentNumber: item?.installmentNumber ?? null,
-      },
-      item?.id
-    );
+    const iso = brToIso(date);
+    /* parseAmount, nunca parseFloat: o teclado pt-BR entrega "1.234,56" e
+       parseFloat leria 1.234 — sem erro e sem NaN para canSave detectar. */
+    const base = { value: amount, note: note.trim(), recurrent };
+
+    const data = isIncome
+      ? { ...base, source: desc.trim(), receiptDate: iso, voucherIncome: voucher, cltPjIncome: cltPj }
+      : {
+          ...base,
+          description: desc.trim(),
+          category,
+          dueDate: iso,
+          installmentTotal: item?.installmentTotal ?? null,
+          installmentNumber: item?.installmentNumber ?? null,
+          ...(cfg.temCarteiras ? { paidWithVoucher: voucher, paidWithCltPj: cltPj } : {}),
+          ...(cfg.temFormaPagamento
+            ? { paymentMethod: paymentMethod === NENHUMA ? null : paymentMethod || null }
+            : {}),
+        };
+
+    onSave(data, item?.id);
   };
 
   return (
@@ -75,7 +126,7 @@ export default function EntryModal({ visible, item, extraCategories = [], extraP
         <View className="bg-white rounded-t-2xl" style={{ maxHeight: "92%" }}>
           <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
             <Text className="text-base font-bold text-slate-800">
-              {editing ? "Editar gasto" : "Novo gasto"}
+              {editing ? cfg.editar : cfg.novo}
             </Text>
             <Pressable onPress={onClose} className="h-8 w-8 items-center justify-center">
               <X size={18} color="#94a3b8" />
@@ -89,38 +140,59 @@ export default function EntryModal({ visible, item, extraCategories = [], extraP
             contentContainerStyle={{ paddingBottom: 20, gap: 14 }}
             keyboardShouldPersistTaps="handled"
           >
-            <Field label="Descrição">
-              <TextField value={desc} onChangeText={setDesc} placeholder="Ex.: Aluguel" autoFocus={!editing} />
+            <Field label={cfg.titulo}>
+              <TextField
+                value={desc}
+                onChangeText={setDesc}
+                placeholder={cfg.placeholder}
+                autoFocus={!editing}
+              />
             </Field>
 
-            <Field label="Categoria">
-              <SelectField value={category} options={categories} onSelect={setCategory} title="Categoria" />
-            </Field>
+            {cfg.temCategoria ? (
+              <Field label="Categoria">
+                <SelectField value={category} options={categories} onSelect={setCategory} title="Categoria" />
+              </Field>
+            ) : null}
 
             <Field label="Valor (R$)">
               <AmountField value={value} onChangeText={setValue} />
             </Field>
 
-            <Field label="Vencimento (opcional)" hint={dateOk ? undefined : "Data inválida."}>
-              <DateField value={dueDate} onChangeText={setDueDate} invalid={!dateOk} />
+            <Field label={cfg.dataLabel} hint={dateOk ? undefined : "Data inválida."}>
+              <DateField value={date} onChangeText={setDate} invalid={!dateOk} />
             </Field>
 
-            <Field label="Forma de pagamento (opcional)">
-              <SelectField
-                value={paymentMethod || NENHUMA}
-                options={methods}
-                onSelect={setPaymentMethod}
-                title="Forma de pagamento"
-              />
-            </Field>
+            {cfg.temFormaPagamento ? (
+              <Field label="Forma de pagamento (opcional)">
+                <SelectField
+                  value={paymentMethod || NENHUMA}
+                  options={methods}
+                  onSelect={setPaymentMethod}
+                  title="Forma de pagamento"
+                />
+              </Field>
+            ) : null}
 
             <Field label="Observação (opcional)">
               <TextField value={note} onChangeText={setNote} placeholder="Ex.: parcela final" />
             </Field>
 
             <View className="gap-1 pt-1">
-              <SwitchRow label="Pago com vale alimentação" value={paidWithVoucher} onToggle={() => setPaidWithVoucher((v) => !v)} />
-              <SwitchRow label="Pago com CLT/PJ" value={paidWithCltPj} onToggle={() => setPaidWithCltPj((v) => !v)} />
+              {cfg.temCarteiras ? (
+                <>
+                  <SwitchRow
+                    label={isIncome ? "Vale alimentação" : "Pago com vale alimentação"}
+                    value={voucher}
+                    onToggle={() => setVoucher((v) => !v)}
+                  />
+                  <SwitchRow
+                    label={isIncome ? "CLT/PJ" : "Pago com CLT/PJ"}
+                    value={cltPj}
+                    onToggle={() => setCltPj((v) => !v)}
+                  />
+                </>
+              ) : null}
               <SwitchRow label="Recorrente" value={recurrent} onToggle={() => setRecurrent((v) => !v)} />
             </View>
           </ScrollView>

@@ -31,3 +31,14 @@ export const allPaymentMethods = (extra = []) => [
   ...PAYMENT_METHODS,
   ...extra.filter((p) => !PAYMENT_METHODS.includes(p)),
 ];
+
+export const SERASA_CATS = [
+  { name: "Cartão de crédito", color: "#D6493B", icon: "CreditCard" },
+  { name: "Empréstimo", color: "#7A5AF8", icon: "HandCoins" },
+  { name: "Financiamento", color: "#1098AD", icon: "FileText" },
+  { name: "Conta atrasada", color: "#E8873C", icon: "AlertTriangle" },
+  { name: "Outros", color: "#64748B", icon: "Tag" },
+];
+
+export const serasaCatMeta = (n) =>
+  SERASA_CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };

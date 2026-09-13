@@ -18,6 +18,11 @@ export const store = {
     const d = await request("/api/payment-methods");
     return Array.isArray(d.methods) ? d.methods : [];
   },
+  loadSerasa: async () => {
+    const d = await request("/api/serasa");
+    return Array.isArray(d.items) ? d.items : [];
+  },
+  saveSerasa: (items) => request("/api/serasa", { method: "PUT", body: { items } }),
   loadCards: async () => {
     const d = await request("/api/cards");
     return Array.isArray(d.items) ? d.items : [];
