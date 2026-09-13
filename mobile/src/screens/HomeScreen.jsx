@@ -21,6 +21,8 @@ import GanhosTab from "./GanhosTab";
 import SerasaTab from "./SerasaTab";
 import CartoesTab from "./CartoesTab";
 import CardModal from "../modals/CardModal";
+import ChecklistTab from "./ChecklistTab";
+import ChecklistModal from "../modals/ChecklistModal";
 import EntryModal from "../modals/EntryModal";
 import ConfirmModal from "../modals/ConfirmModal";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
@@ -61,6 +63,9 @@ export default function HomeScreen({ email, onSignOut }) {
   const [serasa, setSerasa] = useState([]);
   const [cards, setCards] = useState([]);
   const [cardModal, setCardModal] = useState(null);   // {item, presetMethod} | null
+  const [wishlist, setWishlist] = useState([]);
+  const [shopping, setShopping] = useState({ mercado: [], farmacia: [] });
+  const [listModal, setListModal] = useState(null);   // {kind, item} | null
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -88,6 +93,12 @@ export default function HomeScreen({ email, onSignOut }) {
         setSavedMethods(await store.loadPaymentMethods().catch(() => []));
         setSerasa(await store.loadSerasa().catch(() => []));
         setCards(await store.loadCards().catch(() => []));
+        setWishlist(await store.loadWishlist().catch(() => []));
+        const [mer, far] = await Promise.all([
+          store.loadShoppingList("mercado").catch(() => []),
+          store.loadShoppingList("farmacia").catch(() => []),
+        ]);
+        setShopping({ mercado: mer, farmacia: far });
       } catch (err) {
         /* 401 ja foi tratado globalmente pelo client (volta ao pareamento) */
         if (err.message !== "unauthorized") setError("Nao foi possivel carregar seus dados.");
@@ -151,7 +162,13 @@ export default function HomeScreen({ email, onSignOut }) {
   );
 
   const setterFor = (mode) =>
-    ({ expense: setExpenses, income: setIncomes, serasa: setSerasa, card: setCards })[mode];
+    ({
+      expense: setExpenses,
+      income: setIncomes,
+      serasa: setSerasa,
+      card: setCards,
+      wish: setWishlist,
+    })[mode] || ((fn) => setShopping((prev) => ({ ...prev, [mode]: fn(prev[mode]) })));
 
   /* Cartoes tambem e colecao GLOBAL, com endpoint proprio. */
   const flushCards = useDebouncedSave(
@@ -159,6 +176,44 @@ export default function HomeScreen({ email, onSignOut }) {
     (snap) => store.saveCards(snap).catch(() => {}),
     { enabled: !loading && !error }
   );
+
+  const flushWishlist = useDebouncedSave(
+    wishlist,
+    (snap) => store.saveWishlist(snap).catch(() => {}),
+    { enabled: !loading && !error }
+  );
+  /* Uma lista muda, as duas sao gravadas — igual a web, que tem um efeito so
+     para shoppingLists. Sao dois PUTs, mas o debounce ja os agrupa. */
+  const flushShopping = useDebouncedSave(
+    shopping,
+    (snap) => {
+      store.saveShoppingList("mercado", snap.mercado).catch(() => {});
+      store.saveShoppingList("farmacia", snap.farmacia).catch(() => {});
+    },
+    { enabled: !loading && !error }
+  );
+
+  /* kind: "wish" | "mercado" | "farmacia" */
+  const listSetter = (kind) =>
+    kind === "wish"
+      ? setWishlist
+      : (fn) => setShopping((prev) => ({ ...prev, [kind]: fn(prev[kind]) }));
+
+  const listItems = (kind) => (kind === "wish" ? wishlist : shopping[kind]);
+
+  const saveListItem = (data, id) => {
+    listSetter(listModal.kind)((prev) =>
+      id ? prev.map((i) => (i.id === id ? { ...i, ...data } : i)) : [...prev, { id: uid(), ...data, doneAt: null }]
+    );
+    setListModal(null);
+  };
+
+  const toggleListDone = (kind, id) =>
+    listSetter(kind)((prev) =>
+      prev.map((i) => (i.id === id ? { ...i, doneAt: i.doneAt ? null : todayISO() } : i))
+    );
+
+  const clearListDone = (kind) => listSetter(kind)((prev) => prev.filter((i) => !i.doneAt));
 
   const saveCard = (data, id) => {
     setCards((prev) =>
@@ -234,6 +289,8 @@ export default function HomeScreen({ email, onSignOut }) {
             flushSave();
             flushSerasa();
             flushCards();
+            flushWishlist();
+            flushShopping();
             onSignOut();
           }}
           className="h-9 w-9 rounded-xl bg-white border border-slate-200 items-center justify-center"
@@ -332,6 +389,9 @@ export default function HomeScreen({ email, onSignOut }) {
             ["ganhos", "Ganhos"],
             ["serasa", "Serasa"],
             ["cartoes", "Cartões"],
+            ["desejos", "Desejos"],
+            ["mercado", "Mercado"],
+            ["farmacia", "Farmácia"],
           ].map(([id, label]) => {
             const active = tab === id;
             return (
@@ -383,7 +443,7 @@ export default function HomeScreen({ email, onSignOut }) {
           onDelete={(x) => setConfirming({ mode: "serasa", item: x })}
           onTogglePaid={(x) => togglePaid("serasa", x.id)}
         />
-      ) : (
+      ) : tab === "cartoes" ? (
         <CartoesTab
           cards={cardsWithUsage}
           unregistered={unregistered}
@@ -394,7 +454,35 @@ export default function HomeScreen({ email, onSignOut }) {
           onEdit={(c) => setCardModal({ item: c })}
           onDelete={(c) => setConfirming({ mode: "card", item: c })}
         />
+      ) : (
+        <ChecklistTab
+          items={listItems(tab === "desejos" ? "wish" : tab)}
+          totalLabel={tab === "desejos" ? "Total desejado" : "Total estimado"}
+          addLabel={tab === "desejos" ? "Novo desejo" : "Novo item"}
+          emptyText={tab === "desejos" ? "Nenhum desejo cadastrado." : "Nenhum item cadastrado."}
+          doneLabel={tab === "desejos" ? "Realizado" : "Comprado"}
+          onAdd={() => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: null })}
+          onEdit={(i) => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: i })}
+          onDelete={(i) => setConfirming({ mode: tab === "desejos" ? "wish" : tab, item: i })}
+          onToggleDone={(i) => toggleListDone(tab === "desejos" ? "wish" : tab, i.id)}
+          /* Só Mercado tem "Limpar", como na web — Farmácia não recebe o handler. */
+          onClearDone={tab === "mercado" ? () => clearListDone("mercado") : undefined}
+        />
       )}
+
+      {listModal ? (
+        <ChecklistModal
+          visible
+          key={listModal.kind + (listModal.item?.id || "novo")}
+          item={listModal.item}
+          titleLabel={listModal.kind === "wish" ? "O que você deseja?" : "O que você precisa comprar?"}
+          placeholder={listModal.kind === "wish" ? "Ex.: Notebook novo" : "Ex.: Arroz 5kg"}
+          novo={listModal.kind === "wish" ? "Novo desejo" : "Novo item"}
+          editar={listModal.kind === "wish" ? "Editar desejo" : "Editar item"}
+          onClose={() => setListModal(null)}
+          onSave={saveListItem}
+        />
+      ) : null}
 
       {cardModal ? (
         <CardModal

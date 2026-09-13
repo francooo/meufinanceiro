@@ -18,6 +18,17 @@ export const store = {
     const d = await request("/api/payment-methods");
     return Array.isArray(d.methods) ? d.methods : [];
   },
+  loadWishlist: async () => {
+    const d = await request("/api/wishlist");
+    return Array.isArray(d.items) ? d.items : [];
+  },
+  saveWishlist: (items) => request("/api/wishlist", { method: "PUT", body: { items } }),
+  loadShoppingList: async (list) => {
+    const d = await request(`/api/shopping?list=${list}`);
+    return Array.isArray(d.items) ? d.items : [];
+  },
+  saveShoppingList: (list, items) =>
+    request(`/api/shopping?list=${list}`, { method: "PUT", body: { items } }),
   loadSerasa: async () => {
     const d = await request("/api/serasa");
     return Array.isArray(d.items) ? d.items : [];
