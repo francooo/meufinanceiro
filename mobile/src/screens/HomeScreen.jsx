@@ -13,11 +13,14 @@ import { ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-na
 import { fmt, monthKey, monthLabel } from "../core/format";
 import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
+import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend } from "../core/cards";
 import { store } from "../api/store";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
 import GanhosTab from "./GanhosTab";
 import SerasaTab from "./SerasaTab";
+import CartoesTab from "./CartoesTab";
+import CardModal from "../modals/CardModal";
 import EntryModal from "../modals/EntryModal";
 import ConfirmModal from "../modals/ConfirmModal";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
@@ -56,6 +59,8 @@ export default function HomeScreen({ email, onSignOut }) {
   const [confirming, setConfirming] = useState(null);
   const [savedMethods, setSavedMethods] = useState([]);
   const [serasa, setSerasa] = useState([]);
+  const [cards, setCards] = useState([]);
+  const [cardModal, setCardModal] = useState(null);   // {item, presetMethod} | null
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -82,6 +87,7 @@ export default function HomeScreen({ email, onSignOut }) {
         await loadMonth(initial);
         setSavedMethods(await store.loadPaymentMethods().catch(() => []));
         setSerasa(await store.loadSerasa().catch(() => []));
+        setCards(await store.loadCards().catch(() => []));
       } catch (err) {
         /* 401 ja foi tratado globalmente pelo client (volta ao pareamento) */
         if (err.message !== "unauthorized") setError("Nao foi possivel carregar seus dados.");
@@ -145,7 +151,21 @@ export default function HomeScreen({ email, onSignOut }) {
   );
 
   const setterFor = (mode) =>
-    ({ expense: setExpenses, income: setIncomes, serasa: setSerasa })[mode];
+    ({ expense: setExpenses, income: setIncomes, serasa: setSerasa, card: setCards })[mode];
+
+  /* Cartoes tambem e colecao GLOBAL, com endpoint proprio. */
+  const flushCards = useDebouncedSave(
+    cards,
+    (snap) => store.saveCards(snap).catch(() => {}),
+    { enabled: !loading && !error }
+  );
+
+  const saveCard = (data, id) => {
+    setCards((prev) =>
+      id ? prev.map((c) => (c.id === id ? { ...c, ...data } : c)) : [...prev, { id: uid(), ...data }]
+    );
+    setCardModal(null);
+  };
 
   const saveEntry = (data, id) => {
     const set = setterFor(modal.mode);
@@ -183,6 +203,10 @@ export default function HomeScreen({ email, onSignOut }) {
     return [...new Set(all.filter((p) => p && !known.has(p)))].sort();
   }, [savedMethods, expenses]);
 
+  const spent = useMemo(() => spentByPaymentMethod(expenses), [expenses]);
+  const cardsWithUsage = useMemo(() => buildCardsWithUsage(cards, spent, month), [cards, spent, month]);
+  const unregistered = useMemo(() => unregisteredMethodSpend(cards, spent), [cards, spent]);
+
   const vaRecebido = useMemo(() => totalOf(incomes.filter((i) => i.voucherIncome)), [incomes]);
   const vaUsado = useMemo(() => totalOf(expenses.filter((e) => e.paidWithVoucher)), [expenses]);
   const cltRecebido = useMemo(() => totalOf(incomes.filter((i) => i.cltPjIncome)), [incomes]);
@@ -209,6 +233,7 @@ export default function HomeScreen({ email, onSignOut }) {
           onPress={() => {
             flushSave();
             flushSerasa();
+            flushCards();
             onSignOut();
           }}
           className="h-9 w-9 rounded-xl bg-white border border-slate-200 items-center justify-center"
@@ -306,6 +331,7 @@ export default function HomeScreen({ email, onSignOut }) {
             ["gastos", "Gastos"],
             ["ganhos", "Ganhos"],
             ["serasa", "Serasa"],
+            ["cartoes", "Cartões"],
           ].map(([id, label]) => {
             const active = tab === id;
             return (
@@ -349,7 +375,7 @@ export default function HomeScreen({ email, onSignOut }) {
           onEdit={(i) => setModal({ mode: "income", item: i })}
           onDelete={(i) => setConfirming({ mode: "income", item: i })}
         />
-      ) : (
+      ) : tab === "serasa" ? (
         <SerasaTab
           serasa={serasa}
           onAdd={() => setModal({ mode: "serasa", item: null })}
@@ -357,7 +383,31 @@ export default function HomeScreen({ email, onSignOut }) {
           onDelete={(x) => setConfirming({ mode: "serasa", item: x })}
           onTogglePaid={(x) => togglePaid("serasa", x.id)}
         />
+      ) : (
+        <CartoesTab
+          cards={cardsWithUsage}
+          unregistered={unregistered}
+          month={month}
+          canAdd={canAddCard(cards, extraPaymentMethods)}
+          /* onAdd() sem argumento: a forma nua passaria o evento como presetMethod */
+          onAdd={(preset) => setCardModal({ item: null, presetMethod: typeof preset === "string" ? preset : undefined })}
+          onEdit={(c) => setCardModal({ item: c })}
+          onDelete={(c) => setConfirming({ mode: "card", item: c })}
+        />
       )}
+
+      {cardModal ? (
+        <CardModal
+          visible
+          key={cardModal.item?.id || cardModal.presetMethod || "novo"}
+          item={cardModal.item}
+          presetMethod={cardModal.presetMethod}
+          cards={cards}
+          extraPaymentMethods={extraPaymentMethods}
+          onClose={() => setCardModal(null)}
+          onSave={saveCard}
+        />
+      ) : null}
 
       {modal ? (
         <EntryModal

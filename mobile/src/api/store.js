@@ -27,4 +27,5 @@ export const store = {
     const d = await request("/api/cards");
     return Array.isArray(d.items) ? d.items : [];
   },
+  saveCards: (items) => request("/api/cards", { method: "PUT", body: { items } }),
 };
