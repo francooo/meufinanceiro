@@ -1,5 +1,5 @@
 import { Pressable, Text, View } from "react-native";
-import { Check, Pencil, Repeat, Trash2 } from "lucide-react-native";
+import { Check, ChevronDown, ChevronUp, Pencil, Repeat, Trash2 } from "lucide-react-native";
 import { fmt, formatDateBR } from "../core/format";
 
 const NUM = { fontVariant: ["tabular-nums"] };
@@ -16,12 +16,35 @@ function Chip({ children, bg, color }) {
 
 /* Equivalente do Row da web (meu-caixa.jsx:2281). Sem hover, focus-ring nem
    transition — nada disso existe em RN; o feedback de toque vem do Pressable. */
-export function Row({ item, onEdit, onDelete, onTogglePaid, accent }) {
+export function Row({ item, onEdit, onDelete, onTogglePaid, onMoveUp, onMoveDown, accent }) {
   const isPaid = !!item.paidAt;
   const muted = !item.value;
 
   return (
     <View className="flex-row items-start gap-3 px-4 py-3">
+      {/* Coluna de reordenar: so aparece quando os handlers vem. A web esconde
+          as setas enquanto ha filtro ativo — mover numa lista filtrada
+          reescreveria `order` com base numa ordem que nao e a real. */}
+      {onMoveUp || onMoveDown ? (
+        <View className="items-center shrink-0 pt-0.5">
+          <Pressable
+            onPress={onMoveUp}
+            disabled={!onMoveUp}
+            className="h-7 w-7 items-center justify-center rounded"
+            style={{ opacity: onMoveUp ? 1 : 0.25 }}
+          >
+            <ChevronUp size={14} color="#94a3b8" />
+          </Pressable>
+          <Pressable
+            onPress={onMoveDown}
+            disabled={!onMoveDown}
+            className="h-7 w-7 items-center justify-center rounded"
+            style={{ opacity: onMoveDown ? 1 : 0.25 }}
+          >
+            <ChevronDown size={14} color="#94a3b8" />
+          </Pressable>
+        </View>
+      ) : null}
       <View className="flex-1 min-w-0">
         <View className="flex-row flex-wrap items-center gap-x-1.5 gap-y-1">
           <Text

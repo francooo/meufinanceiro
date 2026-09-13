@@ -14,6 +14,7 @@ import { fmt, monthKey, monthLabel } from "../core/format";
 import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
 import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend } from "../core/cards";
+import { applyOrder, reorderWithin } from "../core/reorder";
 import { store } from "../api/store";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
@@ -237,6 +238,14 @@ export default function HomeScreen({ email, onSignOut }) {
     setConfirming(null);
   };
 
+  /* Recebe a lista JA agrupada e ordenada pela aba, nao a colecao inteira: e o
+     grupo visivel que define a nova ordem. */
+  const moveExpense = (groupItems, id, direction) => {
+    const orderById = reorderWithin(groupItems, id, direction);
+    if (!orderById) return;  // ja estava na ponta
+    setExpenses((prev) => applyOrder(prev, orderById));
+  };
+
   const togglePaid = (mode, id) =>
     setterFor(mode)((prev) =>
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
@@ -427,6 +436,8 @@ export default function HomeScreen({ email, onSignOut }) {
           onEdit={(e) => setModal({ mode: "expense", item: e })}
           onDelete={(e) => setConfirming({ mode: "expense", item: e })}
           onTogglePaid={(e) => togglePaid("expense", e.id)}
+          onMove={moveExpense}
+          extraPaymentMethods={extraPaymentMethods}
         />
       ) : tab === "ganhos" ? (
         <GanhosTab

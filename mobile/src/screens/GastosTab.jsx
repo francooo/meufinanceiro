@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { Check, Plus, Search, X } from "lucide-react-native";
 import { fmt } from "../core/format";
-import { CARTOES_CATEGORY } from "../core/catalog";
+import { CARTOES_CATEGORY, PAYMENT_METHOD_FALLBACK, allPaymentMethods } from "../core/catalog";
+import { DateField, SelectField } from "../ui/fields";
+import { isDateInputValid, brToIso } from "../core/dateinput";
 import { applyGastosFilters, buildGastosGrouped, groupByPaymentMethod } from "../core/gastos";
 import { iconFor } from "../ui/icons";
 import { Card } from "../ui/Card";
@@ -12,18 +14,41 @@ import { Row } from "../ui/Row";
 const NUM = { fontVariant: ["tabular-nums"] };
 const BRAND = "#16382c";
 
-export default function GastosTab({ expenses, total, onAdd, onEdit, onDelete, onTogglePaid }) {
+export default function GastosTab({ expenses, total, extraPaymentMethods = [], onAdd, onEdit, onDelete, onTogglePaid, onMove }) {
   const [search, setSearch] = useState("");
   const [hidePaid, setHidePaid] = useState(false);
   const [valueSort, setValueSort] = useState("none");
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [dueFrom, setDueFrom] = useState("");
+  const [dueTo, setDueTo] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+
+  const TODAS = "Todas as formas";
+  const methodOptions = useMemo(
+    () => [TODAS, ...allPaymentMethods(extraPaymentMethods), PAYMENT_METHOD_FALLBACK],
+    [extraPaymentMethods]
+  );
+  const datesOk = isDateInputValid(dueFrom) && isDateInputValid(dueTo);
 
   const grouped = useMemo(() => buildGastosGrouped(expenses), [expenses]);
   const { grouped: filtered, visibleTotal, otherFiltersActive } = useMemo(
-    () => applyGastosFilters(grouped, { search, hidePaid, valueSort }),
-    [grouped, search, hidePaid, valueSort]
+    () =>
+      applyGastosFilters(grouped, {
+        search,
+        hidePaid,
+        valueSort,
+        paymentMethod: paymentMethod === TODAS ? "" : paymentMethod,
+        /* Só filtra com data completa: parcial viraria null e filtraria tudo. */
+        dueFrom: brToIso(dueFrom) || "",
+        dueTo: brToIso(dueTo) || "",
+      }),
+    [grouped, search, hidePaid, valueSort, paymentMethod, dueFrom, dueTo]
   );
 
   const filtersActive = otherFiltersActive || hidePaid;
+  /* Setas escondidas com filtro ativo: reordenar uma lista filtrada gravaria
+     `order` com base numa ordem que nao e a real (a web faz igual). */
+  const canReorder = !filtersActive && !!onMove;
   const sortLabel = { none: "Ordem padrão", desc: "Maior valor", asc: "Menor valor" }[valueSort];
   const cycleSort = () =>
     setValueSort((v) => (v === "none" ? "desc" : v === "desc" ? "asc" : "none"));
@@ -95,12 +120,33 @@ export default function GastosTab({ expenses, total, onAdd, onEdit, onDelete, on
           </Text>
         </Pressable>
 
+        <Pressable
+          onPress={() => setShowFilters((v) => !v)}
+          className={
+            "px-3 py-2 rounded-xl border " +
+            (paymentMethod || dueFrom || dueTo ? "border-transparent" : "bg-white border-slate-200")
+          }
+          style={paymentMethod || dueFrom || dueTo ? { backgroundColor: BRAND } : undefined}
+        >
+          <Text
+            className={
+              "text-xs font-medium " +
+              (paymentMethod || dueFrom || dueTo ? "text-white" : "text-slate-700")
+            }
+          >
+            {showFilters ? "Menos filtros" : "Mais filtros"}
+          </Text>
+        </Pressable>
+
         {filtersActive ? (
           <Pressable
             onPress={() => {
               setSearch("");
               setHidePaid(false);
               setValueSort("none");
+              setPaymentMethod("");
+              setDueFrom("");
+              setDueTo("");
             }}
             className="flex-row items-center gap-1 px-2 py-1"
           >
@@ -109,6 +155,31 @@ export default function GastosTab({ expenses, total, onAdd, onEdit, onDelete, on
           </Pressable>
         ) : null}
       </View>
+
+      {showFilters ? (
+        <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+          <View>
+            <Text className="text-xs font-medium text-slate-500 mb-1">Forma de pagamento</Text>
+            <SelectField
+              value={paymentMethod || TODAS}
+              options={methodOptions}
+              onSelect={(v) => setPaymentMethod(v === TODAS ? "" : v)}
+              title="Forma de pagamento"
+            />
+          </View>
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <Text className="text-xs font-medium text-slate-500 mb-1">Vencimento de</Text>
+              <DateField value={dueFrom} onChangeText={setDueFrom} invalid={!isDateInputValid(dueFrom)} />
+            </View>
+            <View className="flex-1">
+              <Text className="text-xs font-medium text-slate-500 mb-1">até</Text>
+              <DateField value={dueTo} onChangeText={setDueTo} invalid={!isDateInputValid(dueTo)} />
+            </View>
+          </View>
+          {!datesOk ? <Text className="text-[11px] text-rose-600">Data inválida.</Text> : null}
+        </View>
+      ) : null}
 
       {filtered.length === 0 ? (
         <Empty text={filtersActive ? "Nenhum gasto encontrado." : "Nenhum gasto cadastrado."} />
@@ -152,6 +223,12 @@ export default function GastosTab({ expenses, total, onAdd, onEdit, onDelete, on
                           onEdit={() => onEdit(e)}
                           onDelete={() => onDelete(e)}
                           onTogglePaid={() => onTogglePaid(e)}
+                          onMoveUp={canReorder && idx > 0 ? () => onMove(pm.items, e.id, "up") : undefined}
+                          onMoveDown={
+                            canReorder && idx < pm.items.length - 1
+                              ? () => onMove(pm.items, e.id, "down")
+                              : undefined
+                          }
                         />
                       </View>
                     ))}
@@ -164,6 +241,12 @@ export default function GastosTab({ expenses, total, onAdd, onEdit, onDelete, on
                       onEdit={() => onEdit(e)}
                       onDelete={() => onDelete(e)}
                       onTogglePaid={() => onTogglePaid(e)}
+                      onMoveUp={canReorder && idx > 0 ? () => onMove(g.items, e.id, "up") : undefined}
+                      onMoveDown={
+                        canReorder && idx < g.items.length - 1
+                          ? () => onMove(g.items, e.id, "down")
+                          : undefined
+                      }
                     />
                   </View>
                 ))}
