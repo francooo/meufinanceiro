@@ -3,12 +3,12 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
 import { Wallet } from "lucide-react-native";
 import { redeemPairingCode } from "../api/client";
@@ -93,18 +93,19 @@ export default function PairScreen({ onPaired }) {
 
           {error ? <Text className="text-sm text-rose-600 text-center">{error}</Text> : null}
 
-          <Pressable
+          <Touchable
             onPress={submit}
             disabled={!ready}
-            className="rounded-2xl py-4 items-center justify-center"
-            style={{ backgroundColor: "#16382c", opacity: ready ? 1 : 0.4 }}
+            onDark
+            className="rounded-2xl py-4 items-center justify-center disabled:opacity-40"
+            style={{ backgroundColor: "#16382c" }}
           >
             {busy ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
               <Text className="text-white text-base font-semibold">Conectar</Text>
             )}
-          </Pressable>
+          </Touchable>
 
           <Text className="text-xs text-slate-400 text-center mt-1">
             O código vale uma única vez e expira em 5 minutos.

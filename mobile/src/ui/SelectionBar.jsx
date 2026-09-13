@@ -1,4 +1,5 @@
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { Touchable } from "./Touchable";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowDownRight, ArrowUpRight, Calculator, Check, X } from "lucide-react-native";
 import { fmt } from "../core/format";
@@ -11,7 +12,12 @@ const BRAND = "#16382c";
    renderiza nada, então as abas fora do modo seleção ficam intactas. */
 export function SelectCheckbox({ selected, onToggle }) {
   return (
-    <Pressable onPress={onToggle} className="h-9 w-9 shrink-0 items-center justify-center rounded-lg">
+    <Touchable
+      variant="icon"
+      onPress={onToggle}
+      hitSlop={{ left: 10, top: 6, bottom: 6 }}
+      className="h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+    >
       <View
         className="h-5 w-5 rounded-md border items-center justify-center"
         style={
@@ -22,7 +28,7 @@ export function SelectCheckbox({ selected, onToggle }) {
       >
         <Check size={13} color={selected ? "#ffffff" : "transparent"} strokeWidth={3} />
       </View>
-    </Pressable>
+    </Touchable>
   );
 }
 
@@ -32,18 +38,19 @@ export function SelectionFab({ onPress }) {
     /* Em celular com navegacao por gestos, bottom fixo deixaria o botao sob a
        barra do sistema. O inset e 0 onde nao existe. */
     <View className="absolute right-5" style={{ bottom: 24 + insets.bottom }}>
-      <Pressable
+      <Touchable
+        onDark
         onPress={onPress}
         className="h-16 w-16 rounded-2xl items-center justify-center"
         style={{ backgroundColor: BRAND, elevation: 6, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }}
       >
         <Calculator size={26} color="#ffffff" />
-      </Pressable>
+      </Touchable>
     </View>
   );
 }
 
-export function SelectionBar({ stats, onClear, onClose }) {
+export function SelectionBar({ stats, onClear, onClose, onLayout }) {
   const { count, inflow, outflow, net, mixed } = stats;
   const insets = useSafeAreaInsets();
 
@@ -59,6 +66,7 @@ export function SelectionBar({ stats, onClear, onClose }) {
 
   return (
     <View
+      onLayout={onLayout}
       className="absolute left-0 right-0 bottom-0 bg-white border-t border-slate-200 px-4 pt-3"
       style={{
         paddingBottom: 12 + insets.bottom,
@@ -100,20 +108,22 @@ export function SelectionBar({ stats, onClear, onClose }) {
           ) : null}
         </View>
 
-        <Pressable
+        <Touchable
           onPress={onClear}
           disabled={count === 0}
-          className="shrink-0 px-2.5 py-2 rounded-lg"
-          style={{ opacity: count === 0 ? 0.4 : 1 }}
+          hitSlop={{ top: 6, bottom: 6 }}
+          className="shrink-0 px-3 py-2.5 rounded-lg disabled:opacity-40"
         >
           <Text className="text-xs font-medium text-slate-500">Limpar</Text>
-        </Pressable>
-        <Pressable
+        </Touchable>
+        <Touchable
+          variant="icon"
           onPress={onClose}
+          hitSlop={{ top: 6, bottom: 6, right: 6 }}
           className="shrink-0 h-9 w-9 rounded-xl bg-slate-100 items-center justify-center"
         >
           <X size={16} color="#64748b" />
-        </Pressable>
+        </Touchable>
       </View>
     </View>
   );

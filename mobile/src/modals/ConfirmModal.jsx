@@ -1,4 +1,5 @@
 import { Modal, Pressable, Text, View } from "react-native";
+import { Touchable } from "../ui/Touchable";
 
 export default function ConfirmModal({ visible, item, onCancel, onConfirm }) {
   /* Mesma ordem de fallback do ConfirmModal da web, que le
@@ -7,6 +8,8 @@ export default function ConfirmModal({ visible, item, onCancel, onConfirm }) {
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
+      {/* Fundo e folha ficam Pressable cru: ripple de tela inteira num backdrop
+          pareceria defeito, e a folha so engole o toque. */}
       <Pressable
         className="flex-1 items-center justify-center px-6"
         style={{ backgroundColor: "rgba(15,23,42,0.4)" }}
@@ -18,15 +21,15 @@ export default function ConfirmModal({ visible, item, onCancel, onConfirm }) {
             “{nome}” será removido. Não dá pra desfazer.
           </Text>
           <View className="flex-row gap-2">
-            <Pressable
+            <Touchable
               onPress={onCancel}
               className="flex-1 py-3 rounded-xl border border-slate-200 items-center"
             >
               <Text className="text-sm font-medium text-slate-600">Cancelar</Text>
-            </Pressable>
-            <Pressable onPress={onConfirm} className="flex-1 py-3 rounded-xl items-center bg-rose-600">
+            </Touchable>
+            <Touchable onDark onPress={onConfirm} className="flex-1 py-3 rounded-xl items-center bg-rose-600">
               <Text className="text-sm font-semibold text-white">Excluir</Text>
-            </Pressable>
+            </Touchable>
           </View>
         </Pressable>
       </Pressable>

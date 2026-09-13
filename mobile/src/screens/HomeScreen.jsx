@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   AppState,
-  Pressable,
   RefreshControl,
   ScrollView,
   Text,
   View,
 } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
 import { ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-native";
 import { fmt, monthKey, monthLabel } from "../core/format";
@@ -17,6 +17,7 @@ import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMeth
 import { applyOrder, reorderWithin } from "../core/reorder";
 import { pruneMonthKeys, selectionStats, toggleKey } from "../core/selection";
 import { SelectionBar, SelectionFab } from "../ui/SelectionBar";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { store } from "../api/store";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
@@ -74,6 +75,11 @@ export default function HomeScreen({ email, onSignOut }) {
      toque de caixinha faria um PUT da colecao inteira. */
   const [selecting, setSelecting] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
+  /* A barra de selecao cresce uma linha quando entra e sai se misturam, entao
+     ela e MEDIDA em vez de estimada; o FAB tem tamanho fixo. Sem isto, os
+     botoes da ultima linha ficam por baixo e nao dao para tocar. */
+  const [barHeight, setBarHeight] = useState(0);
+  const insets = useSafeAreaInsets();
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -320,6 +326,9 @@ export default function HomeScreen({ email, onSignOut }) {
     [selectedKeys, expenses, incomes, wishlist, shopping, serasa]
   );
 
+  const fabVisible = !selecting && tab !== "overview" && tab !== "cartoes";
+  const bottomGap = selecting ? barHeight : fabVisible ? 64 + 24 + insets.bottom : 0;
+
   const selProps = (kind) => ({
     selecting,
     isSelected: (id) => selectedKeys.has(`${kind}:${id}`),
@@ -341,7 +350,13 @@ export default function HomeScreen({ email, onSignOut }) {
     <View className="flex-1">
       <ScrollView
         className="flex-1"
-      contentContainerStyle={{ padding: 16 }}
+      /* Sem isto, com o teclado da busca aberto o PRIMEIRO toque em qualquer
+         botao e consumido dispensando o teclado — o classico "tem que tocar
+         duas vezes". Vale para os tres ScrollViews: o RN resolve a dispensa no
+         scroll responder mais proximo. */
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+      contentContainerStyle={{ padding: 16, paddingBottom: 16 + bottomGap }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#16382c" />
       }
@@ -373,7 +388,8 @@ export default function HomeScreen({ email, onSignOut }) {
             </Text>
           )}
         </View>
-        <Pressable
+        <Touchable
+          hitSlop={{ top: 8, bottom: 8, right: 8 }}
           onPress={() => {
             flushSave();
             flushSerasa();
@@ -385,7 +401,7 @@ export default function HomeScreen({ email, onSignOut }) {
           className="h-9 w-9 rounded-xl bg-white border border-slate-200 items-center justify-center"
         >
           <LogOut size={16} color="#64748b" />
-        </Pressable>
+        </Touchable>
       </View>
 
       <LinearGradient
@@ -444,14 +460,21 @@ export default function HomeScreen({ email, onSignOut }) {
       </LinearGradient>
 
       {months.length > 1 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          className="mb-4"
+        >
           <View className="flex-row gap-2">
             {months.map((m) => {
               const active = m === month;
               return (
-                <Pressable
+                <Touchable
                   key={m}
+                  onDark={active}
                   onPress={() => switchMonth(m)}
+                  hitSlop={{ top: 6, bottom: 6 }}
                   className={
                     "px-4 py-2 rounded-full border " +
                     (active ? "border-transparent" : "bg-white border-slate-200")
@@ -463,14 +486,19 @@ export default function HomeScreen({ email, onSignOut }) {
                   >
                     {monthLabel(m)}
                   </Text>
-                </Pressable>
+                </Touchable>
               );
             })}
           </View>
         </ScrollView>
       )}
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-4">
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        className="mb-4"
+      >
         <View className="flex-row gap-1 bg-white rounded-full p-1 border border-slate-200">
           {[
             ["overview", "Visão geral"],
@@ -484,16 +512,18 @@ export default function HomeScreen({ email, onSignOut }) {
           ].map(([id, label]) => {
             const active = tab === id;
             return (
-              <Pressable
+              <Touchable
                 key={id}
+                onDark={active}
                 onPress={() => setTab(id)}
+                hitSlop={{ top: 6, bottom: 6 }}
                 className="px-4 py-2 rounded-full"
                 style={active ? { backgroundColor: "#16382c" } : undefined}
               >
                 <Text className={"text-sm font-medium " + (active ? "text-white" : "text-slate-500")}>
                   {label}
                 </Text>
-              </Pressable>
+              </Touchable>
             );
           })}
         </View>
@@ -620,12 +650,11 @@ export default function HomeScreen({ email, onSignOut }) {
 
       {/* Cartoes fica de fora: saldo de cartao nao e item de fluxo de caixa, e
           SELECTION_SOURCES nao o registra — uma chave "card:" quebraria a soma. */}
-      {!selecting && tab !== "overview" && tab !== "cartoes" ? (
-        <SelectionFab onPress={() => setSelecting(true)} />
-      ) : null}
+      {fabVisible ? <SelectionFab onPress={() => setSelecting(true)} /> : null}
 
       {selecting ? (
         <SelectionBar
+          onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
           stats={stats}
           onClear={() => setSelectedKeys(new Set())}
           onClose={() => {

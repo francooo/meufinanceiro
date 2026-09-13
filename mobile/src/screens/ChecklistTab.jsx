@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { Check, Pencil, Plus, Trash2 } from "lucide-react-native";
 import { fmt, formatDateBR } from "../core/format";
 import { splitChecklist } from "../core/checklist";
@@ -43,19 +44,19 @@ function ChecklistRow({ item, doneLabel, onEdit, onDelete, onToggleDone, selecte
       </View>
 
       <View className="flex-row items-center gap-1 shrink-0">
-        <Pressable
+        <Touchable
           onPress={onToggleDone}
           className="h-9 w-9 rounded-lg items-center justify-center"
           style={{ backgroundColor: done ? "#d1fae5" : "transparent" }}
         >
           <Check size={16} color={done ? "#059669" : "#94a3b8"} />
-        </Pressable>
-        <Pressable onPress={onEdit} className="h-9 w-9 rounded-lg items-center justify-center">
+        </Touchable>
+        <Touchable variant="icon" onPress={onEdit} hitSlop={{ top: 8, bottom: 8 }} className="h-9 w-9 rounded-lg items-center justify-center">
           <Pencil size={16} color="#94a3b8" />
-        </Pressable>
-        <Pressable onPress={onDelete} className="h-9 w-9 rounded-lg items-center justify-center">
+        </Touchable>
+        <Touchable variant="icon" onPress={onDelete} hitSlop={{ top: 8, bottom: 8, right: 8 }} className="h-9 w-9 rounded-lg items-center justify-center">
           <Trash2 size={16} color="#94a3b8" />
-        </Pressable>
+        </Touchable>
       </View>
     </View>
   );
@@ -91,24 +92,24 @@ export default function ChecklistTab({
           </Text>
         </View>
         {onClearDone ? (
-          <Pressable
+          <Touchable
             onPress={onClearDone}
             disabled={done.length === 0}
-            className="flex-row items-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 shrink-0"
-            style={{ opacity: done.length === 0 ? 0.4 : 1 }}
+            className="flex-row items-center gap-1.5 px-3 py-2.5 rounded-xl border border-slate-200 shrink-0 disabled:opacity-40"
           >
             <Trash2 size={15} color="#64748b" />
             <Text className="text-sm font-medium text-slate-600">Limpar</Text>
-          </Pressable>
+          </Touchable>
         ) : null}
-        <Pressable
+        <Touchable
+          onDark
           onPress={onAdd}
           className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl shrink-0"
           style={{ backgroundColor: BRAND }}
         >
           <Plus size={16} color="#ffffff" />
           <Text className="text-white text-sm font-medium">{addLabel}</Text>
-        </Pressable>
+        </Touchable>
       </View>
 
       {ordered.length === 0 ? (

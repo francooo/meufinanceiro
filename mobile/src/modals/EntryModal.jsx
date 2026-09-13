@@ -3,12 +3,12 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
-  Pressable,
   ScrollView,
   Text,
   View,
   ActivityIndicator,
 } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
 import { brToIso, isDateInputValid, isoToBr } from "../core/dateinput";
@@ -162,9 +162,13 @@ export default function EntryModal({
             <Text className="text-base font-bold text-slate-800">
               {editing ? cfg.editar : cfg.novo}
             </Text>
-            <Pressable onPress={onClose} className="h-8 w-8 items-center justify-center">
+            <Touchable
+              variant="icon"
+              onPress={onClose}
+              className="h-11 w-11 -mr-2 rounded-full items-center justify-center"
+            >
               <X size={18} color="#94a3b8" />
-            </Pressable>
+            </Touchable>
           </View>
 
           {/* keyboardShouldPersistTaps: sem isto, o primeiro toque so fecha o
@@ -260,15 +264,15 @@ export default function EntryModal({
                 </Text>
                 <View className="flex-row flex-wrap gap-2">
                   {otherMonths.map((m) => (
-                    <Pressable
+                    <Touchable
                       key={m}
                       onPress={() => move(m)}
                       disabled={moving}
-                      className="px-3 py-2 rounded-xl border border-slate-200"
-                      style={{ opacity: moving ? 0.4 : 1 }}
+                      hitSlop={{ top: 6, bottom: 6 }}
+                      className="px-3 py-2.5 rounded-xl border border-slate-200 disabled:opacity-40"
                     >
                       <Text className="text-xs font-medium text-slate-700">{monthLabel(m)}</Text>
-                    </Pressable>
+                    </Touchable>
                   ))}
                 </View>
                 {moving ? <ActivityIndicator color="#16382c" /> : null}
@@ -278,20 +282,21 @@ export default function EntryModal({
           </ScrollView>
 
           <View className="flex-row gap-2 px-5 pt-3 pb-6 border-t border-slate-100">
-            <Pressable
+            <Touchable
               onPress={onClose}
               className="flex-1 py-3.5 rounded-xl border border-slate-200 items-center"
             >
               <Text className="text-sm font-medium text-slate-600">Cancelar</Text>
-            </Pressable>
-            <Pressable
+            </Touchable>
+            <Touchable
+              onDark
               onPress={submit}
               disabled={!canSave}
-              className="flex-1 py-3.5 rounded-xl items-center"
-              style={{ backgroundColor: "#16382c", opacity: canSave ? 1 : 0.4 }}
+              className="flex-1 py-3.5 rounded-xl items-center disabled:opacity-40"
+              style={{ backgroundColor: "#16382c" }}
             >
               <Text className="text-sm font-semibold text-white">Salvar</Text>
-            </Pressable>
+            </Touchable>
           </View>
         </View>
       </KeyboardAvoidingView>

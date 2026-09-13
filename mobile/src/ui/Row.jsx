@@ -1,4 +1,5 @@
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { Touchable } from "./Touchable";
 import { Check, ChevronDown, ChevronUp, Pencil, Repeat, Trash2 } from "lucide-react-native";
 import { fmt, formatDateBR } from "../core/format";
 import { SelectCheckbox } from "./SelectionBar";
@@ -16,7 +17,7 @@ function Chip({ children, bg, color }) {
 }
 
 /* Equivalente do Row da web (meu-caixa.jsx:2281). Sem hover, focus-ring nem
-   transition — nada disso existe em RN; o feedback de toque vem do Pressable. */
+   transition — nada disso existe em RN; o feedback vem do Touchable. */
 export function Row({ item, onEdit, onDelete, onTogglePaid, onMoveUp, onMoveDown, accent, selected, onToggleSelect }) {
   const isPaid = !!item.paidAt;
   const muted = !item.value;
@@ -28,23 +29,28 @@ export function Row({ item, onEdit, onDelete, onTogglePaid, onMoveUp, onMoveDown
           as setas enquanto ha filtro ativo — mover numa lista filtrada
           reescreveria `order` com base numa ordem que nao e a real. */}
       {onMoveUp || onMoveDown ? (
-        <View className="items-center shrink-0 pt-0.5">
-          <Pressable
+        <View className="items-center shrink-0 pt-0.5 gap-1">
+          {/* Alvos de 36px com 4px de intervalo, e hitSlop crescendo SO para
+              fora: as regioes nunca se encontram, entao errar no vao nao faz
+              nada — melhor que mover a linha para o lado errado. */}
+          <Touchable
+            variant="icon"
             onPress={onMoveUp}
             disabled={!onMoveUp}
-            className="h-7 w-7 items-center justify-center rounded"
-            style={{ opacity: onMoveUp ? 1 : 0.25 }}
+            hitSlop={{ top: 8, left: 8, right: 8, bottom: 0 }}
+            className="h-9 w-9 items-center justify-center rounded disabled:opacity-25"
           >
-            <ChevronUp size={14} color="#94a3b8" />
-          </Pressable>
-          <Pressable
+            <ChevronUp size={16} color="#94a3b8" />
+          </Touchable>
+          <Touchable
+            variant="icon"
             onPress={onMoveDown}
             disabled={!onMoveDown}
-            className="h-7 w-7 items-center justify-center rounded"
-            style={{ opacity: onMoveDown ? 1 : 0.25 }}
+            hitSlop={{ top: 0, left: 8, right: 8, bottom: 8 }}
+            className="h-9 w-9 items-center justify-center rounded disabled:opacity-25"
           >
-            <ChevronDown size={14} color="#94a3b8" />
-          </Pressable>
+            <ChevronDown size={16} color="#94a3b8" />
+          </Touchable>
         </View>
       ) : null}
       <View className="flex-1 min-w-0">
@@ -99,21 +105,36 @@ export function Row({ item, onEdit, onDelete, onTogglePaid, onMoveUp, onMoveDown
       </View>
 
       <View className="flex-row items-center gap-1 shrink-0">
+        {/* Adjacencia horizontal: o slop cresce na vertical (sempre seguro) e
+            so para fora nas pontas. Manter 36 de largura — um trio de 44
+            esmagaria a descricao numa tela de 360dp. */}
         {onTogglePaid ? (
-          <Pressable
+          <Touchable
+            variant="icon"
             onPress={onTogglePaid}
+            hitSlop={{ top: 8, bottom: 8, left: 8 }}
             className="h-9 w-9 rounded-lg items-center justify-center"
             style={{ backgroundColor: isPaid ? "#d1fae5" : "transparent" }}
           >
             <Check size={16} color={isPaid ? "#059669" : "#94a3b8"} />
-          </Pressable>
+          </Touchable>
         ) : null}
-        <Pressable onPress={onEdit} className="h-9 w-9 rounded-lg items-center justify-center">
+        <Touchable
+          variant="icon"
+          onPress={onEdit}
+          hitSlop={{ top: 8, bottom: 8 }}
+          className="h-9 w-9 rounded-lg items-center justify-center"
+        >
           <Pencil size={16} color="#94a3b8" />
-        </Pressable>
-        <Pressable onPress={onDelete} className="h-9 w-9 rounded-lg items-center justify-center">
+        </Touchable>
+        <Touchable
+          variant="icon"
+          onPress={onDelete}
+          hitSlop={{ top: 8, bottom: 8, right: 8 }}
+          className="h-9 w-9 rounded-lg items-center justify-center"
+        >
           <Trash2 size={16} color="#94a3b8" />
-        </Pressable>
+        </Touchable>
       </View>
     </View>
   );

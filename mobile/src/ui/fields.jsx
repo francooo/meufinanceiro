@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FlatList, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { Touchable } from "./Touchable";
 import { Check, ChevronDown, X } from "lucide-react-native";
 import { maskDateInput } from "../core/dateinput";
 
@@ -68,7 +69,7 @@ export function SelectField({ value, options, onSelect, placeholder = "Selecione
 
   return (
     <>
-      <Pressable
+      <Touchable
         onPress={() => setOpen(true)}
         className={INPUT + " flex-row items-center justify-between"}
       >
@@ -76,9 +77,11 @@ export function SelectField({ value, options, onSelect, placeholder = "Selecione
           {value || placeholder}
         </Text>
         <ChevronDown size={16} color="#94a3b8" />
-      </Pressable>
+      </Touchable>
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
+        {/* Fundo e folha ficam Pressable cru: ripple de tela inteira num
+            backdrop pareceria defeito, e a folha so engole o toque. */}
         <Pressable
           className="flex-1 justify-end"
           style={{ backgroundColor: "rgba(15,23,42,0.4)" }}
@@ -91,18 +94,24 @@ export function SelectField({ value, options, onSelect, placeholder = "Selecione
           >
             <View className="flex-row items-center justify-between px-5 py-4 border-b border-slate-100">
               <Text className="text-base font-bold text-slate-800">{title || placeholder}</Text>
-              <Pressable onPress={() => setOpen(false)} className="h-8 w-8 items-center justify-center">
+              <Touchable
+                variant="icon"
+                onPress={() => setOpen(false)}
+                className="h-11 w-11 -mr-2 rounded-full items-center justify-center"
+              >
                 <X size={18} color="#94a3b8" />
-              </Pressable>
+              </Touchable>
             </View>
             <FlatList
+              keyboardShouldPersistTaps="handled"
               data={options}
               keyExtractor={(item) => String(item)}
               ItemSeparatorComponent={() => <View className="h-px bg-slate-100" />}
               renderItem={({ item }) => {
                 const active = item === value;
                 return (
-                  <Pressable
+                  <Touchable
+                    variant="row"
                     onPress={() => {
                       onSelect(item);
                       setOpen(false);
@@ -113,7 +122,7 @@ export function SelectField({ value, options, onSelect, placeholder = "Selecione
                       {item}
                     </Text>
                     {active ? <Check size={16} color="#16382c" /> : null}
-                  </Pressable>
+                  </Touchable>
                 );
               }}
             />
@@ -126,7 +135,7 @@ export function SelectField({ value, options, onSelect, placeholder = "Selecione
 
 export function SwitchRow({ label, value, onToggle }) {
   return (
-    <Pressable onPress={onToggle} className="flex-row items-center gap-3 py-1">
+    <Touchable variant="row" onPress={onToggle} className="flex-row items-center gap-3 py-2 rounded-lg">
       <View
         className="h-5 w-5 rounded-md border items-center justify-center"
         style={
@@ -138,7 +147,7 @@ export function SwitchRow({ label, value, onToggle }) {
         <Check size={13} color={value ? "#ffffff" : "transparent"} strokeWidth={3} />
       </View>
       <Text className="text-sm text-slate-700 flex-1">{label}</Text>
-    </Pressable>
+    </Touchable>
   );
 }
 
@@ -151,16 +160,18 @@ export function SegmentedField({ value, options, onSelect }) {
       {options.map((o) => {
         const active = o.value === value;
         return (
-          <Pressable
+          <Touchable
             key={o.value}
+            onDark={active}
             onPress={() => onSelect(o.value)}
+            hitSlop={{ top: 6, bottom: 6 }}
             className="flex-1 py-2.5 rounded-lg items-center"
             style={active ? { backgroundColor: "#16382c" } : undefined}
           >
             <Text className={"text-xs font-medium " + (active ? "text-white" : "text-slate-600")}>
               {o.label}
             </Text>
-          </Pressable>
+          </Touchable>
         );
       })}
     </View>

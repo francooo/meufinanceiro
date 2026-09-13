@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { Plus, Search, X } from "lucide-react-native";
 import { fmt } from "../core/format";
 import { serasaCatMeta } from "../core/catalog";
@@ -14,7 +15,7 @@ const NUM = { fontVariant: ["tabular-nums"] };
 /* Mesma estrutura de Gastos — agrupado por categoria, com busca — mas com a
    tabela de metadados do Serasa e sem sub-agrupamento por forma de pagamento,
    que e exclusivo de "Cartoes / Financeiro". */
-export default function SerasaTab({ serasa, onAdd, onEdit, onDelete, onTogglePaid }) {
+export default function SerasaTab({ serasa, selecting, isSelected, onToggleSelect, onAdd, onEdit, onDelete, onTogglePaid }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
 
@@ -44,18 +45,20 @@ export default function SerasaTab({ serasa, onAdd, onEdit, onDelete, onTogglePai
             {fmt(query ? visibleTotal : total)}
           </Text>
         </View>
-        <Pressable
+        <Touchable
+          onDark
           onPress={onAdd}
           className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl"
           style={{ backgroundColor: "#16382c" }}
         >
           <Plus size={16} color="#ffffff" />
           <Text className="text-white text-sm font-medium">Nova dívida</Text>
-        </Pressable>
+        </Touchable>
       </View>
 
       <View className="relative justify-center">
-        <View className="absolute left-3.5 z-10">
+        {/* pointerEvents: sem isto o icone engole o toque na esquerda do campo */}
+        <View pointerEvents="none" className="absolute left-3.5 z-10">
           <Search size={15} color="#94a3b8" />
         </View>
         <TextInput
@@ -63,15 +66,16 @@ export default function SerasaTab({ serasa, onAdd, onEdit, onDelete, onTogglePai
           onChangeText={setSearch}
           placeholder="Buscar dívida por descrição…"
           placeholderTextColor="#94a3b8"
-          className="rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-3 text-sm text-slate-800"
+          className="rounded-xl border border-slate-200 bg-white pl-10 pr-12 py-3 text-sm text-slate-800"
         />
         {search ? (
-          <Pressable
+          <Touchable
             onPress={() => setSearch("")}
-            className="absolute right-2.5 h-6 w-6 items-center justify-center"
+            variant="icon"
+            className="absolute right-1 h-11 w-11 items-center justify-center"
           >
             <X size={14} color="#94a3b8" />
-          </Pressable>
+          </Touchable>
         ) : null}
       </View>
 
@@ -101,6 +105,8 @@ export default function SerasaTab({ serasa, onAdd, onEdit, onDelete, onTogglePai
               <View key={s.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
                 <Row
                   item={s}
+                  selected={isSelected ? isSelected(s.id) : false}
+                  onToggleSelect={selecting ? () => onToggleSelect(s.id) : undefined}
                   onEdit={() => onEdit(s)}
                   onDelete={() => onDelete(s)}
                   onTogglePaid={() => onTogglePaid(s)}

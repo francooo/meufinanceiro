@@ -1,4 +1,5 @@
-import { Pressable, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { AlertTriangle, CreditCard, Pencil, Plus, Trash2 } from "lucide-react-native";
 import { fmt, formatDateBR, monthLabel } from "../core/format";
 import { Card } from "../ui/Card";
@@ -22,15 +23,16 @@ export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, 
             {fmt(totalRestante)}
           </Text>
         </View>
-        <Pressable
+        <Touchable
+          onDark
           onPress={() => onAdd()}
           disabled={!canAdd}
-          className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl shrink-0"
-          style={{ backgroundColor: BRAND, opacity: canAdd ? 1 : 0.4 }}
+          className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl shrink-0 disabled:opacity-40"
+          style={{ backgroundColor: BRAND }}
         >
           <Plus size={16} color="#ffffff" />
           <Text className="text-white text-sm font-medium">Novo cartão</Text>
-        </Pressable>
+        </Touchable>
       </View>
 
       {cards.length > 0 ? (
@@ -69,12 +71,12 @@ export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, 
                   </Text>
                 ) : null}
               </View>
-              <Pressable onPress={() => onEdit(c)} className="h-9 w-9 rounded-lg items-center justify-center">
+              <Touchable variant="icon" onPress={() => onEdit(c)} hitSlop={{ top: 8, bottom: 8 }} className="h-9 w-9 rounded-lg items-center justify-center">
                 <Pencil size={16} color="#94a3b8" />
-              </Pressable>
-              <Pressable onPress={() => onDelete(c)} className="h-9 w-9 rounded-lg items-center justify-center">
+              </Touchable>
+              <Touchable variant="icon" onPress={() => onDelete(c)} hitSlop={{ top: 8, bottom: 8, right: 8 }} className="h-9 w-9 rounded-lg items-center justify-center">
                 <Trash2 size={16} color="#94a3b8" />
-              </Pressable>
+              </Touchable>
             </View>
 
             <View className="px-4 py-3 gap-1.5">
@@ -152,9 +154,9 @@ export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, 
               <Text className="text-sm text-slate-500" style={NUM}>
                 {fmt(u.value)}
               </Text>
-              <Pressable onPress={() => onAdd(u.name)} className="px-2.5 py-1.5 rounded-lg">
+              <Touchable onPress={() => onAdd(u.name)} hitSlop={{ top: 6, bottom: 6 }} className="px-3 py-2.5 rounded-lg">
                 <Text className="text-xs font-medium text-slate-500">Cadastrar</Text>
-              </Pressable>
+              </Touchable>
             </View>
           ))}
         </Card>

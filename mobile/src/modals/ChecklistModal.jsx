@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, ScrollView, Text, View } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
 import { AmountField, Field, TextField } from "../ui/fields";
@@ -34,9 +35,13 @@ export default function ChecklistModal({ visible, item, titleLabel, placeholder,
         <View className="bg-white rounded-t-2xl" style={{ maxHeight: "92%" }}>
           <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
             <Text className="text-base font-bold text-slate-800">{item ? editar : novo}</Text>
-            <Pressable onPress={onClose} className="h-8 w-8 items-center justify-center">
+            <Touchable
+              variant="icon"
+              onPress={onClose}
+              className="h-11 w-11 -mr-2 rounded-full items-center justify-center"
+            >
               <X size={18} color="#94a3b8" />
-            </Pressable>
+            </Touchable>
           </View>
 
           <ScrollView
@@ -58,17 +63,18 @@ export default function ChecklistModal({ visible, item, titleLabel, placeholder,
           </ScrollView>
 
           <View className="flex-row gap-2 px-5 pt-3 pb-6 border-t border-slate-100">
-            <Pressable onPress={onClose} className="flex-1 py-3.5 rounded-xl border border-slate-200 items-center">
+            <Touchable onPress={onClose} className="flex-1 py-3.5 rounded-xl border border-slate-200 items-center">
               <Text className="text-sm font-medium text-slate-600">Cancelar</Text>
-            </Pressable>
-            <Pressable
+            </Touchable>
+            <Touchable
+              onDark
               onPress={submit}
               disabled={!canSave}
-              className="flex-1 py-3.5 rounded-xl items-center"
-              style={{ backgroundColor: "#16382c", opacity: canSave ? 1 : 0.4 }}
+              className="flex-1 py-3.5 rounded-xl items-center disabled:opacity-40"
+              style={{ backgroundColor: "#16382c" }}
             >
               <Text className="text-sm font-semibold text-white">Salvar</Text>
-            </Pressable>
+            </Touchable>
           </View>
         </View>
       </KeyboardAvoidingView>

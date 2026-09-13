@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
+import { Text, TextInput, View } from "react-native";
+import { Touchable } from "../ui/Touchable";
 import { Check, Plus, Search, X } from "lucide-react-native";
 import { fmt } from "../core/format";
 import { CARTOES_CATEGORY, PAYMENT_METHOD_FALLBACK, allPaymentMethods } from "../core/catalog";
@@ -14,7 +15,19 @@ import { Row } from "../ui/Row";
 const NUM = { fontVariant: ["tabular-nums"] };
 const BRAND = "#16382c";
 
-export default function GastosTab({ expenses, total, extraPaymentMethods = [], onAdd, onEdit, onDelete, onTogglePaid, onMove }) {
+export default function GastosTab({
+  expenses,
+  total,
+  extraPaymentMethods = [],
+  selecting,
+  isSelected,
+  onToggleSelect,
+  onAdd,
+  onEdit,
+  onDelete,
+  onTogglePaid,
+  onMove,
+}) {
   const [search, setSearch] = useState("");
   const [hidePaid, setHidePaid] = useState(false);
   const [valueSort, setValueSort] = useState("none");
@@ -48,7 +61,9 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
   const filtersActive = otherFiltersActive || hidePaid;
   /* Setas escondidas com filtro ativo: reordenar uma lista filtrada gravaria
      `order` com base numa ordem que nao e a real (a web faz igual). */
-  const canReorder = !filtersActive && !!onMove;
+  /* Em modo selecao as setas somem, como na web: caixinha + setas + tres
+     acoes competiriam demais por ~360dp. */
+  const canReorder = !filtersActive && !selecting && !!onMove;
   const sortLabel = { none: "Ordem padrão", desc: "Maior valor", asc: "Menor valor" }[valueSort];
   const cycleSort = () =>
     setValueSort((v) => (v === "none" ? "desc" : v === "desc" ? "asc" : "none"));
@@ -64,18 +79,20 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
             {fmt(otherFiltersActive ? visibleTotal : total)}
           </Text>
         </View>
-        <Pressable
+        <Touchable
+          onDark
           onPress={onAdd}
           className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl"
           style={{ backgroundColor: BRAND }}
         >
           <Plus size={16} color="#ffffff" />
           <Text className="text-white text-sm font-medium">Novo gasto</Text>
-        </Pressable>
+        </Touchable>
       </View>
 
       <View className="relative justify-center">
-        <View className="absolute left-3.5 z-10">
+        {/* pointerEvents: sem isto o icone engole o toque na esquerda do campo */}
+        <View pointerEvents="none" className="absolute left-3.5 z-10">
           <Search size={15} color="#94a3b8" />
         </View>
         <TextInput
@@ -83,17 +100,18 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
           onChangeText={setSearch}
           placeholder="Buscar gasto por título…"
           placeholderTextColor="#94a3b8"
-          className="rounded-xl border border-slate-200 bg-white pl-10 pr-9 py-3 text-sm text-slate-800"
+          className="rounded-xl border border-slate-200 bg-white pl-10 pr-12 py-3 text-sm text-slate-800"
         />
         {search ? (
-          <Pressable onPress={() => setSearch("")} className="absolute right-2.5 h-6 w-6 items-center justify-center">
+          <Touchable onPress={() => setSearch("")} variant="icon"
+            className="absolute right-1 h-11 w-11 items-center justify-center">
             <X size={14} color="#94a3b8" />
-          </Pressable>
+          </Touchable>
         ) : null}
       </View>
 
       <View className="flex-row flex-wrap items-center gap-2">
-        <Pressable
+        <Touchable
           onPress={() => setHidePaid((v) => !v)}
           className={
             "flex-row items-center gap-1.5 px-3 py-2 rounded-xl border " +
@@ -105,9 +123,9 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
           <Text className={"text-xs font-medium " + (hidePaid ? "text-white" : "text-slate-700")}>
             {hidePaid ? "Mostrar pagos" : "Ocultar pagos"}
           </Text>
-        </Pressable>
+        </Touchable>
 
-        <Pressable
+        <Touchable
           onPress={cycleSort}
           className={
             "px-3 py-2 rounded-xl border " +
@@ -118,9 +136,9 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
           <Text className={"text-xs font-medium " + (valueSort !== "none" ? "text-white" : "text-slate-700")}>
             {sortLabel}
           </Text>
-        </Pressable>
+        </Touchable>
 
-        <Pressable
+        <Touchable
           onPress={() => setShowFilters((v) => !v)}
           className={
             "px-3 py-2 rounded-xl border " +
@@ -136,10 +154,10 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
           >
             {showFilters ? "Menos filtros" : "Mais filtros"}
           </Text>
-        </Pressable>
+        </Touchable>
 
         {filtersActive ? (
-          <Pressable
+          <Touchable
             onPress={() => {
               setSearch("");
               setHidePaid(false);
@@ -152,7 +170,7 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
           >
             <X size={12} color="#64748b" />
             <Text className="text-xs font-medium text-slate-500">Limpar filtros</Text>
-          </Pressable>
+          </Touchable>
         ) : null}
       </View>
 
@@ -220,6 +238,8 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
                       <View key={e.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
                         <Row
                           item={e}
+                          selected={isSelected ? isSelected(e.id) : false}
+                          onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
                           onEdit={() => onEdit(e)}
                           onDelete={() => onDelete(e)}
                           onTogglePaid={() => onTogglePaid(e)}
@@ -238,6 +258,8 @@ export default function GastosTab({ expenses, total, extraPaymentMethods = [], o
                   <View key={e.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
                     <Row
                       item={e}
+                      selected={isSelected ? isSelected(e.id) : false}
+                      onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
                       onEdit={() => onEdit(e)}
                       onDelete={() => onDelete(e)}
                       onTogglePaid={() => onTogglePaid(e)}
