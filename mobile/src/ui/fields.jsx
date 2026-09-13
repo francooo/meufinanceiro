@@ -141,3 +141,42 @@ export function SwitchRow({ label, value, onToggle }) {
     </Pressable>
   );
 }
+
+/* Substitui o grupo de <input type="radio"> da web. Opcoes lado a lado, sempre
+   visiveis — com 3 escolhas, esconder atras de um seletor custaria um toque a
+   mais e deixaria de mostrar que sao mutuamente exclusivas. */
+export function SegmentedField({ value, options, onSelect }) {
+  return (
+    <View className="flex-row gap-1 p-1 rounded-xl bg-slate-100">
+      {options.map((o) => {
+        const active = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            onPress={() => onSelect(o.value)}
+            className="flex-1 py-2.5 rounded-lg items-center"
+            style={active ? { backgroundColor: "#16382c" } : undefined}
+          >
+            <Text className={"text-xs font-medium " + (active ? "text-white" : "text-slate-600")}>
+              {o.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+export function NumberField({ value, onChangeText, placeholder, invalid }) {
+  return (
+    <TextInput
+      value={value}
+      onChangeText={(t) => onChangeText(t.replace(/\D/g, ""))}
+      placeholder={placeholder}
+      placeholderTextColor="#94a3b8"
+      keyboardType="number-pad"
+      className={INPUT}
+      style={{ borderColor: invalid ? "#e11d48" : "#e2e8f0", fontVariant: ["tabular-nums"] }}
+    />
+  );
+}

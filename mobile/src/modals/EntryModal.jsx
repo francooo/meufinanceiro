@@ -12,7 +12,8 @@ import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
 import { brToIso, isDateInputValid, isoToBr } from "../core/dateinput";
 import { CATS, SERASA_CATS, allPaymentMethods } from "../core/catalog";
-import { AmountField, DateField, Field, SelectField, SwitchRow, TextField } from "../ui/fields";
+import { AmountField, DateField, Field, NumberField, SegmentedField, SelectField, SwitchRow, TextField } from "../ui/fields";
+import { REPEAT_MODES, isRepeatValid, parseInstallments, repeatFields, repeatModeOf } from "../core/repeat";
 
 const NENHUMA = "Nenhuma";
 
@@ -30,6 +31,7 @@ const MODES = {
     temCategoria: true,
     temFormaPagamento: true,
     temCarteiras: true,
+    temParcelas: true,
   },
   income: {
     novo: "Novo ganho",
@@ -51,6 +53,7 @@ const MODES = {
     temCategoria: true,
     temFormaPagamento: false,
     temCarteiras: false,
+    temParcelas: true,
   },
 };
 
@@ -76,6 +79,10 @@ export default function EntryModal({
   const [voucher, setVoucher] = useState(!!(isIncome ? item?.voucherIncome : item?.paidWithVoucher));
   const [cltPj, setCltPj] = useState(!!(isIncome ? item?.cltPjIncome : item?.paidWithCltPj));
   const [recurrent, setRecurrent] = useState(!!item?.recurrent);
+  const [repeatMode, setRepeatMode] = useState(() => repeatModeOf(item));
+  const [installments, setInstallments] = useState(
+    item?.installmentTotal ? String(item.installmentTotal) : ""
+  );
 
   const categories = useMemo(() => {
     const base = (cfg.cats || []).map((c) => c.name);
@@ -89,24 +96,26 @@ export default function EntryModal({
 
   const amount = parseAmount(value);
   const dateOk = isDateInputValid(date);
-  const canSave = desc.trim() !== "" && !Number.isNaN(amount) && amount >= 0 && dateOk;
+  const parcelas = parseInstallments(installments);
+  const repeatOk = !cfg.temParcelas || isRepeatValid(repeatMode, parcelas);
+  const canSave =
+    desc.trim() !== "" && !Number.isNaN(amount) && amount >= 0 && dateOk && repeatOk;
 
   const submit = () => {
     if (!canSave) return;
     const iso = brToIso(date);
     /* parseAmount, nunca parseFloat: o teclado pt-BR entrega "1.234,56" e
        parseFloat leria 1.234 — sem erro e sem NaN para canSave detectar. */
-    const base = { value: amount, note: note.trim(), recurrent };
+    const base = { value: amount, note: note.trim() };
 
     const data = isIncome
-      ? { ...base, source: desc.trim(), receiptDate: iso, voucherIncome: voucher, cltPjIncome: cltPj }
+      ? { ...base, recurrent, source: desc.trim(), receiptDate: iso, voucherIncome: voucher, cltPjIncome: cltPj }
       : {
           ...base,
           description: desc.trim(),
           category,
           dueDate: iso,
-          installmentTotal: item?.installmentTotal ?? null,
-          installmentNumber: item?.installmentNumber ?? null,
+          ...repeatFields(repeatMode, parcelas, item),
           ...(cfg.temCarteiras ? { paidWithVoucher: voucher, paidWithCltPj: cltPj } : {}),
           ...(cfg.temFormaPagamento
             ? { paymentMethod: paymentMethod === NENHUMA ? null : paymentMethod || null }
@@ -193,8 +202,30 @@ export default function EntryModal({
                   />
                 </>
               ) : null}
-              <SwitchRow label="Recorrente" value={recurrent} onToggle={() => setRecurrent((v) => !v)} />
+              {!cfg.temParcelas ? (
+                <SwitchRow label="Recorrente" value={recurrent} onToggle={() => setRecurrent((v) => !v)} />
+              ) : null}
             </View>
+
+            {cfg.temParcelas ? (
+              <Field
+                label="Repetição"
+                hint={repeatOk ? undefined : "Informe em quantas parcelas (mínimo 2)."}
+              >
+                <SegmentedField value={repeatMode} options={REPEAT_MODES} onSelect={setRepeatMode} />
+              </Field>
+            ) : null}
+
+            {cfg.temParcelas && repeatMode === "installments" ? (
+              <Field label="Número de parcelas">
+                <NumberField
+                  value={installments}
+                  onChangeText={setInstallments}
+                  placeholder="Ex.: 6"
+                  invalid={!repeatOk}
+                />
+              </Field>
+            ) : null}
           </ScrollView>
 
           <View className="flex-row gap-2 px-5 pt-3 pb-6 border-t border-slate-100">
