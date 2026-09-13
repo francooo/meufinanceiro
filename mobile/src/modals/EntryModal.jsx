@@ -7,11 +7,13 @@ import {
   ScrollView,
   Text,
   View,
+  ActivityIndicator,
 } from "react-native";
 import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
 import { brToIso, isDateInputValid, isoToBr } from "../core/dateinput";
 import { CATS, SERASA_CATS, allPaymentMethods } from "../core/catalog";
+import { monthLabel } from "../core/format";
 import { AmountField, DateField, Field, NumberField, SegmentedField, SelectField, SwitchRow, TextField } from "../ui/fields";
 import { REPEAT_MODES, isRepeatValid, parseInstallments, repeatFields, repeatModeOf } from "../core/repeat";
 
@@ -63,6 +65,9 @@ export default function EntryModal({
   item,
   extraCategories = [],
   extraPaymentMethods = [],
+  months = [],
+  currentMonth,
+  onMoveMonth,
   onClose,
   onSave,
 }) {
@@ -83,6 +88,26 @@ export default function EntryModal({
   const [installments, setInstallments] = useState(
     item?.installmentTotal ? String(item.installmentTotal) : ""
   );
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState("");
+
+  /* So faz sentido mover um gasto que ja existe, e so para um mes que nao e o
+     atual. Serasa e ganho nao tem mes. */
+  const otherMonths = useMemo(
+    () => (mode === "expense" && item ? months.filter((m) => m !== currentMonth) : []),
+    [mode, item, months, currentMonth]
+  );
+
+  const move = async (target) => {
+    setMoving(true);
+    setMoveError("");
+    try {
+      await onMoveMonth(item, target);
+    } catch (err) {
+      setMoveError(err?.message || "Não foi possível mover o gasto.");
+      setMoving(false);
+    }
+  };
 
   const categories = useMemo(() => {
     const base = (cfg.cats || []).map((c) => c.name);
@@ -225,6 +250,30 @@ export default function EntryModal({
                   invalid={!repeatOk}
                 />
               </Field>
+            ) : null}
+
+            {otherMonths.length > 0 && onMoveMonth ? (
+              <View className="rounded-2xl border border-slate-200 p-3 gap-2 mt-1">
+                <Text className="text-xs font-medium text-slate-500">Mover para outro mês</Text>
+                <Text className="text-[11px] text-slate-400">
+                  O gasto sai de {monthLabel(currentMonth)} e passa a contar no mês escolhido.
+                </Text>
+                <View className="flex-row flex-wrap gap-2">
+                  {otherMonths.map((m) => (
+                    <Pressable
+                      key={m}
+                      onPress={() => move(m)}
+                      disabled={moving}
+                      className="px-3 py-2 rounded-xl border border-slate-200"
+                      style={{ opacity: moving ? 0.4 : 1 }}
+                    >
+                      <Text className="text-xs font-medium text-slate-700">{monthLabel(m)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {moving ? <ActivityIndicator color="#16382c" /> : null}
+                {moveError ? <Text className="text-[11px] text-rose-600">{moveError}</Text> : null}
+              </View>
             ) : null}
           </ScrollView>
 

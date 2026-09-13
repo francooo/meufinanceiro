@@ -1,6 +1,7 @@
 import { Pressable, Text, View } from "react-native";
 import { Check, ChevronDown, ChevronUp, Pencil, Repeat, Trash2 } from "lucide-react-native";
 import { fmt, formatDateBR } from "../core/format";
+import { SelectCheckbox } from "./SelectionBar";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 
@@ -16,12 +17,13 @@ function Chip({ children, bg, color }) {
 
 /* Equivalente do Row da web (meu-caixa.jsx:2281). Sem hover, focus-ring nem
    transition — nada disso existe em RN; o feedback de toque vem do Pressable. */
-export function Row({ item, onEdit, onDelete, onTogglePaid, onMoveUp, onMoveDown, accent }) {
+export function Row({ item, onEdit, onDelete, onTogglePaid, onMoveUp, onMoveDown, accent, selected, onToggleSelect }) {
   const isPaid = !!item.paidAt;
   const muted = !item.value;
 
   return (
     <View className="flex-row items-start gap-3 px-4 py-3">
+      {onToggleSelect ? <SelectCheckbox selected={selected} onToggle={onToggleSelect} /> : null}
       {/* Coluna de reordenar: so aparece quando os handlers vem. A web esconde
           as setas enquanto ha filtro ativo — mover numa lista filtrada
           reescreveria `order` com base numa ordem que nao e a real. */}

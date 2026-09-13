@@ -4,15 +4,17 @@ import { Check, Pencil, Plus, Trash2 } from "lucide-react-native";
 import { fmt, formatDateBR } from "../core/format";
 import { splitChecklist } from "../core/checklist";
 import { Card } from "../ui/Card";
+import { SelectCheckbox } from "../ui/SelectionBar";
 import { Empty } from "../ui/Empty";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 const BRAND = "#16382c";
 
-function ChecklistRow({ item, doneLabel, onEdit, onDelete, onToggleDone }) {
+function ChecklistRow({ item, doneLabel, onEdit, onDelete, onToggleDone, selected, onToggleSelect }) {
   const done = !!item.doneAt;
   return (
     <View className="flex-row items-start gap-3 px-4 py-3">
+      {onToggleSelect ? <SelectCheckbox selected={selected} onToggle={onToggleSelect} /> : null}
       <View className="flex-1 min-w-0">
         <Text
           className={"text-sm " + (done ? "text-slate-400 line-through" : "text-slate-800")}
@@ -63,6 +65,9 @@ function ChecklistRow({ item, doneLabel, onEdit, onDelete, onToggleDone }) {
    para as duas listas de compra. O que muda são os rótulos. */
 export default function ChecklistTab({
   items,
+  selecting,
+  isSelected,
+  onToggleSelect,
   totalLabel,
   addLabel,
   emptyText,
@@ -118,6 +123,8 @@ export default function ChecklistTab({
                 onEdit={() => onEdit(it)}
                 onDelete={() => onDelete(it)}
                 onToggleDone={() => onToggleDone(it)}
+                selected={isSelected ? isSelected(it.id) : false}
+                onToggleSelect={selecting ? () => onToggleSelect(it.id) : undefined}
               />
             </View>
           ))}

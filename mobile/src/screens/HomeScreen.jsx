@@ -15,6 +15,8 @@ import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
 import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend } from "../core/cards";
 import { applyOrder, reorderWithin } from "../core/reorder";
+import { pruneMonthKeys, selectionStats, toggleKey } from "../core/selection";
+import { SelectionBar, SelectionFab } from "../ui/SelectionBar";
 import { store } from "../api/store";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
@@ -67,6 +69,10 @@ export default function HomeScreen({ email, onSignOut }) {
   const [wishlist, setWishlist] = useState([]);
   const [shopping, setShopping] = useState({ mercado: [], farmacia: [] });
   const [listModal, setListModal] = useState(null);   // {kind, item} | null
+  /* Selecao e estado de UI puro: nunca entra nos objetos de dado, senao cada
+     toque de caixinha faria um PUT da colecao inteira. */
+  const [selecting, setSelecting] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState(() => new Set());
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -118,6 +124,11 @@ export default function HomeScreen({ email, onSignOut }) {
     });
     return () => sub.remove();
   }, [loadMonth]);
+
+  /* Trocar de mes invalida so as chaves do mes; as colecoes globais seguem. */
+  useEffect(() => {
+    setSelectedKeys(pruneMonthKeys);
+  }, [month]);
 
   const switchMonth = async (key) => {
     if (key === month) return;
@@ -246,6 +257,18 @@ export default function HomeScreen({ email, onSignOut }) {
     setExpenses((prev) => applyOrder(prev, orderById));
   };
 
+  /* A ordem aqui importa e o web nao precisa dela: la nao ha debounce, entao a
+     gravacao do mes ja aconteceu. Aqui, um PUT pendente carrega o array do mes
+     ANTIGO com o gasto ainda dentro — se disparasse depois do move, o servidor
+     apagaria o mes e reinseriria o gasto, desfazendo tudo. Por isso: grava o
+     pendente, move, e so entao tira do estado local. */
+  const moveToMonth = async (item, targetMonth) => {
+    flushSave();
+    await store.moveExpenseToMonth(item.id, targetMonth);
+    setExpenses((prev) => prev.filter((e) => e.id !== item.id));
+    setModal(null);
+  };
+
   const togglePaid = (mode, id) =>
     setterFor(mode)((prev) =>
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
@@ -267,6 +290,25 @@ export default function HomeScreen({ email, onSignOut }) {
     return [...new Set(all.filter((p) => p && !known.has(p)))].sort();
   }, [savedMethods, expenses]);
 
+  const stats = useMemo(
+    () =>
+      selectionStats(selectedKeys, [
+        ["expense", expenses],
+        ["income", incomes],
+        ["wish", wishlist],
+        ["mercado", shopping.mercado],
+        ["farmacia", shopping.farmacia],
+        ["serasa", serasa],
+      ]),
+    [selectedKeys, expenses, incomes, wishlist, shopping, serasa]
+  );
+
+  const selProps = (kind) => ({
+    selecting,
+    isSelected: (id) => selectedKeys.has(`${kind}:${id}`),
+    onToggleSelect: (id) => setSelectedKeys((prev) => toggleKey(prev, kind, id)),
+  });
+
   const spent = useMemo(() => spentByPaymentMethod(expenses), [expenses]);
   const cardsWithUsage = useMemo(() => buildCardsWithUsage(cards, spent, month), [cards, spent, month]);
   const unregistered = useMemo(() => unregisteredMethodSpend(cards, spent), [cards, spent]);
@@ -279,8 +321,9 @@ export default function HomeScreen({ email, onSignOut }) {
   const cltSobra = cltRecebido - cltGasto;
 
   return (
-    <ScrollView
-      className="flex-1"
+    <View className="flex-1">
+      <ScrollView
+        className="flex-1"
       contentContainerStyle={{ padding: 16 }}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#16382c" />
@@ -430,6 +473,7 @@ export default function HomeScreen({ email, onSignOut }) {
         <OverviewTab expenses={expenses} incomes={incomes} />
       ) : tab === "gastos" ? (
         <GastosTab
+          {...selProps("expense")}
           expenses={expenses}
           total={totalOf(expenses)}
           onAdd={() => setModal({ mode: "expense", item: null })}
@@ -441,6 +485,7 @@ export default function HomeScreen({ email, onSignOut }) {
         />
       ) : tab === "ganhos" ? (
         <GanhosTab
+          {...selProps("income")}
           incomes={incomes}
           onAdd={() => setModal({ mode: "income", item: null })}
           onEdit={(i) => setModal({ mode: "income", item: i })}
@@ -448,6 +493,7 @@ export default function HomeScreen({ email, onSignOut }) {
         />
       ) : tab === "serasa" ? (
         <SerasaTab
+          {...selProps("serasa")}
           serasa={serasa}
           onAdd={() => setModal({ mode: "serasa", item: null })}
           onEdit={(x) => setModal({ mode: "serasa", item: x })}
@@ -467,6 +513,7 @@ export default function HomeScreen({ email, onSignOut }) {
         />
       ) : (
         <ChecklistTab
+          {...selProps(tab === "desejos" ? "wish" : tab)}
           items={listItems(tab === "desejos" ? "wish" : tab)}
           totalLabel={tab === "desejos" ? "Total desejado" : "Total estimado"}
           addLabel={tab === "desejos" ? "Novo desejo" : "Novo item"}
@@ -517,6 +564,9 @@ export default function HomeScreen({ email, onSignOut }) {
           mode={modal.mode}
           item={modal.item}
           extraCategories={modal.mode === "serasa" ? extraSerasaCategories : extraCategories}
+          months={months}
+          currentMonth={month}
+          onMoveMonth={moveToMonth}
           extraPaymentMethods={extraPaymentMethods}
           onClose={() => setModal(null)}
           onSave={saveEntry}
@@ -529,6 +579,24 @@ export default function HomeScreen({ email, onSignOut }) {
         onCancel={() => setConfirming(null)}
         onConfirm={removeEntry}
       />
-    </ScrollView>
+      </ScrollView>
+
+      {/* Cartoes fica de fora: saldo de cartao nao e item de fluxo de caixa, e
+          SELECTION_SOURCES nao o registra — uma chave "card:" quebraria a soma. */}
+      {!selecting && tab !== "overview" && tab !== "cartoes" ? (
+        <SelectionFab onPress={() => setSelecting(true)} />
+      ) : null}
+
+      {selecting ? (
+        <SelectionBar
+          stats={stats}
+          onClear={() => setSelectedKeys(new Set())}
+          onClose={() => {
+            setSelecting(false);
+            setSelectedKeys(new Set());
+          }}
+        />
+      ) : null}
+    </View>
   );
 }

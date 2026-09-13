@@ -18,6 +18,10 @@ export const store = {
     const d = await request("/api/payment-methods");
     return Array.isArray(d.methods) ? d.methods : [];
   },
+  /* Endpoint dedicado e atomico: mover nao cabe no PUT de colecao inteira,
+     que so enxerga um mes por vez. */
+  moveExpenseToMonth: (id, month) =>
+    request(`/api/expenses/${encodeURIComponent(id)}/month`, { method: "PUT", body: { month } }),
   loadWishlist: async () => {
     const d = await request("/api/wishlist");
     return Array.isArray(d.items) ? d.items : [];
