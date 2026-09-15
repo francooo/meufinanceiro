@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import { fetchMe, setToken, setUnauthorizedHandler } from "./src/api/client";
 import { clearToken, loadToken, saveToken } from "./src/api/session";
 import PairScreen from "./src/screens/PairScreen";
@@ -50,22 +51,30 @@ export default function App() {
     })();
   }, []);
 
+  /* KeyboardProvider e o que faz o teclado ser visto DENTRO das folhas. O Modal
+     do RN abre uma janela nativa propria e, com o edge-to-edge obrigatorio do
+     Android 15+, o adjustResize dessa janela nao redimensiona nada; o
+     KeyboardAvoidingView do RN so escuta a janela principal e fica cego la
+     dentro. A lib observa tambem os dialogs do Modal. E dependencia nativa:
+     chega por build, nao por update. */
   return (
     <SafeAreaProvider>
-      <SafeAreaView className="flex-1" style={{ backgroundColor: "#F1F4F2" }}>
-        {status === "checking" && (
-          <View className="flex-1 items-center justify-center gap-3">
-            <ActivityIndicator color="#16382c" />
-            <Text className="text-sm text-slate-500">Verificando sessão…</Text>
-          </View>
-        )}
+      <KeyboardProvider>
+        <SafeAreaView className="flex-1" style={{ backgroundColor: "#F1F4F2" }}>
+          {status === "checking" && (
+            <View className="flex-1 items-center justify-center gap-3">
+              <ActivityIndicator color="#16382c" />
+              <Text className="text-sm text-slate-500">Verificando sessão…</Text>
+            </View>
+          )}
 
-        {status === "pairing" && <PairScreen onPaired={activate} />}
+          {status === "pairing" && <PairScreen onPaired={activate} />}
 
-        {status === "ready" && <HomeScreen email={email} onSignOut={signOut} />}
+          {status === "ready" && <HomeScreen email={email} onSignOut={signOut} />}
 
-        <StatusBar style="dark" />
-      </SafeAreaView>
+          <StatusBar style="dark" />
+        </SafeAreaView>
+      </KeyboardProvider>
     </SafeAreaProvider>
   );
 }

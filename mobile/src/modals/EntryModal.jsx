@@ -1,16 +1,7 @@
 import { useMemo, useState } from "react";
-import {
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
-  ScrollView,
-  Text,
-  View,
-  ActivityIndicator,
-} from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivityIndicator, Text, View } from "react-native";
+import { Sheet } from "../ui/Sheet";
 import { Touchable } from "../ui/Touchable";
-import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
 import { brToIso, isDateInputValid, isoToBr } from "../core/dateinput";
 import { CATS, SERASA_CATS, allPaymentMethods } from "../core/catalog";
@@ -75,9 +66,6 @@ export default function EntryModal({
   const cfg = MODES[mode];
   const editing = !!item;
   const isIncome = mode === "income";
-  /* Modal do RN e uma janela nativa: fica FORA do SafeAreaView de App.jsx, entao
-     o inset da barra de gestos precisa ser aplicado aqui dentro na mao. */
-  const insets = useSafeAreaInsets();
 
   const [desc, setDesc] = useState(isIncome ? item?.source || "" : item?.description || "");
   const [category, setCategory] = useState(item?.category || cfg.cats?.[0]?.name || "");
@@ -155,166 +143,114 @@ export default function EntryModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        className="flex-1 justify-end"
-        style={{ backgroundColor: "rgba(15,23,42,0.4)" }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
-        <View className="bg-white rounded-t-2xl" style={{ maxHeight: "92%" }}>
-          <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
-            <Text className="text-base font-bold text-slate-800">
-              {editing ? cfg.editar : cfg.novo}
-            </Text>
-            <Touchable
-              variant="icon"
-              onPress={onClose}
-              className="h-11 w-11 -mr-2 rounded-full items-center justify-center"
-            >
-              <X size={18} color="#94a3b8" />
-            </Touchable>
-          </View>
+    <Sheet
+      visible={visible}
+      title={editing ? cfg.editar : cfg.novo}
+      onClose={onClose}
+      onSave={submit}
+      canSave={canSave}
+    >
+      <Field label={cfg.titulo}>
+        <TextField
+          value={desc}
+          onChangeText={setDesc}
+          placeholder={cfg.placeholder}
+          autoFocus={!editing}
+        />
+      </Field>
 
-          {/* keyboardShouldPersistTaps: sem isto, o primeiro toque so fecha o
-              teclado e o botao Salvar exige dois toques.
+      {cfg.temCategoria ? (
+        <Field label="Categoria">
+          <SelectField value={category} options={categories} onSelect={setCategory} title="Categoria" />
+        </Field>
+      ) : null}
 
-              flexShrink: 1 e obrigatorio, nao cosmetico. No RN o padrao e
-              flexShrink: 0 (na web e 1): o Yoga mede este ScrollView com a
-              altura INTEIRA do conteudo, o maxHeight da folha corta o
-              container, e o que sobra — o rodape com o Salvar — fica fora do
-              corte, meio visivel e sem receber toque. Vale para toda folha
-              com maxHeight + area rolavel. */}
-          <ScrollView
-            className="px-5"
-            style={{ flexShrink: 1 }}
-            contentContainerStyle={{ paddingBottom: 20, gap: 14 }}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Field label={cfg.titulo}>
-              <TextField
-                value={desc}
-                onChangeText={setDesc}
-                placeholder={cfg.placeholder}
-                autoFocus={!editing}
-              />
-            </Field>
+      <Field label="Valor (R$)">
+        <AmountField value={value} onChangeText={setValue} />
+      </Field>
 
-            {cfg.temCategoria ? (
-              <Field label="Categoria">
-                <SelectField value={category} options={categories} onSelect={setCategory} title="Categoria" />
-              </Field>
-            ) : null}
+      <Field label={cfg.dataLabel} hint={dateOk ? undefined : "Data inválida."}>
+        <DateField value={date} onChangeText={setDate} invalid={!dateOk} />
+      </Field>
 
-            <Field label="Valor (R$)">
-              <AmountField value={value} onChangeText={setValue} />
-            </Field>
+      {cfg.temFormaPagamento ? (
+        <Field label="Forma de pagamento (opcional)">
+          <SelectField
+            value={paymentMethod || NENHUMA}
+            options={methods}
+            onSelect={setPaymentMethod}
+            title="Forma de pagamento"
+          />
+        </Field>
+      ) : null}
 
-            <Field label={cfg.dataLabel} hint={dateOk ? undefined : "Data inválida."}>
-              <DateField value={date} onChangeText={setDate} invalid={!dateOk} />
-            </Field>
+      <Field label="Observação (opcional)">
+        <TextField value={note} onChangeText={setNote} placeholder="Ex.: parcela final" />
+      </Field>
 
-            {cfg.temFormaPagamento ? (
-              <Field label="Forma de pagamento (opcional)">
-                <SelectField
-                  value={paymentMethod || NENHUMA}
-                  options={methods}
-                  onSelect={setPaymentMethod}
-                  title="Forma de pagamento"
-                />
-              </Field>
-            ) : null}
+      <View className="gap-1 pt-1">
+        {cfg.temCarteiras ? (
+          <>
+            <SwitchRow
+              label={isIncome ? "Vale alimentação" : "Pago com vale alimentação"}
+              value={voucher}
+              onToggle={() => setVoucher((v) => !v)}
+            />
+            <SwitchRow
+              label={isIncome ? "CLT/PJ" : "Pago com CLT/PJ"}
+              value={cltPj}
+              onToggle={() => setCltPj((v) => !v)}
+            />
+          </>
+        ) : null}
+        {!cfg.temParcelas ? (
+          <SwitchRow label="Recorrente" value={recurrent} onToggle={() => setRecurrent((v) => !v)} />
+        ) : null}
+      </View>
 
-            <Field label="Observação (opcional)">
-              <TextField value={note} onChangeText={setNote} placeholder="Ex.: parcela final" />
-            </Field>
+      {cfg.temParcelas ? (
+        <Field
+          label="Repetição"
+          hint={repeatOk ? undefined : "Informe em quantas parcelas (mínimo 2)."}
+        >
+          <SegmentedField value={repeatMode} options={REPEAT_MODES} onSelect={setRepeatMode} />
+        </Field>
+      ) : null}
 
-            <View className="gap-1 pt-1">
-              {cfg.temCarteiras ? (
-                <>
-                  <SwitchRow
-                    label={isIncome ? "Vale alimentação" : "Pago com vale alimentação"}
-                    value={voucher}
-                    onToggle={() => setVoucher((v) => !v)}
-                  />
-                  <SwitchRow
-                    label={isIncome ? "CLT/PJ" : "Pago com CLT/PJ"}
-                    value={cltPj}
-                    onToggle={() => setCltPj((v) => !v)}
-                  />
-                </>
-              ) : null}
-              {!cfg.temParcelas ? (
-                <SwitchRow label="Recorrente" value={recurrent} onToggle={() => setRecurrent((v) => !v)} />
-              ) : null}
-            </View>
+      {cfg.temParcelas && repeatMode === "installments" ? (
+        <Field label="Número de parcelas">
+          <NumberField
+            value={installments}
+            onChangeText={setInstallments}
+            placeholder="Ex.: 6"
+            invalid={!repeatOk}
+          />
+        </Field>
+      ) : null}
 
-            {cfg.temParcelas ? (
-              <Field
-                label="Repetição"
-                hint={repeatOk ? undefined : "Informe em quantas parcelas (mínimo 2)."}
+      {otherMonths.length > 0 && onMoveMonth ? (
+        <View className="rounded-2xl border border-slate-200 p-3 gap-2 mt-1">
+          <Text className="text-xs font-medium text-slate-500">Mover para outro mês</Text>
+          <Text className="text-[11px] text-slate-400">
+            O gasto sai de {monthLabel(currentMonth)} e passa a contar no mês escolhido.
+          </Text>
+          <View className="flex-row flex-wrap gap-2">
+            {otherMonths.map((m) => (
+              <Touchable
+                key={m}
+                onPress={() => move(m)}
+                disabled={moving}
+                hitSlop={{ top: 6, bottom: 6 }}
+                className="px-3 py-2.5 rounded-xl border border-slate-200 disabled:opacity-40"
               >
-                <SegmentedField value={repeatMode} options={REPEAT_MODES} onSelect={setRepeatMode} />
-              </Field>
-            ) : null}
-
-            {cfg.temParcelas && repeatMode === "installments" ? (
-              <Field label="Número de parcelas">
-                <NumberField
-                  value={installments}
-                  onChangeText={setInstallments}
-                  placeholder="Ex.: 6"
-                  invalid={!repeatOk}
-                />
-              </Field>
-            ) : null}
-
-            {otherMonths.length > 0 && onMoveMonth ? (
-              <View className="rounded-2xl border border-slate-200 p-3 gap-2 mt-1">
-                <Text className="text-xs font-medium text-slate-500">Mover para outro mês</Text>
-                <Text className="text-[11px] text-slate-400">
-                  O gasto sai de {monthLabel(currentMonth)} e passa a contar no mês escolhido.
-                </Text>
-                <View className="flex-row flex-wrap gap-2">
-                  {otherMonths.map((m) => (
-                    <Touchable
-                      key={m}
-                      onPress={() => move(m)}
-                      disabled={moving}
-                      hitSlop={{ top: 6, bottom: 6 }}
-                      className="px-3 py-2.5 rounded-xl border border-slate-200 disabled:opacity-40"
-                    >
-                      <Text className="text-xs font-medium text-slate-700">{monthLabel(m)}</Text>
-                    </Touchable>
-                  ))}
-                </View>
-                {moving ? <ActivityIndicator color="#16382c" /> : null}
-                {moveError ? <Text className="text-[11px] text-rose-600">{moveError}</Text> : null}
-              </View>
-            ) : null}
-          </ScrollView>
-
-          <View
-            className="flex-row gap-2 px-5 pt-3 border-t border-slate-100"
-            style={{ paddingBottom: 12 + insets.bottom }}
-          >
-            <Touchable
-              onPress={onClose}
-              className="flex-1 py-3.5 rounded-xl border border-slate-200 items-center"
-            >
-              <Text className="text-sm font-medium text-slate-600">Cancelar</Text>
-            </Touchable>
-            <Touchable
-              onDark
-              onPress={submit}
-              disabled={!canSave}
-              className="flex-1 py-3.5 rounded-xl items-center disabled:opacity-40"
-              style={{ backgroundColor: "#16382c" }}
-            >
-              <Text className="text-sm font-semibold text-white">Salvar</Text>
-            </Touchable>
+                <Text className="text-xs font-medium text-slate-700">{monthLabel(m)}</Text>
+              </Touchable>
+            ))}
           </View>
+          {moving ? <ActivityIndicator color="#16382c" /> : null}
+          {moveError ? <Text className="text-[11px] text-rose-600">{moveError}</Text> : null}
         </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      ) : null}
+    </Sheet>
   );
 }

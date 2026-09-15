@@ -1,13 +1,6 @@
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
 import { Wallet } from "lucide-react-native";
@@ -48,12 +41,13 @@ export default function PairScreen({ onPaired }) {
     }
   };
 
+  /* KeyboardAvoidingView da react-native-keyboard-controller, com "padding"
+     nas duas plataformas. Antes o Android ficava sem behavior apostando no
+     adjustResize da janela, que no edge-to-edge obrigatorio nao encolhe nada
+     — num aparelho baixo o botao Conectar sumia atras do teclado. style em
+     vez de className: componente de fora do RN, o NativeWind nao o registra. */
   return (
-    <KeyboardAvoidingView
-      className="flex-1"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={{ backgroundColor: "#F1F4F2" }}
-    >
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: "#F1F4F2" }}>
       <ScrollView
         contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
         keyboardShouldPersistTaps="handled"

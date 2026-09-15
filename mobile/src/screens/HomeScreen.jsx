@@ -7,6 +7,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-native";
@@ -384,8 +385,14 @@ export default function HomeScreen({ email, onSignOut }) {
 
   return (
     <View className="flex-1">
-      <ScrollView
-        className="flex-1"
+      {/* KeyboardAwareScrollView, nao ScrollView: rola sozinho ate o campo
+          focado (busca, "De/Ate" dos filtros de Gastos). No Android edge-to-
+          edge o adjustResize da janela nao encolhe nada, entao sem isto um
+          campo no meio da tela fica embaixo do teclado. style em vez de
+          className: componente de fora do RN, o NativeWind nao o registra. */}
+      <KeyboardAwareScrollView
+        style={{ flex: 1 }}
+        bottomOffset={16}
       /* Sem isto, com o teclado da busca aberto o PRIMEIRO toque em qualquer
          botao e consumido dispensando o teclado — o classico "tem que tocar
          duas vezes". Vale para os tres ScrollViews: o RN resolve a dispensa no
@@ -710,7 +717,7 @@ export default function HomeScreen({ email, onSignOut }) {
         onCancel={() => setConfirming(null)}
         onConfirm={removeEntry}
       />
-      </ScrollView>
+      </KeyboardAwareScrollView>
 
       {/* Cartoes fica de fora: saldo de cartao nao e item de fluxo de caixa, e
           SELECTION_SOURCES nao o registra — uma chave "card:" quebraria a soma. */}
