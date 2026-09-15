@@ -8,6 +8,7 @@ import {
   View,
   ActivityIndicator,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Touchable } from "../ui/Touchable";
 import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
@@ -74,6 +75,9 @@ export default function EntryModal({
   const cfg = MODES[mode];
   const editing = !!item;
   const isIncome = mode === "income";
+  /* Modal do RN e uma janela nativa: fica FORA do SafeAreaView de App.jsx, entao
+     o inset da barra de gestos precisa ser aplicado aqui dentro na mao. */
+  const insets = useSafeAreaInsets();
 
   const [desc, setDesc] = useState(isIncome ? item?.source || "" : item?.description || "");
   const [category, setCategory] = useState(item?.category || cfg.cats?.[0]?.name || "");
@@ -155,7 +159,7 @@ export default function EntryModal({
       <KeyboardAvoidingView
         className="flex-1 justify-end"
         style={{ backgroundColor: "rgba(15,23,42,0.4)" }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <View className="bg-white rounded-t-2xl" style={{ maxHeight: "92%" }}>
           <View className="flex-row items-center justify-between px-5 pt-5 pb-3">
@@ -172,9 +176,17 @@ export default function EntryModal({
           </View>
 
           {/* keyboardShouldPersistTaps: sem isto, o primeiro toque so fecha o
-              teclado e o botao Salvar exige dois toques. */}
+              teclado e o botao Salvar exige dois toques.
+
+              flexShrink: 1 e obrigatorio, nao cosmetico. No RN o padrao e
+              flexShrink: 0 (na web e 1): o Yoga mede este ScrollView com a
+              altura INTEIRA do conteudo, o maxHeight da folha corta o
+              container, e o que sobra — o rodape com o Salvar — fica fora do
+              corte, meio visivel e sem receber toque. Vale para toda folha
+              com maxHeight + area rolavel. */}
           <ScrollView
             className="px-5"
+            style={{ flexShrink: 1 }}
             contentContainerStyle={{ paddingBottom: 20, gap: 14 }}
             keyboardShouldPersistTaps="handled"
           >
@@ -281,7 +293,10 @@ export default function EntryModal({
             ) : null}
           </ScrollView>
 
-          <View className="flex-row gap-2 px-5 pt-3 pb-6 border-t border-slate-100">
+          <View
+            className="flex-row gap-2 px-5 pt-3 border-t border-slate-100"
+            style={{ paddingBottom: 12 + insets.bottom }}
+          >
             <Touchable
               onPress={onClose}
               className="flex-1 py-3.5 rounded-xl border border-slate-200 items-center"

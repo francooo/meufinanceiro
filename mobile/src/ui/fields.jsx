@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { FlatList, Modal, Pressable, Text, TextInput, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Touchable } from "./Touchable";
 import { Check, ChevronDown, X } from "lucide-react-native";
 import { maskDateInput } from "../core/dateinput";
@@ -66,6 +67,9 @@ export function DateField({ value, onChangeText, invalid }) {
    dependencia nativa e mais uma coisa para quebrar num upgrade de SDK. */
 export function SelectField({ value, options, onSelect, placeholder = "Selecione", title }) {
   const [open, setOpen] = useState(false);
+  /* Modal do RN e uma janela nativa: fica FORA do SafeAreaView de App.jsx, entao
+     o inset da barra de gestos precisa ser aplicado aqui dentro na mao. */
+  const insets = useSafeAreaInsets();
 
   return (
     <>
@@ -102,8 +106,15 @@ export function SelectField({ value, options, onSelect, placeholder = "Selecione
                 <X size={18} color="#94a3b8" />
               </Touchable>
             </View>
+            {/* flexShrink: 1 e o que faz a lista ROLAR. No RN o padrao e
+                flexShrink: 0: sem isto o Yoga mede a FlatList com a altura de
+                todas as opcoes, o maxHeight de 70% corta a folha, e as ultimas
+                categorias ficam clipadas — e, como a lista "acha" que coube
+                inteira, ela nem rola para alcanca-las. */}
             <FlatList
               keyboardShouldPersistTaps="handled"
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 8 }}
               data={options}
               keyExtractor={(item) => String(item)}
               ItemSeparatorComponent={() => <View className="h-px bg-slate-100" />}
