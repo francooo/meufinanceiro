@@ -538,6 +538,23 @@ export default function App() {
     return upcoming.filter((i) => i.receiptDate === nextDate);
   }, [incomes]);
 
+  // Espelha nextIncomes, com duas diferenças deliberadas: filtra por paidAt,
+  // porque gasto já quitado não é cobrança a vencer; e não recorta por hoje,
+  // porque um gasto vencido é justamente o que mais precisa de aviso — ele
+  // continua aparecendo, marcado como atrasado.
+  const nextExpenses = useMemo(() => {
+    const pending = expenses
+      .filter((e) => !e.paidAt && e.dueDate)
+      .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
+    if (pending.length === 0) return null;
+    const nextDate = pending[0].dueDate;
+    return {
+      date: nextDate,
+      items: pending.filter((e) => e.dueDate === nextDate),
+      overdue: nextDate < todayISO(),
+    };
+  }, [expenses]);
+
   const byCat = useMemo(() => {
     const m = new Map();
     for (const e of expenses) {
@@ -909,6 +926,42 @@ export default function App() {
               {nextIncomes.map((inc) => (
                 <li key={inc.id}>
                   <strong className="tabular-nums">{fmt(inc.value)}</strong> de <strong>{inc.source}</strong>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {nextExpenses && (
+          <div
+            className={
+              "border text-sm rounded-2xl px-4 py-3 mb-5 " +
+              (nextExpenses.overdue
+                ? "bg-rose-50 border-rose-200 text-rose-700"
+                : "bg-amber-50 border-amber-200 text-amber-800")
+            }
+          >
+            <div className="flex items-center gap-2 font-medium">
+              {nextExpenses.overdue ? (
+                <AlertTriangle size={16} className="shrink-0" />
+              ) : (
+                <ArrowDownRight size={16} className="shrink-0" />
+              )}
+              <span>
+                {nextExpenses.overdue ? "Gasto vencido em" : "Você precisa pagar no dia"}{" "}
+                <strong>{formatDateBR(nextExpenses.date)}</strong>
+              </span>
+            </div>
+            <ul
+              className={
+                "mt-2 pl-6 space-y-1 list-disc " +
+                (nextExpenses.overdue ? "marker:text-rose-400" : "marker:text-amber-400")
+              }
+            >
+              {nextExpenses.items.map((exp) => (
+                <li key={exp.id}>
+                  <strong className="tabular-nums">{fmt(exp.value)}</strong> de{" "}
+                  <strong>{exp.description}</strong>
                 </li>
               ))}
             </ul>

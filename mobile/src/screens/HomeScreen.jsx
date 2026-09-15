@@ -9,8 +9,9 @@ import {
 } from "react-native";
 import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
-import { ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-native";
-import { fmt, monthKey, monthLabel } from "../core/format";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-native";
+import { fmt, formatDateBR, monthKey, monthLabel } from "../core/format";
+import { nextExpenses, nextIncomes } from "../core/upcoming";
 import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
 import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend } from "../core/cards";
@@ -48,6 +49,35 @@ function HeroStat({ icon, label, value }) {
       <Text className="text-sm font-semibold text-white mt-0.5" numberOfLines={1} style={NUM}>
         {value}
       </Text>
+    </View>
+  );
+}
+
+/* Classes completas em literais, nunca montadas por interpolacao: o Tailwind
+   varre o codigo-fonte, entao "bg-" + cor nao geraria estilo nenhum. */
+const TONES = {
+  income: { box: "bg-emerald-50 border-emerald-200", text: "text-emerald-800", icon: "#047857" },
+  due: { box: "bg-amber-50 border-amber-200", text: "text-amber-800", icon: "#b45309" },
+  overdue: { box: "bg-rose-50 border-rose-200", text: "text-rose-700", icon: "#be123c" },
+};
+
+function Notice({ tone, icon, headline, date, items, label }) {
+  const t = TONES[tone];
+  return (
+    <View className={"rounded-2xl border px-4 py-3 mb-3 " + t.box}>
+      <View className="flex-row items-center gap-2">
+        {icon}
+        <Text className={"text-sm flex-1 " + t.text}>
+          {headline} <Text className="font-bold">{formatDateBR(date)}</Text>
+        </Text>
+      </View>
+      <View className="mt-1.5 pl-6 gap-0.5">
+        {items.map((it) => (
+          <Text key={it.id} className={"text-sm " + t.text} style={NUM} numberOfLines={2}>
+            <Text className="font-semibold">{fmt(it.value)}</Text> de {label(it)}
+          </Text>
+        ))}
+      </View>
     </View>
   );
 }
@@ -346,6 +376,12 @@ export default function HomeScreen({ email, onSignOut }) {
   const vaRestante = vaRecebido - vaUsado;
   const cltSobra = cltRecebido - cltGasto;
 
+  /* Olham so o mes em tela — `incomes`/`expenses` sao do mes selecionado, como
+     na web. No fim do mes o aviso pode ficar vazio, e tudo bem: trocar de mes
+     ja mostra o proximo. */
+  const proximoGanho = useMemo(() => nextIncomes(incomes), [incomes]);
+  const proximoGasto = useMemo(() => nextExpenses(expenses), [expenses]);
+
   return (
     <View className="flex-1">
       <ScrollView
@@ -403,6 +439,34 @@ export default function HomeScreen({ email, onSignOut }) {
           <LogOut size={16} color="#64748b" />
         </Touchable>
       </View>
+
+      {proximoGanho ? (
+        <Notice
+          tone="income"
+          icon={<ArrowUpRight size={16} color={TONES.income.icon} />}
+          headline="Você vai receber no dia"
+          date={proximoGanho.date}
+          items={proximoGanho.items}
+          label={(i) => i.source}
+        />
+      ) : null}
+
+      {proximoGasto ? (
+        <Notice
+          tone={proximoGasto.overdue ? "overdue" : "due"}
+          icon={
+            proximoGasto.overdue ? (
+              <AlertTriangle size={16} color={TONES.overdue.icon} />
+            ) : (
+              <ArrowDownRight size={16} color={TONES.due.icon} />
+            )
+          }
+          headline={proximoGasto.overdue ? "Gasto vencido em" : "Você precisa pagar no dia"}
+          date={proximoGasto.date}
+          items={proximoGasto.items}
+          label={(e) => e.description}
+        />
+      ) : null}
 
       <LinearGradient
         colors={["#0f2e25", "#16382c", "#1e4a38"]}
