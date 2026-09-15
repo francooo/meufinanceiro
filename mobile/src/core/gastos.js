@@ -68,8 +68,11 @@ export function applyGastosFilters(grouped, f) {
   const query = (f.search || "").trim().toLowerCase();
 
   const common = (list) => {
-    if (!(query || f.paymentMethod || f.dueFrom || f.dueTo)) return list;
-    return list
+    if (!(query || f.category || f.paymentMethod || f.dueFrom || f.dueTo)) return list;
+    /* Categoria e filtro de GRUPO, nao de item: `grouped` ja vem agrupado por
+       categoria, entao basta descartar os outros grupos inteiros. */
+    const base = f.category ? list.filter((g) => g.name === f.category) : list;
+    return base
       .map((g) => {
         let items = g.items;
         if (query) items = items.filter((e) => e.description.toLowerCase().includes(query));
@@ -101,6 +104,13 @@ export function applyGastosFilters(grouped, f) {
   return {
     grouped: result,
     visibleTotal: totalGrouped.reduce((s, g) => s + g.subtotal, 0),
-    otherFiltersActive: !!(query || f.paymentMethod || f.dueFrom || f.dueTo || (f.valueSort && f.valueSort !== "none")),
+    otherFiltersActive: !!(
+      query ||
+      f.category ||
+      f.paymentMethod ||
+      f.dueFrom ||
+      f.dueTo ||
+      (f.valueSort && f.valueSort !== "none")
+    ),
   };
 }

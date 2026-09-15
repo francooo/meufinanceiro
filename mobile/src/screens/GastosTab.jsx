@@ -31,12 +31,14 @@ export default function GastosTab({
   const [search, setSearch] = useState("");
   const [hidePaid, setHidePaid] = useState(false);
   const [valueSort, setValueSort] = useState("none");
+  const [category, setCategory] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("");
   const [dueFrom, setDueFrom] = useState("");
   const [dueTo, setDueTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
   const TODAS = "Todas as formas";
+  const TODAS_CATS = "Todas as categorias";
   const methodOptions = useMemo(
     () => [TODAS, ...allPaymentMethods(extraPaymentMethods), PAYMENT_METHOD_FALLBACK],
     [extraPaymentMethods]
@@ -44,18 +46,26 @@ export default function GastosTab({
   const datesOk = isDateInputValid(dueFrom) && isDateInputValid(dueTo);
 
   const grouped = useMemo(() => buildGastosGrouped(expenses), [expenses]);
+
+  /* Opcoes vindas de `grouped`, nao de CATS: assim a lista traz as categorias
+     personalizadas do usuario e nao oferece categoria sem gasto no mes. */
+  const categoryOptions = useMemo(
+    () => [TODAS_CATS, ...grouped.map((g) => g.name)],
+    [grouped]
+  );
   const { grouped: filtered, visibleTotal, otherFiltersActive } = useMemo(
     () =>
       applyGastosFilters(grouped, {
         search,
         hidePaid,
         valueSort,
+        category: category === TODAS_CATS ? "" : category,
         paymentMethod: paymentMethod === TODAS ? "" : paymentMethod,
         /* Só filtra com data completa: parcial viraria null e filtraria tudo. */
         dueFrom: brToIso(dueFrom) || "",
         dueTo: brToIso(dueTo) || "",
       }),
-    [grouped, search, hidePaid, valueSort, paymentMethod, dueFrom, dueTo]
+    [grouped, search, hidePaid, valueSort, category, paymentMethod, dueFrom, dueTo]
   );
 
   const filtersActive = otherFiltersActive || hidePaid;
@@ -64,6 +74,9 @@ export default function GastosTab({
   /* Em modo selecao as setas somem, como na web: caixinha + setas + tres
      acoes competiriam demais por ~360dp. */
   const canReorder = !filtersActive && !selecting && !!onMove;
+  /* Acende o chip "Mais filtros" quando algo do painel recolhido esta ativo —
+     senao o filtro ficaria escondido e sem pista de que esta ligado. */
+  const panelActive = !!(category || paymentMethod || dueFrom || dueTo);
   const sortLabel = { none: "Ordem padrão", desc: "Maior valor", asc: "Menor valor" }[valueSort];
   const cycleSort = () =>
     setValueSort((v) => (v === "none" ? "desc" : v === "desc" ? "asc" : "none"));
@@ -142,16 +155,11 @@ export default function GastosTab({
           onPress={() => setShowFilters((v) => !v)}
           className={
             "px-3 py-2 rounded-xl border " +
-            (paymentMethod || dueFrom || dueTo ? "border-transparent" : "bg-white border-slate-200")
+            (panelActive ? "border-transparent" : "bg-white border-slate-200")
           }
-          style={paymentMethod || dueFrom || dueTo ? { backgroundColor: BRAND } : undefined}
+          style={panelActive ? { backgroundColor: BRAND } : undefined}
         >
-          <Text
-            className={
-              "text-xs font-medium " +
-              (paymentMethod || dueFrom || dueTo ? "text-white" : "text-slate-700")
-            }
-          >
+          <Text className={"text-xs font-medium " + (panelActive ? "text-white" : "text-slate-700")}>
             {showFilters ? "Menos filtros" : "Mais filtros"}
           </Text>
         </Touchable>
@@ -162,6 +170,7 @@ export default function GastosTab({
               setSearch("");
               setHidePaid(false);
               setValueSort("none");
+              setCategory("");
               setPaymentMethod("");
               setDueFrom("");
               setDueTo("");
@@ -176,6 +185,15 @@ export default function GastosTab({
 
       {showFilters ? (
         <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+          <View>
+            <Text className="text-xs font-medium text-slate-500 mb-1">Categoria</Text>
+            <SelectField
+              value={category || TODAS_CATS}
+              options={categoryOptions}
+              onSelect={(v) => setCategory(v === TODAS_CATS ? "" : v)}
+              title="Categoria"
+            />
+          </View>
           <View>
             <Text className="text-xs font-medium text-slate-500 mb-1">Forma de pagamento</Text>
             <SelectField
