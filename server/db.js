@@ -44,6 +44,7 @@ export async function migrate() {
       due_date TEXT DEFAULT NULL,
       installment_total INTEGER DEFAULT NULL,
       installment_number INTEGER DEFAULT NULL,
+      purchase_total NUMERIC DEFAULT NULL,
       paid_with_voucher BOOLEAN NOT NULL DEFAULT false,
       paid_with_clt_pj BOOLEAN NOT NULL DEFAULT false,
       payment_method TEXT DEFAULT NULL,
@@ -127,6 +128,9 @@ export async function migrate() {
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_at TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_total INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS installment_number INTEGER DEFAULT NULL`);
+  /* Valor cheio da compra parcelada. Nulo nos gastos ja gravados e em tudo que
+     nao e parcelado — quem le trata a ausencia com parcela x total. */
+  await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS purchase_total NUMERIC DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS due_date TEXT DEFAULT NULL`);
   await pool.query(`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS paid_with_voucher BOOLEAN NOT NULL DEFAULT false`);
@@ -168,6 +172,7 @@ export async function getData(month) {
   const { rows: expenses } = await pool.query(
     `SELECT id, description, category, value, note, recurrent, paid_at AS "paidAt", due_date AS "dueDate",
             installment_total AS "installmentTotal", installment_number AS "installmentNumber",
+            purchase_total AS "purchaseTotal",
             order_index AS "order", paid_with_voucher AS "paidWithVoucher", paid_with_clt_pj AS "paidWithCltPj",
             payment_method AS "paymentMethod", created_at AS "createdAt"
      FROM expenses WHERE month = $1 ORDER BY category, order_index NULLS LAST, description`,
@@ -180,7 +185,13 @@ export async function getData(month) {
     [month]
   );
   return {
-    expenses: expenses.map((e) => ({ ...e, value: Number(e.value) })),
+    /* NUMERIC volta string do pg. purchaseTotal continua nulo quando nulo: 0
+       ali faria cardChargeOf cair no fallback sem necessidade. */
+    expenses: expenses.map((e) => ({
+      ...e,
+      value: Number(e.value),
+      purchaseTotal: e.purchaseTotal == null ? null : Number(e.purchaseTotal),
+    })),
     incomes: incomes.map((i) => ({ ...i, value: Number(i.value) })),
   };
 }
@@ -193,8 +204,8 @@ export async function replaceExpenses(month, expenses) {
     await client.query("DELETE FROM expenses WHERE month = $1", [month]);
     for (const e of expenses) {
       await client.query(
-        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        `INSERT INTO expenses (id, description, category, value, note, month, recurrent, paid_at, due_date, installment_total, installment_number, purchase_total, order_index, paid_with_voucher, paid_with_clt_pj, payment_method, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
         [
           e.id,
           e.description,
@@ -207,6 +218,7 @@ export async function replaceExpenses(month, expenses) {
           e.dueDate || null,
           e.installmentTotal ?? null,
           e.installmentNumber ?? null,
+          e.purchaseTotal ?? null,
           e.order ?? null,
           !!e.paidWithVoucher,
           !!e.paidWithCltPj,
@@ -296,6 +308,7 @@ export async function createMonth(newMonth) {
       const { rows: carryForwardExpenses } = await client.query(
         `SELECT description, category, value, note, recurrent, due_date AS "dueDate",
                 installment_total AS "installmentTotal", installment_number AS "installmentNumber",
+                purchase_total AS "purchaseTotal",
                 order_index AS "order", paid_with_voucher AS "paidWithVoucher", paid_with_clt_pj AS "paidWithCltPj",
                 payment_method AS "paymentMethod"
          FROM expenses
@@ -306,8 +319,8 @@ export async function createMonth(newMonth) {
       for (const e of carryForwardExpenses) {
         const isInstallment = e.installmentTotal != null;
         await client.query(
-          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, order_index, paid_with_voucher, paid_with_clt_pj, payment_method, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          `INSERT INTO expenses (id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, purchase_total, order_index, paid_with_voucher, paid_with_clt_pj, payment_method, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
           [
             randomUUID(),
             e.description,
@@ -319,6 +332,9 @@ export async function createMonth(newMonth) {
             addOneMonthToDate(e.dueDate),
             isInstallment ? e.installmentTotal : null,
             isInstallment ? e.installmentNumber + 1 : null,
+            /* Viaja junto com as parcelas seguintes: elas nao cobram o total do
+               cartao, mas a edicao precisa reabrir com o valor certo. */
+            isInstallment ? e.purchaseTotal ?? null : null,
             e.order ?? null,
             e.paidWithVoucher,
             e.paidWithCltPj,

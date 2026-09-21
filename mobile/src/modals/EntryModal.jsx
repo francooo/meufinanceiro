@@ -80,6 +80,9 @@ export default function EntryModal({
   const [installments, setInstallments] = useState(
     item?.installmentTotal ? String(item.installmentTotal) : ""
   );
+  const [purchaseTotal, setPurchaseTotal] = useState(
+    item?.purchaseTotal ? String(item.purchaseTotal) : ""
+  );
   const [moving, setMoving] = useState(false);
   const [moveError, setMoveError] = useState("");
 
@@ -115,8 +118,19 @@ export default function EntryModal({
   const dateOk = isDateInputValid(date);
   const parcelas = parseInstallments(installments);
   const repeatOk = !cfg.temParcelas || isRepeatValid(repeatMode, parcelas);
+
+  /* O limite do cartao cai o valor cheio da compra de uma vez, nao a parcela,
+     entao o total e o que a aba Cartoes desconta. Deixar em branco vale: o
+     calculo cai em parcela x parcelas, que so erra o arredondamento. */
+  const showPurchaseTotal = cfg.temParcelas && repeatMode === "installments";
+  const suggestedTotal =
+    !Number.isNaN(amount) && Number.isInteger(parcelas) && parcelas >= 2 ? amount * parcelas : NaN;
+  const typedTotal = parseAmount(purchaseTotal);
+  const totalFilled = purchaseTotal.trim() !== "";
+  const totalOk = !showPurchaseTotal || !totalFilled || (!Number.isNaN(typedTotal) && typedTotal > 0);
+
   const canSave =
-    desc.trim() !== "" && !Number.isNaN(amount) && amount >= 0 && dateOk && repeatOk;
+    desc.trim() !== "" && !Number.isNaN(amount) && amount >= 0 && dateOk && repeatOk && totalOk;
 
   const submit = () => {
     if (!canSave) return;
@@ -132,7 +146,7 @@ export default function EntryModal({
           description: desc.trim(),
           category,
           dueDate: iso,
-          ...repeatFields(repeatMode, parcelas, item),
+          ...repeatFields(repeatMode, parcelas, item, totalFilled ? typedTotal : null),
           ...(cfg.temCarteiras ? { paidWithVoucher: voucher, paidWithCltPj: cltPj } : {}),
           ...(cfg.temFormaPagamento
             ? { paymentMethod: paymentMethod === NENHUMA ? null : paymentMethod || null }
@@ -217,15 +231,32 @@ export default function EntryModal({
         </Field>
       ) : null}
 
-      {cfg.temParcelas && repeatMode === "installments" ? (
-        <Field label="Número de parcelas">
-          <NumberField
-            value={installments}
-            onChangeText={setInstallments}
-            placeholder="Ex.: 6"
-            invalid={!repeatOk}
-          />
-        </Field>
+      {showPurchaseTotal ? (
+        <>
+          <Field label="Número de parcelas">
+            <NumberField
+              value={installments}
+              onChangeText={setInstallments}
+              placeholder="Ex.: 6"
+              invalid={!repeatOk}
+            />
+          </Field>
+          <Field
+            label="Valor total da compra (R$)"
+            hint={
+              totalOk
+                ? "O limite do cartão cai o valor total de uma vez, não a parcela. Em branco, usamos a parcela vezes o número de parcelas."
+                : "Informe um valor maior que zero ou deixe em branco."
+            }
+          >
+            <AmountField
+              value={purchaseTotal}
+              onChangeText={setPurchaseTotal}
+              placeholder={Number.isNaN(suggestedTotal) ? "0,00" : suggestedTotal.toFixed(2).replace(".", ",")}
+              invalid={!totalOk}
+            />
+          </Field>
+        </>
       ) : null}
 
       {otherMonths.length > 0 && onMoveMonth ? (

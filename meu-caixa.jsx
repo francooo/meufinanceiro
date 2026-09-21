@@ -135,6 +135,22 @@ const addMonths = (key, n) => {
   return monthKey(new Date(y, m - 1 + n, 1));
 };
 
+// Quanto a linha tirou do cartão no mês dela. Numa compra parcelada o limite cai
+// o valor CHEIO de uma vez, na hora da compra — 280 de uma 280 em 3x, não os
+// 93,33 da parcela. Então a parcela 1 cobra o total e as seguintes cobram só a
+// parcela, que é o que você deve naquele mês.
+// purchaseTotal é nulo em tudo gravado antes dessa coluna existir; o fallback
+// parcela × total mantém esses lançamentos com um número razoável.
+// Espelho de mobile/src/core/cards.js — mudou aqui, muda lá.
+const cardChargeOf = (e) => {
+  const value = Number(e.value) || 0;
+  const total = Number(e.installmentTotal) || 0;
+  if (total < 2) return value;
+  if ((e.installmentNumber ?? 1) !== 1) return value;
+  const declared = Number(e.purchaseTotal) || 0;
+  return declared > 0 ? declared : value * total;
+};
+
 const store = {
   async loadMonths() {
     try {
@@ -649,7 +665,21 @@ export default function App() {
     const m = new Map();
     for (const e of expenses) {
       if (!e.paymentMethod) continue;
-      m.set(e.paymentMethod, (m.get(e.paymentMethod) || 0) + (Number(e.value) || 0));
+      m.set(e.paymentMethod, (m.get(e.paymentMethod) || 0) + cardChargeOf(e));
+    }
+    return m;
+  }, [expenses]);
+
+  // Quanto do total acima veio de compra parcelada cobrada cheia, para a tela
+  // explicar por que o desconto é maior que a soma das parcelas.
+  const upfrontByPaymentMethod = useMemo(() => {
+    const m = new Map();
+    for (const e of expenses) {
+      if (!e.paymentMethod) continue;
+      const extra = cardChargeOf(e) - (Number(e.value) || 0);
+      if (extra <= 0) continue;
+      const cur = m.get(e.paymentMethod) || { extra: 0, count: 0 };
+      m.set(e.paymentMethod, { extra: cur.extra + extra, count: cur.count + 1 });
     }
     return m;
   }, [expenses]);
@@ -660,14 +690,22 @@ export default function App() {
         .filter((c) => c.paymentMethod && c.referenceDate) // blinda formatDateBR(null), que quebraria a aba
         .map((c) => {
           const spent = spentByPaymentMethod.get(c.paymentMethod) || 0;
+          const up = upfrontByPaymentMethod.get(c.paymentMethod) || { extra: 0, count: 0 };
           const refMonth = c.referenceDate.slice(0, 7);
           // saldo anotado depois do mês visto já embute esses gastos: não descontar de novo
           const scope = month < refMonth ? "before" : month === refMonth ? "same" : "after";
           const balance = Number(c.balance) || 0;
-          return { ...c, spent, scope, remaining: scope === "before" ? balance : balance - spent };
+          return {
+            ...c,
+            spent,
+            scope,
+            upfrontExtra: up.extra,
+            upfrontCount: up.count,
+            remaining: scope === "before" ? balance : balance - spent,
+          };
         })
         .sort((a, b) => a.paymentMethod.localeCompare(b.paymentMethod)),
-    [cards, spentByPaymentMethod, month]
+    [cards, spentByPaymentMethod, upfrontByPaymentMethod, month]
   );
 
   const unregisteredMethodSpend = useMemo(() => {
@@ -1991,7 +2029,8 @@ function Cartoes({ cards, unregistered, month, canAdd, onAdd, onEdit, onDelete }
           <AlertTriangle size={14} className="shrink-0 mt-0.5" />
           <span>
             Cada cartão mostra o saldo que você registrou menos os gastos lançados em{" "}
-            <strong>{monthLabel(month)}</strong>. Gastos de outros meses não entram nesta conta.
+            <strong>{monthLabel(month)}</strong>, contando compras parceladas pelo valor total. Gastos de
+            outros meses não entram nesta conta.
           </span>
         </div>
       )}
@@ -2047,6 +2086,13 @@ function Cartoes({ cards, unregistered, month, canAdd, onAdd, onEdit, onDelete }
                   <span className="text-rose-600 tabular-nums shrink-0">- {fmt(c.spent)}</span>
                 </div>
               )}
+              {!skipped && c.upfrontExtra > 0 && (
+                <p className="text-[11px] text-slate-400">
+                  Inclui o valor total de {c.upfrontCount}{" "}
+                  {c.upfrontCount === 1 ? "compra parcelada" : "compras parceladas"} — o limite do cartão cai
+                  de uma vez, não parcela a parcela.
+                </p>
+              )}
             </div>
 
             {skipped ? (
@@ -2068,6 +2114,23 @@ function Cartoes({ cards, unregistered, month, canAdd, onAdd, onEdit, onDelete }
                   <p className="text-[11px] text-amber-600 mt-1">
                     Pode incluir gastos anteriores a {formatDateBR(c.referenceDate)}, já descontados do saldo.
                   </p>
+                )}
+                {/* O saldo é um retrato de uma data: em meses posteriores ele não conhece
+                    os gastos do meio do caminho, e só quem tem o número novo é o app do
+                    cartão. Avisar e oferecer a edição. */}
+                {c.scope === "after" && (
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-[11px] text-amber-600 flex-1">
+                      Saldo anotado em {formatDateBR(c.referenceDate)}, antes de {monthLabel(month)}. Os gastos
+                      dos meses entre uma coisa e outra não estão descontados deste número.
+                    </p>
+                    <button
+                      onClick={() => onEdit(c)}
+                      className="shrink-0 text-[11px] font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 px-2.5 py-1.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-amber-300"
+                    >
+                      Atualizar saldo
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -2962,6 +3025,7 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPa
     return "none";
   });
   const [installmentTotal, setInstallmentTotal] = useState(item?.installmentTotal || 2);
+  const [purchaseTotal, setPurchaseTotal] = useState(item?.purchaseTotal ? String(item.purchaseTotal) : "");
   const [paidWithVoucher, setPaidWithVoucher] = useState(item?.paidWithVoucher || false);
   const [paidWithCltPj, setPaidWithCltPj] = useState(item?.paidWithCltPj || false);
   const [voucherIncome, setVoucherIncome] = useState(item?.voucherIncome || false);
@@ -2999,12 +3063,24 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPa
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // O limite do cartão cai o valor cheio da compra de uma vez, não a parcela, então o
+  // total é o que a aba Cartões desconta. Em branco vale: cai em parcela × parcelas.
+  const showPurchaseTotal = hasCategory && isExpense && repeatMode === "installments";
+  const suggestedTotal =
+    !isNaN(parseFloat(value)) && Number.isInteger(installmentTotal) && installmentTotal >= 2
+      ? parseFloat(value) * installmentTotal
+      : NaN;
+  const totalFilled = purchaseTotal.trim() !== "";
+  const typedTotal = parseFloat(purchaseTotal);
+  const totalOk = !showPurchaseTotal || !totalFilled || (!isNaN(typedTotal) && typedTotal > 0);
+
   const canSave =
     desc.trim() !== "" &&
     value !== "" &&
     !isNaN(parseFloat(value)) &&
     parseFloat(value) >= 0 &&
     (!hasCategory || category.trim() !== "") &&
+    totalOk &&
     (!hasCategory || repeatMode !== "installments" || (Number.isInteger(installmentTotal) && installmentTotal >= 2));
 
   const submit = () => {
@@ -3019,6 +3095,7 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPa
           recurrent: repeatMode === "recurrent",
           installmentTotal: repeatMode === "installments" ? installmentTotal : null,
           installmentNumber: repeatMode === "installments" ? item?.installmentNumber || 1 : null,
+          purchaseTotal: showPurchaseTotal && totalFilled ? typedTotal : null,
           ...(isExpense ? { paidWithVoucher, paidWithCltPj, paymentMethod: paymentMethod.trim() || null } : {}),
         }
       : { source: desc.trim(), value: parseFloat(value), note: note.trim(), receiptDate: receiptDate || null, recurrent, voucherIncome, cltPjIncome };
@@ -3219,6 +3296,30 @@ function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPa
                   {item?.installmentNumber && (
                     <span className="text-xs text-slate-400">(esta é a parcela {item.installmentNumber})</span>
                   )}
+                </div>
+              )}
+              {showPurchaseTotal && (
+                <div className="pl-6">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">Valor total da compra (R$)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={purchaseTotal}
+                      onChange={(e) => setPurchaseTotal(e.target.value)}
+                      placeholder={isNaN(suggestedTotal) ? "0,00" : suggestedTotal.toFixed(2)}
+                      className={
+                        "w-28 px-2 py-1.5 rounded-lg border text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 " +
+                        (totalOk ? "border-slate-200 focus:border-slate-400" : "border-rose-400")
+                      }
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    {totalOk
+                      ? "O limite do cartão cai o valor total de uma vez, não a parcela. Em branco, usamos a parcela vezes o número de parcelas."
+                      : "Informe um valor maior que zero ou deixe em branco."}
+                  </p>
                 </div>
               )}
             </div>

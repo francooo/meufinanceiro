@@ -24,22 +24,27 @@ export function repeatModeOf(item) {
 export const isRepeatValid = (mode, total) =>
   mode !== "installments" || (Number.isInteger(total) && total >= 2);
 
-/* Os tres campos saem juntos e coerentes: ligar um desliga os outros. Manter
+/* Os campos saem juntos e coerentes: ligar um desliga os outros. Manter
    installmentTotal preenchido num gasto marcado como recorrente faria o
-   servidor propagar pelos dois caminhos. */
-export function repeatFields(mode, total, item) {
+   servidor propagar pelos dois caminhos, e um purchaseTotal orfao reabriria a
+   edicao com um valor que nada mais usa. */
+export function repeatFields(mode, total, item, purchaseTotal = null) {
   if (mode === "installments") {
     return {
       recurrent: false,
       installmentTotal: total,
       /* Ao editar, preserva em qual parcela o gasto esta; ao criar, comeca na 1. */
       installmentNumber: item?.installmentNumber || 1,
+      /* Valor cheio da compra. Nulo quando nao informado: cards.js cai no
+         fallback parcela x total em vez de gravar um numero inventado. */
+      purchaseTotal: purchaseTotal ?? null,
     };
   }
   return {
     recurrent: mode === "recurrent",
     installmentTotal: null,
     installmentNumber: null,
+    purchaseTotal: null,
   };
 }
 

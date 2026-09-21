@@ -15,7 +15,7 @@ import { fmt, formatDateBR, monthKey, monthLabel } from "../core/format";
 import { nextExpenses, nextIncomes } from "../core/upcoming";
 import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
-import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend } from "../core/cards";
+import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend, upfrontByPaymentMethod } from "../core/cards";
 import { applyOrder, reorderWithin } from "../core/reorder";
 import { pruneMonthKeys, selectionStats, toggleKey } from "../core/selection";
 import { SelectionBar, SelectionFab } from "../ui/SelectionBar";
@@ -367,7 +367,11 @@ export default function HomeScreen({ email, onSignOut }) {
   });
 
   const spent = useMemo(() => spentByPaymentMethod(expenses), [expenses]);
-  const cardsWithUsage = useMemo(() => buildCardsWithUsage(cards, spent, month), [cards, spent, month]);
+  const upfront = useMemo(() => upfrontByPaymentMethod(expenses), [expenses]);
+  const cardsWithUsage = useMemo(
+    () => buildCardsWithUsage(cards, spent, month, upfront),
+    [cards, spent, month, upfront]
+  );
   const unregistered = useMemo(() => unregisteredMethodSpend(cards, spent), [cards, spent]);
 
   const vaRecebido = useMemo(() => totalOf(incomes.filter((i) => i.voucherIncome)), [incomes]);

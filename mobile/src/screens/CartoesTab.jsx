@@ -40,8 +40,8 @@ export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, 
           <AlertTriangle size={14} color="#b45309" />
           <Text className="text-xs text-amber-800 flex-1">
             Cada cartão mostra o saldo que você registrou menos os gastos lançados em{" "}
-            <Text className="font-bold">{monthLabel(month)}</Text>. Gastos de outros meses não entram
-            nesta conta.
+            <Text className="font-bold">{monthLabel(month)}</Text>, contando compras parceladas pelo
+            valor total. Gastos de outros meses não entram nesta conta.
           </Text>
         </View>
       ) : null}
@@ -96,6 +96,13 @@ export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, 
                   </Text>
                 </View>
               ) : null}
+              {!skipped && c.upfrontExtra > 0 ? (
+                <Text className="text-[11px] text-slate-400">
+                  Inclui o valor total de {c.upfrontCount}{" "}
+                  {c.upfrontCount === 1 ? "compra parcelada" : "compras parceladas"} — o limite do
+                  cartão cai de uma vez, não parcela a parcela.
+                </Text>
+              ) : null}
             </View>
 
             {skipped ? (
@@ -121,6 +128,24 @@ export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, 
                     Parte dos gastos de {monthLabel(month)} pode ser anterior a{" "}
                     {formatDateBR(c.referenceDate)} e já estar descontada do saldo.
                   </Text>
+                ) : null}
+                {/* O saldo e um retrato de uma data: em meses posteriores ele nao
+                    conhece os gastos do meio do caminho, e so quem tem o numero
+                    novo e o app do cartao. Avisar e oferecer a edicao. */}
+                {c.scope === "after" ? (
+                  <View className="flex-row items-center gap-2 mt-1">
+                    <Text className="text-[11px] text-amber-600 flex-1">
+                      Saldo anotado em {formatDateBR(c.referenceDate)}, antes de {monthLabel(month)}. Os
+                      gastos dos meses entre uma coisa e outra não estão descontados deste número.
+                    </Text>
+                    <Touchable
+                      onPress={() => onEdit(c)}
+                      hitSlop={{ top: 6, bottom: 6 }}
+                      className="px-2.5 py-1.5 rounded-lg bg-amber-100 shrink-0"
+                    >
+                      <Text className="text-[11px] font-medium text-amber-800">Atualizar saldo</Text>
+                    </Touchable>
+                  </View>
                 ) : null}
               </View>
             )}

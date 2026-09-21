@@ -34,16 +34,16 @@ export function TextField({ value, onChangeText, placeholder, autoFocus }) {
 /* Teclado decimal entrega virgula em pt-BR. O texto cru fica no estado e so
    vira numero no submit, via parseAmount — converter a cada tecla impediria de
    digitar "1," porque o valor intermediario nao e numero valido. */
-export function AmountField({ value, onChangeText }) {
+export function AmountField({ value, onChangeText, placeholder = "0,00", invalid }) {
   return (
     <TextInput
       value={value}
       onChangeText={(t) => onChangeText(t.replace(/[^0-9.,]/g, ""))}
-      placeholder="0,00"
+      placeholder={placeholder}
       placeholderTextColor="#94a3b8"
       keyboardType="decimal-pad"
       className={INPUT}
-      style={{ fontVariant: ["tabular-nums"] }}
+      style={{ borderColor: invalid ? "#e11d48" : "#e2e8f0", fontVariant: ["tabular-nums"] }}
     />
   );
 }
