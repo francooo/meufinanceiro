@@ -96,6 +96,7 @@ export default function HomeScreen({ email, onSignOut }) {
   const [modal, setModal] = useState(null);        // {mode, item} | null
   const [confirming, setConfirming] = useState(null);
   const [savedMethods, setSavedMethods] = useState([]);
+  const [savedCategories, setSavedCategories] = useState([]);
   const [serasa, setSerasa] = useState([]);
   const [cards, setCards] = useState([]);
   const [cardModal, setCardModal] = useState(null);   // {item, presetMethod} | null
@@ -138,6 +139,7 @@ export default function HomeScreen({ email, onSignOut }) {
         monthRef.current = initial;
         await loadMonth(initial);
         setSavedMethods(await store.loadPaymentMethods().catch(() => []));
+        setSavedCategories(await store.loadCategories().catch(() => []));
         setSerasa(await store.loadSerasa().catch(() => []));
         setCards(await store.loadCards().catch(() => []));
         setWishlist(await store.loadWishlist().catch(() => []));
@@ -328,10 +330,15 @@ export default function HomeScreen({ email, onSignOut }) {
       prev.map((e) => (e.id === id ? { ...e, paidAt: e.paidAt ? null : todayISO() } : e))
     );
 
+  /* As ja gravadas no banco (de QUALQUER mes) somadas as do mes carregado, para
+     que uma categoria criada uma vez continue na lista depois — e para que uma
+     criada agora apareca antes mesmo do proximo boot. Mesmo tratamento que
+     extraMethods logo abaixo. */
   const extraCategories = useMemo(() => {
     const known = new Set(CATS.map((c) => c.name));
-    return [...new Set(expenses.map((e) => e.category).filter((c) => c && !known.has(c)))].sort();
-  }, [expenses]);
+    const all = [...savedCategories, ...expenses.map((e) => e.category)];
+    return [...new Set(all.filter((c) => c && !known.has(c)))].sort();
+  }, [savedCategories, expenses]);
 
   const extraSerasaCategories = useMemo(() => {
     const known = new Set(SERASA_CATS.map((c) => c.name));

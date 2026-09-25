@@ -205,6 +205,18 @@ const store = {
       return [];
     }
   },
+  // categorias de TODOS os meses: sem isto uma categoria personalizada some do
+  // seletor no primeiro mês que não tiver gasto nela
+  async loadCategories() {
+    try {
+      const res = await fetch("/api/categories");
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.categories) ? data.categories : [];
+    } catch {
+      return [];
+    }
+  },
   async loadWishlist() {
     try {
       const res = await fetch("/api/wishlist");
@@ -306,6 +318,7 @@ export default function App() {
   const [serasa, setSerasa] = useState([]);
   const [cards, setCards] = useState([]);
   const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
+  const [savedCategories, setSavedCategories] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState("overview");
@@ -385,6 +398,7 @@ export default function App() {
         setSerasa(await store.loadSerasa());
         setCards(await store.loadCards());
         setSavedPaymentMethods(await store.loadPaymentMethods());
+        setSavedCategories(await store.loadCategories());
         setLoaded(true);
       } else {
         setLoadError(true);
@@ -604,10 +618,13 @@ export default function App() {
       .sort((a, b) => b.subtotal - a.subtotal);
   }, [expenses]);
 
+  // as já gravadas no banco (de qualquer mês) somadas às do mês carregado, para que
+  // uma categoria criada uma vez continue aparecendo na lista depois
   const extraExpenseCategories = useMemo(() => {
     const known = new Set(CATS.map((c) => c.name));
-    return [...new Set(expenses.map((e) => e.category).filter((c) => c && !known.has(c)))].sort();
-  }, [expenses]);
+    const all = [...savedCategories, ...expenses.map((e) => e.category)];
+    return [...new Set(all.filter((c) => c && !known.has(c)))].sort();
+  }, [savedCategories, expenses]);
 
   // formas de pagamento personalizadas: as já gravadas no banco (de qualquer mês) somadas às
   // do mês carregado, para que um cartão criado uma vez continue aparecendo na lista depois

@@ -17,6 +17,13 @@ export const CATS = [
 export const FALLBACK = { color: "#64748B", icon: "Tag" };
 export const catMeta = (n) => CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };
 
+/* Lista completa: as fixas primeiro, as criadas pelo usuario depois. Gemeo de
+   allPaymentMethods — o mesmo idioma estava copiado em meia duzia de lugares. */
+export const allCategories = (extra = []) => [
+  ...CATS.map((c) => c.name),
+  ...extra.filter((c) => !CATS.some((k) => k.name === c)),
+];
+
 export const CARTOES_CATEGORY = "Cartões / Financeiro";
 export const PAYMENT_METHODS = [
   "Pix",

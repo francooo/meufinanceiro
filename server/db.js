@@ -257,6 +257,19 @@ export async function replaceIncomes(month, incomes) {
   }
 }
 
+/* Categoria nao e entidade: existe so como texto na coluna de cada gasto. Sem
+   esta varredura de TODOS os meses, uma categoria personalizada desaparece do
+   seletor assim que o mes carregado nao tem nenhum gasto nela. Gemeo de
+   getPaymentMethods, que resolve o mesmo problema uma coluna ao lado. */
+export async function getCategories() {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT category FROM expenses
+     WHERE category IS NOT NULL AND category <> ''
+     ORDER BY category`
+  );
+  return rows.map((r) => r.category);
+}
+
 export async function getPaymentMethods() {
   const { rows } = await pool.query(
     `SELECT DISTINCT payment_method FROM expenses

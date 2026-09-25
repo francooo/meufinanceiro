@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems, getCards, replaceCards, createPairingCode, consumePairingCode } from "./db.js";
+import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, getCategories, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems, getCards, replaceCards, createPairingCode, consumePairingCode } from "./db.js";
 import { verifyGoogleCredential, signSession, setSessionCookie, clearSessionCookie, getSessionEmail, requireAuth, isAllowedEmail, generatePairingCode, formatPairingCode, normalizePairingCode, isPairingCodeShaped, hashPairingCode, PAIR_TTL_MINUTES } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -146,6 +146,16 @@ app.get("/api/payment-methods", requireAuth, async (req, res) => {
   } catch (err) {
     console.error("GET /api/payment-methods failed:", err);
     res.status(500).json({ error: "Falha ao carregar as formas de pagamento." });
+  }
+});
+
+app.get("/api/categories", requireAuth, async (req, res) => {
+  try {
+    const categories = await getCategories();
+    res.json({ categories });
+  } catch (err) {
+    console.error("GET /api/categories failed:", err);
+    res.status(500).json({ error: "Falha ao carregar as categorias." });
   }
 });
 

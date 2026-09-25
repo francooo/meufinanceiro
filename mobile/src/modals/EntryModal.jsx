@@ -2,14 +2,28 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { Sheet } from "../ui/Sheet";
 import { Touchable } from "../ui/Touchable";
+import { X } from "lucide-react-native";
 import { parseAmount } from "../core/amount";
 import { brToIso, isDateInputValid, isoToBr } from "../core/dateinput";
-import { CATS, SERASA_CATS, allPaymentMethods } from "../core/catalog";
+import { CATS, SERASA_CATS, allCategories, allPaymentMethods } from "../core/catalog";
 import { monthLabel } from "../core/format";
 import { AmountField, DateField, Field, NumberField, SegmentedField, SelectField, SwitchRow, TextField } from "../ui/fields";
 import { REPEAT_MODES, isRepeatValid, parseInstallments, repeatFields, repeatModeOf } from "../core/repeat";
 
 const NENHUMA = "Nenhuma";
+/* Sentinela no fim da lista, como o <option> da web (meu-caixa.jsx:3147): trocar
+   o seletor por um campo de texto e o unico jeito de nomear algo que ainda nao
+   existe, ja que categoria e texto livre e nao tem cadastro proprio. */
+const NEW_CATEGORY = "+ Criar nova categoria";
+
+/* Fora do componente para o estado inicial e o useMemo usarem a MESMA lista:
+   duas montagens divergentes abririam a edicao no modo errado. Serasa tem
+   catalogo proprio e nao passa por allCategories, que so conhece CATS. */
+const categoryNames = (cats, extra) => {
+  if (cats === CATS) return allCategories(extra);
+  const base = (cats || []).map((c) => c.name);
+  return [...base, ...extra.filter((c) => !base.includes(c))];
+};
 
 /* Um modal para os tres modos, como na web: gasto, ganho e divida do Serasa
    compartilham descricao, valor, observacao e uma data — o que muda e o nome
@@ -69,6 +83,13 @@ export default function EntryModal({
 
   const [desc, setDesc] = useState(isIncome ? item?.source || "" : item?.description || "");
   const [category, setCategory] = useState(item?.category || cfg.cats?.[0]?.name || "");
+  /* Reabre a edicao no modo certo: uma categoria que nao esta mais na lista so
+     pode ser editada como texto. */
+  const [categoryMode, setCategoryMode] = useState(() =>
+    categoryNames(cfg.cats, extraCategories).includes(item?.category || cfg.cats?.[0]?.name || "")
+      ? "select"
+      : "custom"
+  );
   const [value, setValue] = useState(item ? String(item.value ?? "") : "");
   const [note, setNote] = useState(item?.note || "");
   const [date, setDate] = useState(isoToBr(isIncome ? item?.receiptDate : item?.dueDate));
@@ -104,10 +125,11 @@ export default function EntryModal({
     }
   };
 
-  const categories = useMemo(() => {
-    const base = (cfg.cats || []).map((c) => c.name);
-    return [...base, ...extraCategories.filter((c) => !base.includes(c))];
-  }, [cfg.cats, extraCategories]);
+  const knownCategories = useMemo(
+    () => categoryNames(cfg.cats, extraCategories),
+    [cfg.cats, extraCategories]
+  );
+  const categories = useMemo(() => [...knownCategories, NEW_CATEGORY], [knownCategories]);
 
   const methods = useMemo(
     () => [NENHUMA, ...allPaymentMethods(extraPaymentMethods)],
@@ -129,8 +151,25 @@ export default function EntryModal({
   const totalFilled = purchaseTotal.trim() !== "";
   const totalOk = !showPurchaseTotal || !totalFilled || (!Number.isNaN(typedTotal) && typedTotal > 0);
 
+  /* Categoria e texto livre: sem a normalizacao "Mercado" e "mercado" viram duas
+     categorias que nunca mais se juntam. Se o nome digitado ja existe ignorando
+     caixa e espacos, o gasto vai para a grafia que ja esta no banco. */
+  const typedCategory = category.trim();
+  const resolvedCategory =
+    knownCategories.find((c) => c.toLowerCase() === typedCategory.toLowerCase()) || typedCategory;
+  /* Recusa tambem o proprio texto da sentinela, que criaria uma categoria
+     chamada "+ Criar nova categoria". */
+  const categoryOk =
+    !cfg.temCategoria || (typedCategory !== "" && typedCategory !== NEW_CATEGORY);
+
   const canSave =
-    desc.trim() !== "" && !Number.isNaN(amount) && amount >= 0 && dateOk && repeatOk && totalOk;
+    desc.trim() !== "" &&
+    !Number.isNaN(amount) &&
+    amount >= 0 &&
+    dateOk &&
+    repeatOk &&
+    totalOk &&
+    categoryOk;
 
   const submit = () => {
     if (!canSave) return;
@@ -144,7 +183,7 @@ export default function EntryModal({
       : {
           ...base,
           description: desc.trim(),
-          category,
+          category: resolvedCategory,
           dueDate: iso,
           ...repeatFields(repeatMode, parcelas, item, totalFilled ? typedTotal : null),
           ...(cfg.temCarteiras ? { paidWithVoucher: voucher, paidWithCltPj: cltPj } : {}),
@@ -174,8 +213,47 @@ export default function EntryModal({
       </Field>
 
       {cfg.temCategoria ? (
-        <Field label="Categoria">
-          <SelectField value={category} options={categories} onSelect={setCategory} title="Categoria" />
+        <Field label="Categoria" hint={categoryOk ? undefined : "Dê um nome à categoria."}>
+          {categoryMode === "select" ? (
+            <SelectField
+              value={category}
+              options={categories}
+              onSelect={(c) => {
+                if (c === NEW_CATEGORY) {
+                  setCategoryMode("custom");
+                  setCategory("");
+                } else {
+                  setCategory(c);
+                }
+              }}
+              title="Categoria"
+            />
+          ) : (
+            <View className="flex-row gap-2">
+              <View className="flex-1 min-w-0">
+                <TextField
+                  value={category}
+                  onChangeText={setCategory}
+                  placeholder="Nome da nova categoria"
+                  autoFocus
+                />
+              </View>
+              <Touchable
+                variant="icon"
+                onPress={() => {
+                  setCategoryMode("select");
+                  /* Volta para uma categoria valida: deixar o texto pela metade
+                     no seletor mostraria um valor que nao esta na lista. */
+                  setCategory(
+                    knownCategories.includes(category) ? category : cfg.cats?.[0]?.name || ""
+                  );
+                }}
+                className="h-[46px] w-[46px] shrink-0 rounded-xl border border-slate-200 items-center justify-center"
+              >
+                <X size={16} color="#94a3b8" />
+              </Touchable>
+            </View>
+          )}
         </Field>
       ) : null}
 

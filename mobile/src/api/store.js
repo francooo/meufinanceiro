@@ -18,6 +18,12 @@ export const store = {
     const d = await request("/api/payment-methods");
     return Array.isArray(d.methods) ? d.methods : [];
   },
+  /* Categorias de TODOS os meses: sem isto uma categoria personalizada some do
+     seletor no primeiro mes que nao tiver gasto nela. */
+  loadCategories: async () => {
+    const d = await request("/api/categories");
+    return Array.isArray(d.categories) ? d.categories : [];
+  },
   /* Endpoint dedicado e atomico: mover nao cabe no PUT de colecao inteira,
      que so enxerga um mes por vez. */
   moveExpenseToMonth: (id, month) =>
