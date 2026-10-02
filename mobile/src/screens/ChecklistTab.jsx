@@ -7,6 +7,7 @@ import { splitChecklist } from "../core/checklist";
 import { Card } from "../ui/Card";
 import { SelectCheckbox } from "../ui/SelectionBar";
 import { Empty } from "../ui/Empty";
+import { DraggableList } from "../ui/DraggableList";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 const BRAND = "#16382c";
@@ -78,8 +79,27 @@ export default function ChecklistTab({
   onDelete,
   onToggleDone,
   onClearDone,
+  onReorder,
+  onDragChange,
 }) {
-  const { ordered, done, totalPending } = useMemo(() => splitChecklist(items), [items]);
+  const { ordered, pending, done, totalPending } = useMemo(() => splitChecklist(items), [items]);
+  /* So os pendentes arrastam: os feitos ficam embaixo, estaticos. Desligado em
+     modo selecao, como nas outras abas. */
+  const canDrag = !!onReorder && !selecting && pending.length > 1;
+
+  const renderRow = (it, withBorder) => (
+    <View key={it.id} className={"bg-white " + (withBorder ? "border-t border-slate-100" : "")}>
+      <ChecklistRow
+        item={it}
+        doneLabel={doneLabel}
+        onEdit={() => onEdit(it)}
+        onDelete={() => onDelete(it)}
+        onToggleDone={() => onToggleDone(it)}
+        selected={isSelected ? isSelected(it.id) : false}
+        onToggleSelect={selecting ? () => onToggleSelect(it.id) : undefined}
+      />
+    </View>
+  );
 
   return (
     <View className="gap-4 pb-8">
@@ -116,19 +136,17 @@ export default function ChecklistTab({
         <Empty text={emptyText} />
       ) : (
         <Card className="overflow-hidden">
-          {ordered.map((it, idx) => (
-            <View key={it.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
-              <ChecklistRow
-                item={it}
-                doneLabel={doneLabel}
-                onEdit={() => onEdit(it)}
-                onDelete={() => onDelete(it)}
-                onToggleDone={() => onToggleDone(it)}
-                selected={isSelected ? isSelected(it.id) : false}
-                onToggleSelect={selecting ? () => onToggleSelect(it.id) : undefined}
-              />
-            </View>
-          ))}
+          {canDrag ? (
+            <DraggableList
+              items={pending}
+              onReorder={onReorder}
+              onDragChange={onDragChange}
+              renderItem={(it, idx) => renderRow(it, idx > 0)}
+            />
+          ) : (
+            pending.map((it, idx) => renderRow(it, idx > 0))
+          )}
+          {done.map((it, idx) => renderRow(it, pending.length > 0 || idx > 0))}
         </Card>
       )}
     </View>

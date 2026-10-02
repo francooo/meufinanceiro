@@ -155,7 +155,9 @@ export async function migrate() {
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS voucher_income BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS clt_pj_income BOOLEAN NOT NULL DEFAULT false`);
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NULL`);
+  await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE wishlist_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
+  await pool.query(`ALTER TABLE shopping_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
 
   await pool.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [month]);
   await pool.query(`
@@ -192,8 +194,9 @@ export async function getData(month) {
   );
   const { rows: incomes } = await pool.query(
     `SELECT id, source, value, note, recurrent, receipt_date AS "receiptDate",
-            voucher_income AS "voucherIncome", clt_pj_income AS "cltPjIncome", created_at AS "createdAt"
-     FROM incomes WHERE month = $1 ORDER BY source`,
+            voucher_income AS "voucherIncome", clt_pj_income AS "cltPjIncome",
+            order_index AS "order", created_at AS "createdAt"
+     FROM incomes WHERE month = $1 ORDER BY order_index NULLS LAST, source`,
     [month]
   );
   return {
@@ -256,8 +259,8 @@ export async function replaceIncomes(month, incomes) {
     await client.query("DELETE FROM incomes WHERE month = $1", [month]);
     for (const i of incomes) {
       await client.query(
-        "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
-        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent, i.receiptDate || null, !!i.voucherIncome, !!i.cltPjIncome, i.createdAt || new Date().toISOString()]
+        "INSERT INTO incomes (id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income, order_index, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        [i.id, i.source, Number(i.value) || 0, i.note || "", month, !!i.recurrent, i.receiptDate || null, !!i.voucherIncome, !!i.cltPjIncome, i.order ?? null, i.createdAt || new Date().toISOString()]
       );
     }
     await client.query("COMMIT");
@@ -424,10 +427,10 @@ export async function replaceWishlist(items) {
 
 export async function getShoppingList(listType) {
   const { rows } = await pool.query(
-    `SELECT id, title, value, note, done_at AS "doneAt"
+    `SELECT id, title, value, note, done_at AS "doneAt", order_index AS "order"
      FROM shopping_items
      WHERE list_type = $1
-     ORDER BY (done_at IS NULL) DESC, title`,
+     ORDER BY (done_at IS NULL) DESC, order_index NULLS LAST, title`,
     [listType]
   );
   return rows.map((r) => ({ ...r, value: Number(r.value) }));
@@ -440,8 +443,8 @@ export async function replaceShoppingList(listType, items) {
     await client.query("DELETE FROM shopping_items WHERE list_type = $1", [listType]);
     for (const it of items) {
       await client.query(
-        "INSERT INTO shopping_items (id, list_type, title, value, note, done_at) VALUES ($1, $2, $3, $4, $5, $6)",
-        [it.id, listType, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null]
+        "INSERT INTO shopping_items (id, list_type, title, value, note, done_at, order_index) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [it.id, listType, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null, it.order ?? null]
       );
     }
     await client.query("COMMIT");
