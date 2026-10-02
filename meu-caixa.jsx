@@ -301,6 +301,28 @@ const store = {
       /* silencioso: segue em memória, sem persistir no banco */
     }
   },
+  /* Fechamento de cartão é preso ao mês (como /api/data), então o mês vai na query. */
+  async loadCardClosings(month) {
+    try {
+      const res = await fetch(`/api/card-closings?month=${encodeURIComponent(month)}`);
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data.items) ? data.items : [];
+    } catch {
+      return [];
+    }
+  },
+  async saveCardClosings(month, items) {
+    try {
+      await fetch(`/api/card-closings?month=${encodeURIComponent(month)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+    } catch {
+      /* silencioso: segue em memória, sem persistir no banco */
+    }
+  },
 };
 
 /* ---------- app ---------- */
@@ -317,6 +339,8 @@ export default function App() {
   const [shoppingLists, setShoppingLists] = useState({ mercado: [], farmacia: [] });
   const [serasa, setSerasa] = useState([]);
   const [cards, setCards] = useState([]);
+  // Fechamento de cartão é preso ao mês (como expenses), não global.
+  const [cardClosings, setCardClosings] = useState([]);
   const [savedPaymentMethods, setSavedPaymentMethods] = useState([]);
   const [savedCategories, setSavedCategories] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -397,6 +421,7 @@ export default function App() {
         setShoppingLists({ mercado, farmacia });
         setSerasa(await store.loadSerasa());
         setCards(await store.loadCards());
+        setCardClosings(await store.loadCardClosings(initialMonth));
         setSavedPaymentMethods(await store.loadPaymentMethods());
         setSavedCategories(await store.loadCategories());
         setLoaded(true);
@@ -447,6 +472,17 @@ export default function App() {
     savedTimer.current = setTimeout(() => setSaved(false), 1400);
   }, [cards, loaded, authed]);
 
+  // Fechamento é do mês: depende de `month` igual ao save de expenses/incomes.
+  // Ao trocar o mês, handleMonthChange seta mês + fechamentos juntos, então este
+  // efeito re-grava o que acabou de carregar (idempotente) — mesmo padrão.
+  useEffect(() => {
+    if (!authed || !loaded) return;
+    store.saveCardClosings(month, cardClosings);
+    setSaved(true);
+    clearTimeout(savedTimer.current);
+    savedTimer.current = setTimeout(() => setSaved(false), 1400);
+  }, [cardClosings, loaded, authed, month]);
+
   // wishlist/mercado/farmácia/serasa são globais; só expenses e incomes trocam com o mês,
   // então o reset da seleção é cirúrgico: apenas as chaves do mês saem.
   useEffect(() => {
@@ -465,11 +501,15 @@ export default function App() {
   const handleMonthChange = async (newMonth) => {
     if (newMonth === month || switchingMonth) return;
     setSwitchingMonth(true);
-    const data = await store.load(newMonth);
+    const [data, closings] = await Promise.all([
+      store.load(newMonth),
+      store.loadCardClosings(newMonth),
+    ]);
     if (data && Array.isArray(data.expenses)) {
       setMonth(newMonth);
       setExpenses(data.expenses);
       setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
+      setCardClosings(Array.isArray(closings) ? closings : []);
     }
     setSwitchingMonth(false);
   };
@@ -483,6 +523,8 @@ export default function App() {
       setMonth(nextMonthKey);
       setExpenses(data.expenses);
       setIncomes(data.incomes);
+      // Mês novo começa sem fechamentos — createMonth não os carrega adiante.
+      setCardClosings([]);
     } catch (err) {
       console.error(err);
     } finally {
@@ -765,12 +807,21 @@ export default function App() {
     else if (mode === "wish") setWishlist((p) => p.filter((w) => w.id !== id));
     else if (mode === "serasa") setSerasa((p) => p.filter((s) => s.id !== id));
     else if (mode === "card") setCards((p) => p.filter((c) => c.id !== id));
+    else if (mode === "closing") setCardClosings((p) => p.filter((c) => c.id !== id));
     else setShoppingLists((prev) => ({ ...prev, [mode]: prev[mode].filter((it) => it.id !== id) }));
     setConfirmState(null);
   };
   const saveCard = (data, id) => {
     setCards((prev) =>
       id ? prev.map((c) => (c.id === id ? { ...c, ...data } : c)) : [...prev, { id: uid(), ...data }]
+    );
+    setModal(null);
+  };
+  const saveClosing = (data, id) => {
+    setCardClosings((prev) =>
+      id
+        ? prev.map((c) => (c.id === id ? { ...c, ...data } : c))
+        : [...prev, { id: uid(), createdAt: new Date().toISOString(), ...data }]
     );
     setModal(null);
   };
@@ -1064,6 +1115,7 @@ export default function App() {
             ["farmacia", "Farmácia"],
             ["serasa", "Serasa"],
             ["cartoes", "Cartões"],
+            ["fechamento", "Fechamento de cartão"],
           ].map(([id, label]) => (
             <button
               key={id}
@@ -1196,6 +1248,17 @@ export default function App() {
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "card", payload: item })}
           />
         )}
+
+        {/* Sem props de seleção: fechamento não é item de fluxo de caixa, igual a Cartões. */}
+        {tab === "fechamento" && (
+          <Fechamento
+            items={cardClosings}
+            month={month}
+            onAdd={() => setModal({ mode: "closing", item: null })}
+            onEdit={(item) => setModal({ mode: "closing", item })}
+            onDelete={(item) => setConfirmState({ kind: "delete", mode: "closing", payload: item })}
+          />
+        )}
       </div>
 
       {/* calculadora de seleção — z-40 fica sob o Overlay dos modais (z-50) */}
@@ -1304,6 +1367,10 @@ export default function App() {
           onClose={() => setModal(null)}
           onSave={saveCard}
         />
+      )}
+
+      {modal && modal.mode === "closing" && (
+        <CardClosingModal item={modal.item} onClose={() => setModal(null)} onSave={saveClosing} />
       )}
 
       {modal && (modal.mode === "expense" || modal.mode === "income" || modal.mode === "serasa") && (
@@ -2190,6 +2257,139 @@ function Cartoes({ cards, unregistered, month, canAdd, onAdd, onEdit, onDelete }
         </Card>
       )}
     </div>
+  );
+}
+
+/* Fechamento de cartão do mês: lista de {nome do cartão, valor a pagar}, presa
+   ao mês acessado. Independente da aba Cartões (que trata saldo/limite). */
+function Fechamento({ items, month, onAdd, onEdit, onDelete }) {
+  const total = items.reduce((s, it) => s + (Number(it.value) || 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs text-slate-500">Total a pagar em {monthLabel(month)}</p>
+          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(total)}</p>
+        </div>
+        <button
+          onClick={() => onAdd()}
+          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+          style={{ background: "#16382c" }}
+        >
+          <Plus size={16} /> Novo fechamento
+        </button>
+      </div>
+
+      {items.length === 0 ? (
+        <Empty text="Nenhum fechamento de cartão neste mês. Registre o nome do cartão e o valor a pagar." />
+      ) : (
+        <Card className="overflow-hidden divide-y divide-slate-100">
+          {items.map((it) => (
+            <div key={it.id} className="flex items-center gap-2.5 px-4 py-3">
+              <span
+                className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: "#D6493B1F", color: "#D6493B" }}
+              >
+                <CreditCard size={15} />
+              </span>
+              <span className="text-sm text-slate-800 flex-1 min-w-0 truncate">{it.cardName}</span>
+              <span className="text-sm font-semibold text-slate-800 tabular-nums shrink-0">{fmt(it.value)}</span>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  onClick={() => onEdit(it)}
+                  title="Editar"
+                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+                >
+                  <Pencil size={15} />
+                </button>
+                <button
+                  onClick={() => onDelete(it)}
+                  title="Excluir"
+                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function CardClosingModal({ item, onClose, onSave }) {
+  const [cardName, setCardName] = useState(item?.cardName || "");
+  const [value, setValue] = useState(item ? String(item.value ?? "") : "");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const canSave = cardName.trim() !== "" && !isNaN(parseFloat(value)) && parseFloat(value) >= 0;
+
+  const submit = () => {
+    if (!canSave) return;
+    onSave({ cardName: cardName.trim(), value: parseFloat(value) }, item?.id);
+  };
+
+  return (
+    <Overlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-base font-bold text-slate-800">{item ? "Editar fechamento" : "Novo fechamento"}</h3>
+        <button onClick={onClose} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300">
+          <X size={18} />
+        </button>
+      </div>
+
+      <div className="space-y-3.5">
+        <Field label="Cartão">
+          <input
+            ref={inputRef}
+            value={cardName}
+            onChange={(e) => setCardName(e.target.value)}
+            placeholder="Ex.: Nubank"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+
+        <Field label="Valor a pagar (R$)">
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="0,00"
+            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
+          />
+        </Field>
+      </div>
+
+      <div className="flex gap-2 mt-5">
+        <button
+          onClick={onClose}
+          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={submit}
+          disabled={!canSave}
+          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "#16382c" }}
+        >
+          Salvar
+        </button>
+      </div>
+    </Overlay>
   );
 }
 
@@ -3459,7 +3659,7 @@ function ConfirmModal({ state, onCancel, onConfirm }) {
     <Overlay onClose={onCancel}>
       <h3 className='text-base font-bold text-slate-800 mb-1'>Excluir lançamento?</h3>
       <p className='text-sm text-slate-500 mb-5'>
-        “{state.payload.description || state.payload.source || state.payload.title || state.payload.paymentMethod}” será removido. Não dá pra desfazer.
+        “{state.payload.description || state.payload.source || state.payload.title || state.payload.cardName || state.payload.paymentMethod}” será removido. Não dá pra desfazer.
       </p>
       <div className='flex gap-2'>
         <button

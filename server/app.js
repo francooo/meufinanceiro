@@ -2,7 +2,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
-import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, getCategories, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems, getCards, replaceCards, createPairingCode, consumePairingCode } from "./db.js";
+import { getData, getMonths, replaceExpenses, replaceIncomes, moveExpenseToMonth, getPaymentMethods, getCategories, createMonth, currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems, replaceSerasaItems, getCards, replaceCards, getCardClosings, replaceCardClosings, createPairingCode, consumePairingCode } from "./db.js";
 import { verifyGoogleCredential, signSession, setSessionCookie, clearSessionCookie, getSessionEmail, requireAuth, isAllowedEmail, generatePairingCode, formatPairingCode, normalizePairingCode, isPairingCodeShaped, hashPairingCode, PAIR_TTL_MINUTES } from "./auth.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
@@ -47,6 +47,37 @@ app.post("/api/auth/logout", (_req, res) => {
 // Pareia um celular sem OAuth: o Expo Go não consegue fazer login Google
 // (não dá para customizar o scheme do app), então a web — já autenticada —
 // emite um código de uso único que o celular troca por um token Bearer.
+app.get("/api/card-closings", requireAuth, async (req, res) => {
+  const month = typeof req.query.month === "string" && MONTH_RE.test(req.query.month)
+    ? req.query.month
+    : currentMonth();
+  try {
+    const items = await getCardClosings(month);
+    res.json({ month, items });
+  } catch (err) {
+    console.error("GET /api/card-closings failed:", err);
+    res.status(500).json({ error: "Falha ao carregar os fechamentos de cartão." });
+  }
+});
+
+app.put("/api/card-closings", requireAuth, async (req, res) => {
+  const month = req.query.month;
+  const { items } = req.body || {};
+  if (typeof month !== "string" || !MONTH_RE.test(month)) {
+    return res.status(400).json({ error: "Mês inválido. Use o formato AAAA-MM." });
+  }
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ error: "Payload inválido: items deve ser um array." });
+  }
+  try {
+    await replaceCardClosings(month, items);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PUT /api/card-closings failed:", err);
+    res.status(500).json({ error: "Falha ao salvar os fechamentos de cartão." });
+  }
+});
+
 app.post("/api/auth/pair", requireAuth, async (req, res) => {
   try {
     const code = generatePairingCode();

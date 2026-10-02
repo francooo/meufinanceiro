@@ -16,7 +16,7 @@ import { nextExpenses, nextIncomes } from "../core/upcoming";
 import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
 import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend, upfrontByPaymentMethod } from "../core/cards";
-import { applyOrder, reorderWithin } from "../core/reorder";
+import { applyOrder, orderFromSequence, reorderWithin } from "../core/reorder";
 import { pruneMonthKeys, selectionStats, toggleKey } from "../core/selection";
 import { SelectionBar, SelectionFab } from "../ui/SelectionBar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -26,7 +26,9 @@ import GastosTab from "./GastosTab";
 import GanhosTab from "./GanhosTab";
 import SerasaTab from "./SerasaTab";
 import CartoesTab from "./CartoesTab";
+import FechamentoTab from "./FechamentoTab";
 import CardModal from "../modals/CardModal";
+import CardClosingModal from "../modals/CardClosingModal";
 import ChecklistTab from "./ChecklistTab";
 import ChecklistModal from "../modals/ChecklistModal";
 import EntryModal from "../modals/EntryModal";
@@ -100,6 +102,9 @@ export default function HomeScreen({ email, onSignOut }) {
   const [serasa, setSerasa] = useState([]);
   const [cards, setCards] = useState([]);
   const [cardModal, setCardModal] = useState(null);   // {item, presetMethod} | null
+  /* Fechamento de cartao e preso ao mes (como expenses), nao global. */
+  const [cardClosings, setCardClosings] = useState([]);
+  const [closingModal, setClosingModal] = useState(null);   // {item} | null
   const [wishlist, setWishlist] = useState([]);
   const [shopping, setShopping] = useState({ mercado: [], farmacia: [] });
   const [listModal, setListModal] = useState(null);   // {kind, item} | null
@@ -111,6 +116,9 @@ export default function HomeScreen({ email, onSignOut }) {
      ela e MEDIDA em vez de estimada; o FAB tem tamanho fixo. Sem isto, os
      botoes da ultima linha ficam por baixo e nao dao para tocar. */
   const [barHeight, setBarHeight] = useState(0);
+  /* Enquanto uma linha esta sendo arrastada, o scroll da tela e desligado:
+     senao o gesto de arraste e o de rolagem brigariam pelo mesmo movimento. */
+  const [dragging, setDragging] = useState(false);
   const insets = useSafeAreaInsets();
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
@@ -122,11 +130,19 @@ export default function HomeScreen({ email, onSignOut }) {
   monthRef.current = month;
 
   const loadMonth = useCallback(async (key) => {
-    const data = await store.load(key);
-    if (data && monthRef.current === key) {
+    /* Fechamentos sao do mes, entao carregam junto; `.catch` isola a falha
+       deles para nao derrubar gastos/ganhos. */
+    const [data, closings] = await Promise.all([
+      store.load(key),
+      store.loadCardClosings(key).catch(() => []),
+    ]);
+    /* Descarta a resposta se o mes ja mudou — mesma guarda de antes. */
+    if (monthRef.current !== key) return;
+    if (data) {
       setExpenses(data.expenses);
       setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
     }
+    setCardClosings(Array.isArray(closings) ? closings : []);
   }, []);
 
   useEffect(() => {
@@ -175,8 +191,10 @@ export default function HomeScreen({ email, onSignOut }) {
   const switchMonth = async (key) => {
     if (key === month) return;
     /* Grava o pendente ANTES de trocar: o snapshot do debounce carrega o mes
-       antigo, mas esperar o timer perderia a ultima edicao. */
+       antigo, mas esperar o timer perderia a ultima edicao. Vale tambem para os
+       fechamentos, que sao presos ao mes. */
     flushSave();
+    flushClosings();
     setMonth(key);
     monthRef.current = key;
     setLoading(true);
@@ -235,6 +253,7 @@ export default function HomeScreen({ email, onSignOut }) {
       income: setIncomes,
       serasa: setSerasa,
       card: setCards,
+      closing: setCardClosings,
       wish: setWishlist,
     })[mode] || ((fn) => setShopping((prev) => ({ ...prev, [mode]: fn(prev[mode]) })));
 
@@ -242,6 +261,18 @@ export default function HomeScreen({ email, onSignOut }) {
   const flushCards = useDebouncedSave(
     cards,
     (snap) => track(store.saveCards(snap)),
+    { enabled: !loading && !error }
+  );
+
+  /* Fechamentos sao do mes: o payload carrega o mes junto para o endpoint saber
+     onde gravar, igual ao payload mensal de gastos/ganhos. */
+  const closingsPayload = useMemo(
+    () => ({ month, cardClosings }),
+    [month, cardClosings]
+  );
+  const flushClosings = useDebouncedSave(
+    closingsPayload,
+    (snap) => track(store.saveCardClosings(snap.month, snap.cardClosings)),
     { enabled: !loading && !error }
   );
 
@@ -290,6 +321,15 @@ export default function HomeScreen({ email, onSignOut }) {
     setCardModal(null);
   };
 
+  const saveClosing = (data, id) => {
+    setCardClosings((prev) =>
+      id
+        ? prev.map((c) => (c.id === id ? { ...c, ...data } : c))
+        : [...prev, { id: uid(), createdAt: new Date().toISOString(), ...data }]
+    );
+    setClosingModal(null);
+  };
+
   const saveEntry = (data, id) => {
     const set = setterFor(modal.mode);
     set((prev) =>
@@ -318,6 +358,14 @@ export default function HomeScreen({ email, onSignOut }) {
      ANTIGO com o gasto ainda dentro — se disparasse depois do move, o servidor
      apagaria o mes e reinseriria o gasto, desfazendo tudo. Por isso: grava o
      pendente, move, e so entao tira do estado local. */
+  /* Arraste devolve a sequencia completa de ids do grupo; vira o mesmo mapa
+     denso que as setas (orderFromSequence) e aplica so nesses ids. */
+  const reorderExpenses = (orderedIds) =>
+    setExpenses((prev) => applyOrder(prev, orderFromSequence(orderedIds)));
+
+  const reorderClosings = (orderedIds) =>
+    setCardClosings((prev) => applyOrder(prev, orderFromSequence(orderedIds)));
+
   const moveToMonth = async (item, targetMonth) => {
     flushSave();
     await store.moveExpenseToMonth(item.id, targetMonth);
@@ -364,7 +412,10 @@ export default function HomeScreen({ email, onSignOut }) {
     [selectedKeys, expenses, incomes, wishlist, shopping, serasa]
   );
 
-  const fabVisible = !selecting && tab !== "overview" && tab !== "cartoes";
+  /* Fechamento fica de fora do FAB de selecao: nao e item de fluxo de caixa e
+     nao entra em SELECTION_SOURCES, igual a Cartoes. */
+  const fabVisible =
+    !selecting && tab !== "overview" && tab !== "cartoes" && tab !== "fechamento";
   const bottomGap = selecting ? barHeight : fabVisible ? 64 + 24 + insets.bottom : 0;
 
   const selProps = (kind) => ({
@@ -403,6 +454,7 @@ export default function HomeScreen({ email, onSignOut }) {
           className: componente de fora do RN, o NativeWind nao o registra. */}
       <KeyboardAwareScrollView
         style={{ flex: 1 }}
+        scrollEnabled={!dragging}
         bottomOffset={16}
       /* Sem isto, com o teclado da busca aberto o PRIMEIRO toque em qualquer
          botao e consumido dispensando o teclado — o classico "tem que tocar
@@ -448,6 +500,7 @@ export default function HomeScreen({ email, onSignOut }) {
             flushSave();
             flushSerasa();
             flushCards();
+            flushClosings();
             flushWishlist();
             flushShopping();
             onSignOut();
@@ -588,6 +641,7 @@ export default function HomeScreen({ email, onSignOut }) {
             ["ganhos", "Ganhos"],
             ["serasa", "Serasa"],
             ["cartoes", "Cartões"],
+            ["fechamento", "Fechamento de cartão"],
             ["desejos", "Desejos"],
             ["mercado", "Mercado"],
             ["farmacia", "Farmácia"],
@@ -619,7 +673,11 @@ export default function HomeScreen({ email, onSignOut }) {
           <Text className="text-sm text-slate-500">Carregando...</Text>
         </View>
       ) : tab === "overview" ? (
-        <OverviewTab expenses={expenses} incomes={incomes} />
+        <OverviewTab
+          expenses={expenses}
+          incomes={incomes}
+          onEditItem={(kind, item) => setModal({ mode: kind, item })}
+        />
       ) : tab === "gastos" ? (
         <GastosTab
           {...selProps("expense")}
@@ -630,6 +688,8 @@ export default function HomeScreen({ email, onSignOut }) {
           onDelete={(e) => setConfirming({ mode: "expense", item: e })}
           onTogglePaid={(e) => togglePaid("expense", e.id)}
           onMove={moveExpense}
+          onReorder={reorderExpenses}
+          onDragChange={setDragging}
           extraPaymentMethods={extraPaymentMethods}
         />
       ) : tab === "ganhos" ? (
@@ -659,6 +719,15 @@ export default function HomeScreen({ email, onSignOut }) {
           onAdd={(preset) => setCardModal({ item: null, presetMethod: typeof preset === "string" ? preset : undefined })}
           onEdit={(c) => setCardModal({ item: c })}
           onDelete={(c) => setConfirming({ mode: "card", item: c })}
+        />
+      ) : tab === "fechamento" ? (
+        <FechamentoTab
+          items={cardClosings}
+          onAdd={() => setClosingModal({ item: null })}
+          onEdit={(it) => setClosingModal({ item: it })}
+          onDelete={(it) => setConfirming({ mode: "closing", item: it })}
+          onReorder={reorderClosings}
+          onDragChange={setDragging}
         />
       ) : (
         <ChecklistTab
@@ -701,6 +770,16 @@ export default function HomeScreen({ email, onSignOut }) {
           extraPaymentMethods={extraPaymentMethods}
           onClose={() => setCardModal(null)}
           onSave={saveCard}
+        />
+      ) : null}
+
+      {closingModal ? (
+        <CardClosingModal
+          visible
+          key={closingModal.item?.id || "novo"}
+          item={closingModal.item}
+          onClose={() => setClosingModal(null)}
+          onSave={saveClosing}
         />
       ) : null}
 

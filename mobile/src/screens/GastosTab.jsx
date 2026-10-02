@@ -11,6 +11,7 @@ import { iconFor } from "../ui/icons";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
 import { Row } from "../ui/Row";
+import { DraggableList } from "../ui/DraggableList";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 const BRAND = "#16382c";
@@ -27,6 +28,8 @@ export default function GastosTab({
   onDelete,
   onTogglePaid,
   onMove,
+  onReorder,
+  onDragChange,
 }) {
   const [search, setSearch] = useState("");
   const [hidePaid, setHidePaid] = useState(false);
@@ -74,6 +77,40 @@ export default function GastosTab({
   /* Em modo selecao as setas somem, como na web: caixinha + setas + tres
      acoes competiriam demais por ~360dp. */
   const canReorder = !filtersActive && !selecting && !!onMove;
+  /* Arraste exige, alem do que as setas exigem, o handler de reordenar por
+     sequencia. Setas e arraste convivem: as setas continuam para quem prefere. */
+  const canDrag = canReorder && !!onReorder;
+
+  /* Uma linha so, reusada pelo caminho normal e pelo arraste: `listItems` e o
+     grupo visivel (categoria ou, em Cartoes, a forma de pagamento) — a ordem
+     dele e o que vira `order`, igual ao que as setas ja faziam. */
+  const renderList = (listItems) => {
+    const rowFor = (e, idx) => (
+      <View key={e.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
+        <Row
+          item={e}
+          selected={isSelected ? isSelected(e.id) : false}
+          onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
+          onEdit={() => onEdit(e)}
+          onDelete={() => onDelete(e)}
+          onTogglePaid={() => onTogglePaid(e)}
+          onMoveUp={canReorder && idx > 0 ? () => onMove(listItems, e.id, "up") : undefined}
+          onMoveDown={
+            canReorder && idx < listItems.length - 1 ? () => onMove(listItems, e.id, "down") : undefined
+          }
+        />
+      </View>
+    );
+    if (!canDrag) return listItems.map((e, idx) => rowFor(e, idx));
+    return (
+      <DraggableList
+        items={listItems}
+        onReorder={onReorder}
+        onDragChange={onDragChange}
+        renderItem={(e, idx) => rowFor(e, idx)}
+      />
+    );
+  };
   /* Acende o chip "Mais filtros" quando algo do painel recolhido esta ativo —
      senao o filtro ficaria escondido e sem pista de que esta ligado. */
   const panelActive = !!(category || paymentMethod || dueFrom || dueTo);
@@ -111,7 +148,7 @@ export default function GastosTab({
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Buscar gasto por título…"
+          placeholder="Buscar por título ou categoria…"
           placeholderTextColor="#94a3b8"
           className="rounded-xl border border-slate-200 bg-white pl-10 pr-12 py-3 text-sm text-slate-800"
         />
@@ -252,44 +289,10 @@ export default function GastosTab({
                         {fmt(pm.subtotal)}
                       </Text>
                     </View>
-                    {pm.items.map((e, idx) => (
-                      <View key={e.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
-                        <Row
-                          item={e}
-                          selected={isSelected ? isSelected(e.id) : false}
-                          onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
-                          onEdit={() => onEdit(e)}
-                          onDelete={() => onDelete(e)}
-                          onTogglePaid={() => onTogglePaid(e)}
-                          onMoveUp={canReorder && idx > 0 ? () => onMove(pm.items, e.id, "up") : undefined}
-                          onMoveDown={
-                            canReorder && idx < pm.items.length - 1
-                              ? () => onMove(pm.items, e.id, "down")
-                              : undefined
-                          }
-                        />
-                      </View>
-                    ))}
+                    {renderList(pm.items)}
                   </View>
                 ))
-              : g.items.map((e, idx) => (
-                  <View key={e.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
-                    <Row
-                      item={e}
-                      selected={isSelected ? isSelected(e.id) : false}
-                      onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
-                      onEdit={() => onEdit(e)}
-                      onDelete={() => onDelete(e)}
-                      onTogglePaid={() => onTogglePaid(e)}
-                      onMoveUp={canReorder && idx > 0 ? () => onMove(g.items, e.id, "up") : undefined}
-                      onMoveDown={
-                        canReorder && idx < g.items.length - 1
-                          ? () => onMove(g.items, e.id, "down")
-                          : undefined
-                      }
-                    />
-                  </View>
-                ))}
+              : renderList(g.items)}
           </Card>
         );
       })}

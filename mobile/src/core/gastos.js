@@ -75,7 +75,20 @@ export function applyGastosFilters(grouped, f) {
     return base
       .map((g) => {
         let items = g.items;
-        if (query) items = items.filter((e) => e.description.toLowerCase().includes(query));
+        if (query) {
+          /* A busca casa titulo OU forma de pagamento; e se o NOME DA CATEGORIA
+             casa, o grupo inteiro passa — assim digitar uma categoria (inclusive
+             uma recem-criada) lista os gastos dela, nao so os que tem o texto no
+             titulo. */
+          const catMatch = g.name.toLowerCase().includes(query);
+          if (!catMatch) {
+            items = items.filter(
+              (e) =>
+                e.description.toLowerCase().includes(query) ||
+                (e.paymentMethod || "").toLowerCase().includes(query)
+            );
+          }
+        }
         if (f.paymentMethod) {
           items = items.filter((e) => (e.paymentMethod || PAYMENT_METHOD_FALLBACK) === f.paymentMethod);
         }

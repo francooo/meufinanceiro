@@ -21,3 +21,9 @@ export function reorderWithin(items, id, direction) {
    reordenado recebem `order` novo, o resto passa intacto. */
 export const applyOrder = (all, orderById) =>
   all.map((e) => (orderById.has(e.id) ? { ...e, order: orderById.get(e.id) } : e));
+
+/* Arraste devolve a sequencia COMPLETA de ids do grupo, ja na nova ordem; aqui
+   ela vira o mesmo mapa denso 0..n-1 que as setas produzem. Usado pelo
+   DraggableList. */
+export const orderFromSequence = (orderedIds) =>
+  new Map(orderedIds.map((id, i) => [id, i]));
