@@ -9,15 +9,32 @@ import { iconFor } from "../ui/icons";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
 import { Row } from "../ui/Row";
+import { DraggableList } from "../ui/DraggableList";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 
 /* Mesma estrutura de Gastos — agrupado por categoria, com busca — mas com a
    tabela de metadados do Serasa e sem sub-agrupamento por forma de pagamento,
    que e exclusivo de "Cartoes / Financeiro". */
-export default function SerasaTab({ serasa, selecting, isSelected, onToggleSelect, onAdd, onEdit, onDelete, onTogglePaid }) {
+export default function SerasaTab({ serasa, selecting, isSelected, onToggleSelect, onAdd, onEdit, onDelete, onTogglePaid, onReorder, onDragChange }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
+  /* Arraste desligado durante busca e selecao: reordenar uma lista filtrada
+     gravaria `order` numa ordem que nao e a real (mesma regra de Gastos). */
+  const canDrag = !!onReorder && !query && !selecting;
+
+  const rowFor = (s, idx) => (
+    <View key={s.id} className={"bg-white " + (idx > 0 ? "border-t border-slate-100" : "")}>
+      <Row
+        item={s}
+        selected={isSelected ? isSelected(s.id) : false}
+        onToggleSelect={selecting ? () => onToggleSelect(s.id) : undefined}
+        onEdit={() => onEdit(s)}
+        onDelete={() => onDelete(s)}
+        onTogglePaid={() => onTogglePaid(s)}
+      />
+    </View>
+  );
 
   const grouped = useMemo(() => buildGroupedBy(serasa, serasaCatMeta), [serasa]);
 
@@ -101,18 +118,16 @@ export default function SerasaTab({ serasa, selecting, isSelected, onToggleSelec
                 {fmt(g.subtotal)}
               </Text>
             </View>
-            {g.items.map((s, idx) => (
-              <View key={s.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
-                <Row
-                  item={s}
-                  selected={isSelected ? isSelected(s.id) : false}
-                  onToggleSelect={selecting ? () => onToggleSelect(s.id) : undefined}
-                  onEdit={() => onEdit(s)}
-                  onDelete={() => onDelete(s)}
-                  onTogglePaid={() => onTogglePaid(s)}
-                />
-              </View>
-            ))}
+            {canDrag && g.items.length > 1 ? (
+              <DraggableList
+                items={g.items}
+                onReorder={onReorder}
+                onDragChange={onDragChange}
+                renderItem={(s, idx) => rowFor(s, idx)}
+              />
+            ) : (
+              g.items.map((s, idx) => rowFor(s, idx))
+            )}
           </Card>
         );
       })}

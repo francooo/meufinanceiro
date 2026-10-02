@@ -7,21 +7,51 @@ import { totalOf } from "../core/group";
 import { Card } from "../ui/Card";
 import { Empty } from "../ui/Empty";
 import { Row } from "../ui/Row";
+import { DraggableList } from "../ui/DraggableList";
 
 const NUM = { fontVariant: ["tabular-nums"] };
 
-/* Ganhos e a aba mais simples da web: lista plana, sem agrupamento nem
-   reordenacao. O Row e o mesmo de Gastos — ganho nao tem "pago", entao
-   onTogglePaid fica de fora e o botao simplesmente nao aparece. */
-export default function GanhosTab({ incomes, selecting, isSelected, onToggleSelect, onAdd, onEdit, onDelete }) {
+/* Ganho pode ser reordenado por arraste: ordenar localmente por `order` (nulos
+   por ultimo) e depois por nome, para o arraste refletir na hora — o servidor
+   ja devolve nessa ordem, mas em memoria so o `order` muda. */
+const byOrderThenSource = (a, b) => {
+  if (a.order != null && b.order != null) return a.order - b.order;
+  if (a.order != null) return -1;
+  if (b.order != null) return 1;
+  return (a.source || "").localeCompare(b.source || "");
+};
+
+/* Ganhos e a aba mais simples da web: lista plana, sem agrupamento. O Row e o
+   mesmo de Gastos — ganho nao tem "pago", entao onTogglePaid fica de fora e o
+   botao simplesmente nao aparece. */
+export default function GanhosTab({ incomes, selecting, isSelected, onToggleSelect, onAdd, onEdit, onDelete, onReorder, onDragChange }) {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
 
   const filtered = useMemo(
-    () => (query ? incomes.filter((i) => (i.source || "").toLowerCase().includes(query)) : incomes),
+    () =>
+      query
+        ? incomes.filter((i) => (i.source || "").toLowerCase().includes(query))
+        : [...incomes].sort(byOrderThenSource),
     [incomes, query]
   );
   const visibleTotal = useMemo(() => totalOf(filtered), [filtered]);
+  /* Arraste desligado durante busca e selecao (mesma regra das outras abas). */
+  const canDrag = !!onReorder && !query && !selecting && incomes.length > 1;
+
+  const rowFor = (i, idx) => (
+    <View key={i.id} className={"bg-white " + (idx > 0 ? "border-t border-slate-100" : "")}>
+      <Row
+        /* O Row le `description`; ganho guarda o nome em `source`. */
+        item={{ ...i, description: i.source, paidWithVoucher: i.voucherIncome, paidWithCltPj: i.cltPjIncome }}
+        accent="#059669"
+        selected={isSelected ? isSelected(i.id) : false}
+        onToggleSelect={selecting ? () => onToggleSelect(i.id) : undefined}
+        onEdit={() => onEdit(i)}
+        onDelete={() => onDelete(i)}
+      />
+    </View>
+  );
 
   return (
     <View className="gap-4 pb-8">
@@ -71,19 +101,16 @@ export default function GanhosTab({ incomes, selecting, isSelected, onToggleSele
         <Empty text={query ? "Nenhum ganho encontrado." : "Nenhuma fonte de renda cadastrada."} />
       ) : (
         <Card className="overflow-hidden">
-          {filtered.map((i, idx) => (
-            <View key={i.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
-              <Row
-                /* O Row le `description`; ganho guarda o nome em `source`. */
-                item={{ ...i, description: i.source, paidWithVoucher: i.voucherIncome, paidWithCltPj: i.cltPjIncome }}
-                accent="#059669"
-                selected={isSelected ? isSelected(i.id) : false}
-                onToggleSelect={selecting ? () => onToggleSelect(i.id) : undefined}
-                onEdit={() => onEdit(i)}
-                onDelete={() => onDelete(i)}
-              />
-            </View>
-          ))}
+          {canDrag ? (
+            <DraggableList
+              items={filtered}
+              onReorder={onReorder}
+              onDragChange={onDragChange}
+              renderItem={(i, idx) => rowFor(i, idx)}
+            />
+          ) : (
+            filtered.map((i, idx) => rowFor(i, idx))
+          )}
         </Card>
       )}
     </View>

@@ -366,6 +366,18 @@ export default function HomeScreen({ email, onSignOut }) {
   const reorderClosings = (orderedIds) =>
     setCardClosings((prev) => applyOrder(prev, orderFromSequence(orderedIds)));
 
+  /* Mesma ideia para as demais listas: a aba manda a sequencia nova do grupo/
+     secao visivel e aqui vira `order` denso. Serasa reordena dentro da categoria;
+     ganhos e a lista plana inteira; wish/mercado/farmacia reordenam os pendentes. */
+  const reorderSerasa = (orderedIds) =>
+    setSerasa((prev) => applyOrder(prev, orderFromSequence(orderedIds)));
+
+  const reorderIncomes = (orderedIds) =>
+    setIncomes((prev) => applyOrder(prev, orderFromSequence(orderedIds)));
+
+  const reorderList = (kind, orderedIds) =>
+    listSetter(kind)((prev) => applyOrder(prev, orderFromSequence(orderedIds)));
+
   const moveToMonth = async (item, targetMonth) => {
     flushSave();
     await store.moveExpenseToMonth(item.id, targetMonth);
@@ -699,6 +711,8 @@ export default function HomeScreen({ email, onSignOut }) {
           onAdd={() => setModal({ mode: "income", item: null })}
           onEdit={(i) => setModal({ mode: "income", item: i })}
           onDelete={(i) => setConfirming({ mode: "income", item: i })}
+          onReorder={reorderIncomes}
+          onDragChange={setDragging}
         />
       ) : tab === "serasa" ? (
         <SerasaTab
@@ -708,6 +722,8 @@ export default function HomeScreen({ email, onSignOut }) {
           onEdit={(x) => setModal({ mode: "serasa", item: x })}
           onDelete={(x) => setConfirming({ mode: "serasa", item: x })}
           onTogglePaid={(x) => togglePaid("serasa", x.id)}
+          onReorder={reorderSerasa}
+          onDragChange={setDragging}
         />
       ) : tab === "cartoes" ? (
         <CartoesTab
@@ -743,6 +759,8 @@ export default function HomeScreen({ email, onSignOut }) {
           onToggleDone={(i) => toggleListDone(tab === "desejos" ? "wish" : tab, i.id)}
           /* Só Mercado tem "Limpar", como na web — Farmácia não recebe o handler. */
           onClearDone={tab === "mercado" ? () => clearListDone("mercado") : undefined}
+          onReorder={(ids) => reorderList(tab === "desejos" ? "wish" : tab, ids)}
+          onDragChange={setDragging}
         />
       )}
 
