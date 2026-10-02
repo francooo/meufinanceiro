@@ -1,3 +1,6 @@
+/* Precisa ser o PRIMEIRO import do app: o gesture-handler instala handlers
+   nativos no bootstrap e falha silenciosamente se carregar depois. */
+import 'react-native-gesture-handler';
 import { registerRootComponent } from 'expo';
 
 import App from './App';

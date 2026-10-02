@@ -49,4 +49,11 @@ export const store = {
     return Array.isArray(d.items) ? d.items : [];
   },
   saveCards: (items) => request("/api/cards", { method: "PUT", body: { items } }),
+  /* Fechamento de cartao e preso ao mes, como /api/data: o mes vai na query. */
+  loadCardClosings: async (month) => {
+    const d = await request(`/api/card-closings?month=${encodeURIComponent(month)}`);
+    return Array.isArray(d.items) ? d.items : [];
+  },
+  saveCardClosings: (month, items) =>
+    request(`/api/card-closings?month=${encodeURIComponent(month)}`, { method: "PUT", body: { items } }),
 };

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { ArrowDownRight, ArrowUpRight, History } from "lucide-react-native";
+import { Touchable } from "../ui/Touchable";
 import { fmt, formatRelativeTime } from "../core/format";
 import { buildByCat, buildRecentItems, totalOf } from "../core/group";
 import { iconFor } from "../ui/icons";
@@ -9,7 +10,7 @@ import { Empty } from "../ui/Empty";
 
 /* NativeWind v4 nao implementa space-y nem divide-y: viram gap no container e
    borda explicita por linha. */
-export default function OverviewTab({ expenses, incomes }) {
+export default function OverviewTab({ expenses, incomes, onEditItem }) {
   const totalGastos = useMemo(() => totalOf(expenses), [expenses]);
   const byCat = useMemo(() => buildByCat(expenses), [expenses]);
   const recent = useMemo(() => buildRecentItems(expenses, incomes), [expenses, incomes]);
@@ -27,9 +28,13 @@ export default function OverviewTab({ expenses, incomes }) {
           <View>
             {recent.map((it, idx) => {
               const entrada = it.kind === "income";
+              /* Toca para editar, como a web (meu-caixa.jsx:1529). `it.kind` ja
+                 e "expense"/"income", que e o `mode` esperado pelo EntryModal. */
               return (
-                <View
+                <Touchable
                   key={`${it.kind}-${it.item.id}`}
+                  variant="row"
+                  onPress={onEditItem ? () => onEditItem(it.kind, it.item) : undefined}
                   className={"flex-row items-center gap-3 py-2.5 " + (idx > 0 ? "border-t border-slate-100" : "")}
                 >
                   <View
@@ -54,7 +59,7 @@ export default function OverviewTab({ expenses, incomes }) {
                   >
                     {fmt(it.item.value)}
                   </Text>
-                </View>
+                </Touchable>
               );
             })}
           </View>

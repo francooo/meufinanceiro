@@ -2,6 +2,7 @@ import "./global.css";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { fetchMe, setToken, setUnauthorizedHandler } from "./src/api/client";
@@ -58,6 +59,9 @@ export default function App() {
      dentro. A lib observa tambem os dialogs do Modal. E dependencia nativa:
      chega por build, nao por update. */
   return (
+    /* GestureHandlerRootView tem de envolver tudo que usa gesto (o arraste de
+       reordenar). Por fora do SafeAreaProvider, ocupando a tela toda. */
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <KeyboardProvider>
         <SafeAreaView className="flex-1" style={{ backgroundColor: "#F1F4F2" }}>
@@ -76,5 +80,6 @@ export default function App() {
         </SafeAreaView>
       </KeyboardProvider>
     </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

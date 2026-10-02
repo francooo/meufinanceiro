@@ -4,7 +4,7 @@ import { Touchable } from "../ui/Touchable";
 export default function ConfirmModal({ visible, item, onCancel, onConfirm }) {
   /* Mesma ordem de fallback do ConfirmModal da web, que le
      description || source || title || paymentMethod. */
-  const nome = item?.description || item?.source || item?.title || item?.paymentMethod || "";
+  const nome = item?.description || item?.source || item?.title || item?.cardName || item?.paymentMethod || "";
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>

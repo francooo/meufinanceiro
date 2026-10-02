@@ -109,6 +109,18 @@ export async function migrate() {
       note TEXT DEFAULT ''
     );
   `);
+  /* Fechamento de cartao do mes: nome livre + valor a pagar, preso ao mes (como
+     expenses, nao global como cards). order_index para a reordenacao manual. */
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS card_closings (
+      id TEXT PRIMARY KEY,
+      card_name TEXT NOT NULL,
+      value NUMERIC NOT NULL DEFAULT 0,
+      month TEXT NOT NULL DEFAULT '${month}',
+      order_index INTEGER DEFAULT NULL,
+      created_at TIMESTAMPTZ DEFAULT NULL
+    );
+  `);
   // Pareamento de celular. Guarda o HMAC do código, nunca o código: com 40 bits
   // de entropia um hash sem chave cai em segundos numa GPU, então só a chave
   // torna um vazamento do banco inútil. A validade é comparada com now() do
@@ -507,6 +519,39 @@ export async function replaceCards(items) {
         `INSERT INTO cards (id, payment_method, balance, reference_date, note)
          VALUES ($1, $2, $3, $4, $5)`,
         [it.id, method, Number(it.balance) || 0, it.referenceDate, it.note || ""]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getCardClosings(month) {
+  const { rows } = await pool.query(
+    `SELECT id, card_name AS "cardName", value, order_index AS "order", created_at AS "createdAt"
+     FROM card_closings WHERE month = $1 ORDER BY order_index NULLS LAST, card_name`,
+    [month]
+  );
+  return rows.map((r) => ({ ...r, value: Number(r.value) }));
+}
+
+export async function replaceCardClosings(month, items) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [month]);
+    await client.query("DELETE FROM card_closings WHERE month = $1", [month]);
+    for (const it of items) {
+      const name = (it.cardName || "").trim();
+      if (!name) continue;
+      await client.query(
+        `INSERT INTO card_closings (id, card_name, value, month, order_index, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [it.id, name, Number(it.value) || 0, month, it.order ?? null, it.createdAt || new Date().toISOString()]
       );
     }
     await client.query("COMMIT");
