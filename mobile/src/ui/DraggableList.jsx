@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef } from "react";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -49,32 +49,48 @@ function hoveredIndex(active, ty, hts) {
   return to;
 }
 
-function DraggableRow({ index, item, renderItem, heights, activeIndex, dragY, onPick, onDrop }) {
-  const pan = Gesture.Pan()
-    .activateAfterLongPress(LONG_PRESS_MS)
-    .onStart(() => {
-      activeIndex.value = index;
-      dragY.value = 0;
-      runOnJS(onPick)();
-    })
-    .onUpdate((e) => {
-      dragY.value = e.translationY;
-    })
-    .onEnd(() => {
-      const to = hoveredIndex(index, dragY.value, heights.value);
-      activeIndex.value = -1;
-      dragY.value = 0;
-      runOnJS(onDrop)(index, to);
-    })
-    /* Cancelamento (dedo saiu, gesto interrompido): sem isto a linha ficaria
-       presa levantada e o scroll do pai travado. */
-    .onFinalize(() => {
-      if (activeIndex.value === index) {
-        activeIndex.value = -1;
-        dragY.value = 0;
-        runOnJS(onDrop)(-1, -1);
-      }
-    });
+/* memo + gesto memoizado: alternar filtros re-renderiza a aba, mas a linha nao
+   reconstroi o Gesture/estilo a cada vez. */
+const DraggableRow = memo(function DraggableRow({
+  index,
+  item,
+  renderItem,
+  heights,
+  activeIndex,
+  dragY,
+  onPick,
+  onDrop,
+  onMeasure,
+}) {
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .activateAfterLongPress(LONG_PRESS_MS)
+        .onStart(() => {
+          activeIndex.value = index;
+          dragY.value = 0;
+          runOnJS(onPick)();
+        })
+        .onUpdate((e) => {
+          dragY.value = e.translationY;
+        })
+        .onEnd(() => {
+          const to = hoveredIndex(index, dragY.value, heights.value);
+          activeIndex.value = -1;
+          dragY.value = 0;
+          runOnJS(onDrop)(index, to);
+        })
+        /* Cancelamento (dedo saiu, gesto interrompido): sem isto a linha ficaria
+           presa levantada e o scroll do pai travado. */
+        .onFinalize(() => {
+          if (activeIndex.value === index) {
+            activeIndex.value = -1;
+            dragY.value = 0;
+            runOnJS(onDrop)(-1, -1);
+          }
+        }),
+    [index, heights, activeIndex, dragY, onPick, onDrop]
+  );
 
   const style = useAnimatedStyle(() => {
     if (activeIndex.value === -1) {
@@ -95,38 +111,57 @@ function DraggableRow({ index, item, renderItem, heights, activeIndex, dragY, on
     <GestureDetector gesture={pan}>
       <Animated.View
         style={style}
-        onLayout={(e) => {
-          const h = e.nativeEvent.layout.height;
-          const next = [...heights.value];
-          next[index] = h;
-          heights.value = next;
-        }}
+        onLayout={(e) => onMeasure(index, e.nativeEvent.layout.height)}
       >
         {renderItem(item, index)}
       </Animated.View>
     </GestureDetector>
   );
-}
+});
 
 export function DraggableList({ items, renderItem, onReorder, onDragChange, keyExtractor = (it) => it.id }) {
   const activeIndex = useSharedValue(-1);
   const dragY = useSharedValue(0);
+  /* `heights` so e lido durante o arraste, entao as medidas ficam num ref JS e
+     o SharedValue so e preenchido no inicio do gesto. Antes, cada onLayout
+     reatribuia o array inteiro (O(N^2) + N updates do Reanimated no mount), o
+     que travava/estourava a memoria em meses cheios. */
   const heights = useSharedValue([]);
+  const heightsRef = useRef([]);
   /* Guarda a ordem corrente de ids para montar a sequencia nova sem depender de
      `items` dentro do callback (que seria uma versao antiga em closure). */
   const idsRef = useRef([]);
   idsRef.current = items.map(keyExtractor);
 
-  const onPick = () => onDragChange?.(true);
+  const onMeasure = useCallback((i, h) => {
+    heightsRef.current[i] = h;
+  }, []);
 
-  const onDrop = (from, to) => {
-    onDragChange?.(false);
-    if (from === -1 || to === from) return;
-    const ids = [...idsRef.current];
-    const [moved] = ids.splice(from, 1);
-    ids.splice(to, 0, moved);
-    onReorder(ids);
-  };
+  const onPick = useCallback(() => {
+    /* Copia as alturas ja medidas para a UI thread uma unica vez, no inicio. */
+    heights.value = heightsRef.current.slice();
+    onDragChange?.(true);
+  }, [heights, onDragChange]);
+
+  const onDrop = useCallback(
+    (from, to) => {
+      onDragChange?.(false);
+      if (from === -1 || to === from) return;
+      const ids = [...idsRef.current];
+      const [moved] = ids.splice(from, 1);
+      ids.splice(to, 0, moved);
+      onReorder(ids);
+    },
+    [onDragChange, onReorder]
+  );
+
+  /* Rede de seguranca: se a lista desmontar com um arraste em curso (tocar
+     "Ocultar pagos", trocar de aba/mes), o onEnd/onFinalize pode nao disparar e
+     o scroll do pai ficaria preso. O cleanup garante reabilitar. */
+  useEffect(() => () => onDragChange?.(false), [onDragChange]);
+
+  /* Um item so nao tem o que reordenar: renderiza sem gesto nenhum. */
+  if (items.length <= 1) return items.map((item, index) => renderItem(item, index));
 
   return items.map((item, index) => (
     <DraggableRow
@@ -139,6 +174,7 @@ export function DraggableList({ items, renderItem, onReorder, onDragChange, keyE
       dragY={dragY}
       onPick={onPick}
       onDrop={onDrop}
+      onMeasure={onMeasure}
     />
   ));
 }
