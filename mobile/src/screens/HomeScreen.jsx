@@ -188,6 +188,13 @@ export default function HomeScreen({ email, onSignOut }) {
     setSelectedKeys(pruneMonthKeys);
   }, [month]);
 
+  /* Reforco defensivo: trocar de aba ou de mes nunca pode deixar o scroll preso
+     por um arraste que foi interrompido antes de terminar. O cleanup do
+     DraggableList ja cobre a desmontagem; isto garante o caso geral. */
+  useEffect(() => {
+    setDragging(false);
+  }, [tab, month]);
+
   const switchMonth = async (key) => {
     if (key === month) return;
     /* Grava o pendente ANTES de trocar: o snapshot do debounce carrega o mes
