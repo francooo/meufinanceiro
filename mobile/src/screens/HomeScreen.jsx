@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   RefreshControl,
   ScrollView,
@@ -10,7 +11,7 @@ import {
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, LogOut, PiggyBank } from "lucide-react-native";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, LogOut, PiggyBank, WifiOff } from "lucide-react-native";
 import { fmt, formatDateBR, monthKey, monthLabel } from "../core/format";
 import { nextExpenses, nextIncomes } from "../core/upcoming";
 import { totalOf } from "../core/group";
@@ -21,6 +22,7 @@ import { pruneMonthKeys, selectionStats, toggleKey } from "../core/selection";
 import { SelectionBar, SelectionFab } from "../ui/SelectionBar";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { store } from "../api/store";
+import { monthKeyFor, readCache, writeCache } from "../api/cache";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
 import GanhosTab from "./GanhosTab";
@@ -119,6 +121,16 @@ export default function HomeScreen({ email, onSignOut }) {
   /* Enquanto uma linha esta sendo arrastada, o scroll da tela e desligado:
      senao o gesto de arraste e o de rolagem brigariam pelo mesmo movimento. */
   const [dragging, setDragging] = useState(false);
+  /* Cache local: o que esta na tela pode ter vindo do aparelho (ultimo estado
+     conhecido) ou da rede. `syncedMonth` diz qual mes ja veio da rede e
+     `globalsSynced` o mesmo para serasa/cartoes/desejos/compras. Enquanto nao
+     sincronizado, o dado e SO exibicao: os autosaves ficam desligados, senao
+     mandariam o snapshot antigo e apagariam o que foi editado na web. */
+  const [syncedMonth, setSyncedMonth] = useState(null);
+  const [globalsSynced, setGlobalsSynced] = useState(false);
+  /* Ultima tentativa de rede falhou: mostra a faixa "sem conexao". Separado do
+     "nao sincronizado" para a faixa nao piscar no segundo entre o cache e a rede. */
+  const [offline, setOffline] = useState(false);
   const insets = useSafeAreaInsets();
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
@@ -129,59 +141,138 @@ export default function HomeScreen({ email, onSignOut }) {
   const monthRef = useRef(month);
   monthRef.current = month;
 
+  /* Refs espelham os flags para listeners e callbacks assincronos, que nao
+     podem depender do estado sem reassinar. */
+  const syncedMonthRef = useRef(null);
+  const globalsSyncedRef = useRef(false);
+
+  /* Rede -> estado do mes. Lanca em falha (sem rede): quem chama decide. Os
+     fechamentos nao tem mais `.catch` isolado: com [] por falha, o autosave
+     apagaria os fechamentos do servidor. Agora ou o mes inteiro sincroniza, ou
+     nada sincroniza e fica so exibicao. */
   const loadMonth = useCallback(async (key) => {
-    /* Fechamentos sao do mes, entao carregam junto; `.catch` isola a falha
-       deles para nao derrubar gastos/ganhos. */
-    const [data, closings] = await Promise.all([
-      store.load(key),
-      store.loadCardClosings(key).catch(() => []),
-    ]);
+    const [data, closings] = await Promise.all([store.load(key), store.loadCardClosings(key)]);
     /* Descarta a resposta se o mes ja mudou — mesma guarda de antes. */
-    if (monthRef.current !== key) return;
-    if (data) {
-      setExpenses(data.expenses);
-      setIncomes(Array.isArray(data.incomes) ? data.incomes : []);
-    }
-    setCardClosings(Array.isArray(closings) ? closings : []);
+    if (monthRef.current !== key || !data) return;
+    const exp = data.expenses;
+    const inc = Array.isArray(data.incomes) ? data.incomes : [];
+    const clo = Array.isArray(closings) ? closings : [];
+    setExpenses(exp);
+    setIncomes(inc);
+    setCardClosings(clo);
+    writeCache(monthKeyFor(key), { expenses: exp, incomes: inc, cardClosings: clo });
+    syncedMonthRef.current = key;
+    setSyncedMonth(key);
+    setOffline(false);
+  }, []);
+
+  /* Mostra o mes guardado no aparelho, se houver e se a rede ainda nao trouxe
+     a versao fresca. Devolve se havia cache. */
+  const hydrateMonth = useCallback(async (key) => {
+    const cm = await readCache(monthKeyFor(key));
+    if (!cm || monthRef.current !== key || syncedMonthRef.current === key) return !!cm;
+    setExpenses(Array.isArray(cm.expenses) ? cm.expenses : []);
+    setIncomes(Array.isArray(cm.incomes) ? cm.incomes : []);
+    setCardClosings(Array.isArray(cm.cardClosings) ? cm.cardClosings : []);
+    return true;
+  }, []);
+
+  /* Colecoes globais, tudo-ou-nada. Antes cada uma tinha `.catch(() => [])`:
+     uma falha isolada virava [] e o autosave apagava a colecao no servidor. */
+  const loadGlobals = useCallback(async () => {
+    const [methods, cats, ser, crd, w, mer, far] = await Promise.all([
+      store.loadPaymentMethods(),
+      store.loadCategories(),
+      store.loadSerasa(),
+      store.loadCards(),
+      store.loadWishlist(),
+      store.loadShoppingList("mercado"),
+      store.loadShoppingList("farmacia"),
+    ]);
+    setSavedMethods(methods);
+    setSavedCategories(cats);
+    setSerasa(ser);
+    setCards(crd);
+    setWishlist(w);
+    setShopping({ mercado: mer, farmacia: far });
+    globalsSyncedRef.current = true;
+    setGlobalsSynced(true);
+    setOffline(false);
   }, []);
 
   useEffect(() => {
     (async () => {
+      /* 1) Cache: se o aparelho ja tem dados, a tela aparece na hora. */
+      const [cMonths, cMethods, cCats, cSer, cCards, cWish, cMer, cFar] = await Promise.all([
+        readCache("months"),
+        readCache("paymentMethods"),
+        readCache("categories"),
+        readCache("serasa"),
+        readCache("cards"),
+        readCache("wishlist"),
+        readCache("shopping-mercado"),
+        readCache("shopping-farmacia"),
+      ]);
+      const cachedInitial = Array.isArray(cMonths) && cMonths.length > 0 ? cMonths[cMonths.length - 1] : null;
+      if (cachedInitial) {
+        setMonths(cMonths);
+        setMonth(cachedInitial);
+        monthRef.current = cachedInitial;
+        await hydrateMonth(cachedInitial);
+        if (!globalsSyncedRef.current) {
+          if (Array.isArray(cMethods)) setSavedMethods(cMethods);
+          if (Array.isArray(cCats)) setSavedCategories(cCats);
+          if (Array.isArray(cSer)) setSerasa(cSer);
+          if (Array.isArray(cCards)) setCards(cCards);
+          if (Array.isArray(cWish)) setWishlist(cWish);
+          setShopping({ mercado: Array.isArray(cMer) ? cMer : [], farmacia: Array.isArray(cFar) ? cFar : [] });
+        }
+        setLoading(false);
+      }
+
+      /* 2) Rede, tudo em paralelo (antes era uma fila de awaits). */
       try {
         const list = await store.loadMonths();
         const initial = list.length > 0 ? list[list.length - 1] : monthKey(new Date());
         setMonths(list.length > 0 ? list : [initial]);
-        setMonth(initial);
-        monthRef.current = initial;
-        await loadMonth(initial);
-        setSavedMethods(await store.loadPaymentMethods().catch(() => []));
-        setSavedCategories(await store.loadCategories().catch(() => []));
-        setSerasa(await store.loadSerasa().catch(() => []));
-        setCards(await store.loadCards().catch(() => []));
-        setWishlist(await store.loadWishlist().catch(() => []));
-        const [mer, far] = await Promise.all([
-          store.loadShoppingList("mercado").catch(() => []),
-          store.loadShoppingList("farmacia").catch(() => []),
-        ]);
-        setShopping({ mercado: mer, farmacia: far });
+        /* So pula para o mes mais recente se a pessoa ainda nao navegou para
+           outro enquanto a rede respondia. */
+        if (!cachedInitial || monthRef.current === cachedInitial) {
+          if (initial !== monthRef.current) {
+            setMonth(initial);
+            monthRef.current = initial;
+            await hydrateMonth(initial);
+          }
+        }
+        await Promise.all([loadMonth(monthRef.current), loadGlobals()]);
       } catch (err) {
         /* 401 ja foi tratado globalmente pelo client (volta ao pareamento) */
-        if (err.message !== "unauthorized") setError("Nao foi possivel carregar seus dados.");
+        if (err.message !== "unauthorized") {
+          if (cachedInitial) setOffline(true);
+          else setError("Nao foi possivel carregar seus dados.");
+        }
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadMonth]);
+  }, [loadMonth, loadGlobals, hydrateMonth]);
 
   /* Recarrega ao voltar do segundo plano. Toda escrita neste backend substitui a
      colecao inteira, entao a web pode ter sobrescrito o mes enquanto o app
-     estava fechado — partir de dado fresco estreita bastante essa janela. */
+     estava fechado — partir de dado fresco estreita bastante essa janela. Se as
+     colecoes globais ainda nao sincronizaram (abriu offline), tenta de novo. */
   useEffect(() => {
     const sub = AppState.addEventListener("change", (s) => {
-      if (s === "active") loadMonth(monthRef.current).catch(() => {});
+      if (s !== "active") return;
+      Promise.all([
+        loadMonth(monthRef.current),
+        globalsSyncedRef.current ? null : loadGlobals(),
+      ]).catch((err) => {
+        if (err?.message !== "unauthorized") setOffline(true);
+      });
     });
     return () => sub.remove();
-  }, [loadMonth]);
+  }, [loadMonth, loadGlobals]);
 
   /* Trocar de mes invalida so as chaves do mes; as colecoes globais seguem. */
   useEffect(() => {
@@ -204,34 +295,33 @@ export default function HomeScreen({ email, onSignOut }) {
     flushClosings();
     setMonth(key);
     monthRef.current = key;
-    setLoading(true);
+    /* Mes ja visitado aparece do cache na hora; sem cache, esvazia (senao a
+       tela mostraria o mes anterior com o rotulo do novo) e mostra o spinner. */
+    const hadCache = await hydrateMonth(key);
+    if (!hadCache && monthRef.current === key) {
+      setExpenses([]);
+      setIncomes([]);
+      setCardClosings([]);
+      setLoading(true);
+    }
     try {
       await loadMonth(key);
+    } catch (err) {
+      if (err?.message !== "unauthorized") setOffline(true);
     } finally {
       setLoading(false);
     }
   };
 
   /* Recarrega tudo, nao so o mes: desejos, listas, serasa e cartoes sao
-     colecoes globais e ficariam paradas num puxao de atualizar. */
+     colecoes globais e ficariam paradas num puxao de atualizar. E tambem o
+     jeito de sair do modo offline depois que a conexao volta. */
   const refresh = async () => {
     setRefreshing(true);
     try {
-      const [w, mer, far, ser, crd] = await Promise.all([
-        store.loadWishlist(),
-        store.loadShoppingList("mercado"),
-        store.loadShoppingList("farmacia"),
-        store.loadSerasa(),
-        store.loadCards(),
-      ]);
-      await loadMonth(monthRef.current);
-      setWishlist(w);
-      setShopping({ mercado: mer, farmacia: far });
-      setSerasa(ser);
-      setCards(crd);
-    } catch {
-      /* silencioso: o indicador de gravacao ja cobre o que importa, e o
-         puxao volta ao normal sozinho */
+      await Promise.all([loadGlobals(), loadMonth(monthRef.current)]);
+    } catch (err) {
+      if (err?.message !== "unauthorized") setOffline(true);
     } finally {
       setRefreshing(false);
     }
@@ -240,10 +330,15 @@ export default function HomeScreen({ email, onSignOut }) {
   /* Memoizado porque entra no array de dependencias do debounce: um objeto novo
      a cada render reagendaria a gravacao para sempre. */
   const payload = useMemo(() => ({ month, expenses, incomes }), [month, expenses, incomes]);
+  /* So grava o que veio da rede: dado de cache nunca chega ao servidor. Ao
+     trocar de mes, `syncedMonth` ainda aponta o anterior, entao o novo mes fica
+     desligado ate a rede responder — e o pendente do anterior ja foi flushado. */
+  const monthSynced = !loading && !error && syncedMonth === month;
+  const globalsReady = !loading && !error && globalsSynced;
   const flushSave = useDebouncedSave(
     payload,
     (snap) => track(store.save(snap.month, { expenses: snap.expenses, incomes: snap.incomes })),
-    { enabled: !loading && !error }
+    { enabled: monthSynced }
   );
 
   /* Serasa e colecao GLOBAL (sem mes) e tem endpoint proprio, entao seu
@@ -251,7 +346,7 @@ export default function HomeScreen({ email, onSignOut }) {
   const flushSerasa = useDebouncedSave(
     serasa,
     (snap) => track(store.saveSerasa(snap)),
-    { enabled: !loading && !error }
+    { enabled: globalsReady }
   );
 
   const setterFor = (mode) =>
@@ -268,7 +363,7 @@ export default function HomeScreen({ email, onSignOut }) {
   const flushCards = useDebouncedSave(
     cards,
     (snap) => track(store.saveCards(snap)),
-    { enabled: !loading && !error }
+    { enabled: globalsReady }
   );
 
   /* Fechamentos sao do mes: o payload carrega o mes junto para o endpoint saber
@@ -280,13 +375,13 @@ export default function HomeScreen({ email, onSignOut }) {
   const flushClosings = useDebouncedSave(
     closingsPayload,
     (snap) => track(store.saveCardClosings(snap.month, snap.cardClosings)),
-    { enabled: !loading && !error }
+    { enabled: monthSynced }
   );
 
   const flushWishlist = useDebouncedSave(
     wishlist,
     (snap) => track(store.saveWishlist(snap)),
-    { enabled: !loading && !error }
+    { enabled: globalsReady }
   );
   /* Uma lista muda, as duas sao gravadas — igual a web, que tem um efeito so
      para shoppingLists. Sao dois PUTs, mas o debounce ja os agrupa. */
@@ -296,8 +391,42 @@ export default function HomeScreen({ email, onSignOut }) {
       track(store.saveShoppingList("mercado", snap.mercado));
       track(store.saveShoppingList("farmacia", snap.farmacia));
     },
-    { enabled: !loading && !error }
+    { enabled: globalsReady }
   );
+
+  /* O cache acompanha o estado ja sincronizado, para refletir as edicoes feitas
+     online na proxima abertura. Gravado so depois da rede: nunca um cache
+     reescrevendo outro. */
+  useEffect(() => {
+    if (!monthSynced) return;
+    writeCache(monthKeyFor(month), { expenses, incomes, cardClosings });
+  }, [monthSynced, month, expenses, incomes, cardClosings]);
+
+  useEffect(() => {
+    if (!globalsReady) return;
+    writeCache("serasa", serasa);
+    writeCache("cards", cards);
+    writeCache("wishlist", wishlist);
+    writeCache("shopping-mercado", shopping.mercado);
+    writeCache("shopping-farmacia", shopping.farmacia);
+  }, [globalsReady, serasa, cards, wishlist, shopping]);
+
+  /* Editar so com tudo sincronizado. Offline (ou no segundo entre o cache e a
+     rede), o toque avisa em vez de abrir o modal: a edicao nao teria como ser
+     gravada e seria apagada quando a rede trouxesse a versao do servidor. */
+  const editable = monthSynced && globalsReady;
+  const guard = (fn) => (...args) => {
+    if (!editable) {
+      Alert.alert(
+        offline ? "Sem conexão" : "Atualizando",
+        offline
+          ? "Você está vendo os dados salvos no aparelho. Conecte-se à internet e puxe a tela para baixo para editar."
+          : "Seus dados estão sendo atualizados. Tente de novo em instantes."
+      );
+      return undefined;
+    }
+    return fn(...args);
+  };
 
   /* kind: "wish" | "mercado" | "farmacia" */
   const listSetter = (kind) =>
@@ -686,6 +815,15 @@ export default function HomeScreen({ email, onSignOut }) {
 
       {error ? <Text className="text-sm text-rose-600 text-center py-8">{error}</Text> : null}
 
+      {offline && !loading && !error ? (
+        <View className="flex-row items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 mb-4">
+          <WifiOff size={16} color="#b45309" />
+          <Text className="text-xs text-amber-800 flex-1">
+            Sem conexão — mostrando os dados salvos no aparelho. Puxe a tela para baixo para atualizar.
+          </Text>
+        </View>
+      ) : null}
+
       {loading ? (
         <View className="items-center py-10 gap-3">
           <ActivityIndicator color="#16382c" />
@@ -695,19 +833,19 @@ export default function HomeScreen({ email, onSignOut }) {
         <OverviewTab
           expenses={expenses}
           incomes={incomes}
-          onEditItem={(kind, item) => setModal({ mode: kind, item })}
+          onEditItem={guard((kind, item) => setModal({ mode: kind, item }))}
         />
       ) : tab === "gastos" ? (
         <GastosTab
           {...selProps("expense")}
           expenses={expenses}
           total={totalOf(expenses)}
-          onAdd={() => setModal({ mode: "expense", item: null })}
-          onEdit={(e) => setModal({ mode: "expense", item: e })}
-          onDelete={(e) => setConfirming({ mode: "expense", item: e })}
-          onTogglePaid={(e) => togglePaid("expense", e.id)}
-          onMove={moveExpense}
-          onReorder={reorderExpenses}
+          onAdd={guard(() => setModal({ mode: "expense", item: null }))}
+          onEdit={guard((e) => setModal({ mode: "expense", item: e }))}
+          onDelete={guard((e) => setConfirming({ mode: "expense", item: e }))}
+          onTogglePaid={guard((e) => togglePaid("expense", e.id))}
+          onMove={editable ? moveExpense : undefined}
+          onReorder={editable ? reorderExpenses : undefined}
           onDragChange={setDragging}
           extraPaymentMethods={extraPaymentMethods}
         />
@@ -715,21 +853,21 @@ export default function HomeScreen({ email, onSignOut }) {
         <GanhosTab
           {...selProps("income")}
           incomes={incomes}
-          onAdd={() => setModal({ mode: "income", item: null })}
-          onEdit={(i) => setModal({ mode: "income", item: i })}
-          onDelete={(i) => setConfirming({ mode: "income", item: i })}
-          onReorder={reorderIncomes}
+          onAdd={guard(() => setModal({ mode: "income", item: null }))}
+          onEdit={guard((i) => setModal({ mode: "income", item: i }))}
+          onDelete={guard((i) => setConfirming({ mode: "income", item: i }))}
+          onReorder={editable ? reorderIncomes : undefined}
           onDragChange={setDragging}
         />
       ) : tab === "serasa" ? (
         <SerasaTab
           {...selProps("serasa")}
           serasa={serasa}
-          onAdd={() => setModal({ mode: "serasa", item: null })}
-          onEdit={(x) => setModal({ mode: "serasa", item: x })}
-          onDelete={(x) => setConfirming({ mode: "serasa", item: x })}
-          onTogglePaid={(x) => togglePaid("serasa", x.id)}
-          onReorder={reorderSerasa}
+          onAdd={guard(() => setModal({ mode: "serasa", item: null }))}
+          onEdit={guard((x) => setModal({ mode: "serasa", item: x }))}
+          onDelete={guard((x) => setConfirming({ mode: "serasa", item: x }))}
+          onTogglePaid={guard((x) => togglePaid("serasa", x.id))}
+          onReorder={editable ? reorderSerasa : undefined}
           onDragChange={setDragging}
         />
       ) : tab === "cartoes" ? (
@@ -739,17 +877,17 @@ export default function HomeScreen({ email, onSignOut }) {
           month={month}
           canAdd={canAddCard(cards, extraPaymentMethods)}
           /* onAdd() sem argumento: a forma nua passaria o evento como presetMethod */
-          onAdd={(preset) => setCardModal({ item: null, presetMethod: typeof preset === "string" ? preset : undefined })}
-          onEdit={(c) => setCardModal({ item: c })}
-          onDelete={(c) => setConfirming({ mode: "card", item: c })}
+          onAdd={guard((preset) => setCardModal({ item: null, presetMethod: typeof preset === "string" ? preset : undefined }))}
+          onEdit={guard((c) => setCardModal({ item: c }))}
+          onDelete={guard((c) => setConfirming({ mode: "card", item: c }))}
         />
       ) : tab === "fechamento" ? (
         <FechamentoTab
           items={cardClosings}
-          onAdd={() => setClosingModal({ item: null })}
-          onEdit={(it) => setClosingModal({ item: it })}
-          onDelete={(it) => setConfirming({ mode: "closing", item: it })}
-          onReorder={reorderClosings}
+          onAdd={guard(() => setClosingModal({ item: null }))}
+          onEdit={guard((it) => setClosingModal({ item: it }))}
+          onDelete={guard((it) => setConfirming({ mode: "closing", item: it }))}
+          onReorder={editable ? reorderClosings : undefined}
           onDragChange={setDragging}
         />
       ) : (
@@ -760,13 +898,13 @@ export default function HomeScreen({ email, onSignOut }) {
           addLabel={tab === "desejos" ? "Novo desejo" : "Novo item"}
           emptyText={tab === "desejos" ? "Nenhum desejo cadastrado." : "Nenhum item cadastrado."}
           doneLabel={tab === "desejos" ? "Realizado" : "Comprado"}
-          onAdd={() => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: null })}
-          onEdit={(i) => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: i })}
-          onDelete={(i) => setConfirming({ mode: tab === "desejos" ? "wish" : tab, item: i })}
-          onToggleDone={(i) => toggleListDone(tab === "desejos" ? "wish" : tab, i.id)}
+          onAdd={guard(() => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: null }))}
+          onEdit={guard((i) => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: i }))}
+          onDelete={guard((i) => setConfirming({ mode: tab === "desejos" ? "wish" : tab, item: i }))}
+          onToggleDone={guard((i) => toggleListDone(tab === "desejos" ? "wish" : tab, i.id))}
           /* Só Mercado tem "Limpar", como na web — Farmácia não recebe o handler. */
-          onClearDone={tab === "mercado" ? () => clearListDone("mercado") : undefined}
-          onReorder={(ids) => reorderList(tab === "desejos" ? "wish" : tab, ids)}
+          onClearDone={tab === "mercado" ? guard(() => clearListDone("mercado")) : undefined}
+          onReorder={editable ? (ids) => reorderList(tab === "desejos" ? "wish" : tab, ids) : undefined}
           onDragChange={setDragging}
         />
       )}

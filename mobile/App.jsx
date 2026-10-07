@@ -7,6 +7,7 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { fetchMe, setToken, setUnauthorizedHandler } from "./src/api/client";
 import { clearToken, loadToken, saveToken } from "./src/api/session";
+import { clearCache, readCache, writeCache } from "./src/api/cache";
 import PairScreen from "./src/screens/PairScreen";
 import HomeScreen from "./src/screens/HomeScreen";
 
@@ -18,6 +19,7 @@ export default function App() {
      trocado chegam iguais e significam a mesma coisa. */
   const signOut = useCallback(async () => {
     await clearToken();
+    clearCache();
     setToken(null);
     setEmail("");
     setStatus("pairing");
@@ -31,6 +33,7 @@ export default function App() {
     await saveToken(token);
     setToken(token);
     const me = await fetchMe();
+    writeCache("me", { email: me.email });
     setEmail(me.email);
     setStatus("ready");
   }, []);
@@ -40,13 +43,32 @@ export default function App() {
       const stored = await loadToken();
       if (!stored) return setStatus("pairing");
       setToken(stored);
+
+      /* Com sessao ja vista antes, abre na hora e valida em segundo plano: a
+         tela nao espera a rede. Se a validacao der 401, o handler global
+         (signOut) volta ao pareamento; falha de rede so mantem o app aberto
+         com os dados em cache. */
+      const cached = await readCache("me");
+      if (cached?.email) {
+        setEmail(cached.email);
+        setStatus("ready");
+        fetchMe()
+          .then((me) => {
+            writeCache("me", { email: me.email });
+            setEmail(me.email);
+          })
+          .catch(() => {});
+        return;
+      }
+
       try {
         const me = await fetchMe();
+        writeCache("me", { email: me.email });
         setEmail(me.email);
         setStatus("ready");
       } catch {
-        /* o handler de 401 já limpou o SecureStore; qualquer outra falha
-           (sem rede, por exemplo) também cai no pareamento em vez de travar */
+        /* Sem cache nao ha o que mostrar offline: o handler de 401 ja limpou o
+           SecureStore; qualquer outra falha cai no pareamento em vez de travar. */
         setStatus("pairing");
       }
     })();

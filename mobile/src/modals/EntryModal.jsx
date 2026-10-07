@@ -15,6 +15,9 @@ const NENHUMA = "Nenhuma";
    o seletor por um campo de texto e o unico jeito de nomear algo que ainda nao
    existe, ja que categoria e texto livre e nao tem cadastro proprio. */
 const NEW_CATEGORY = "+ Criar nova categoria";
+/* Mesma ideia para forma de pagamento (web: NEW_PAYMENT_METHOD, meu-caixa.jsx:3412):
+   ela tambem e so texto no gasto, sem cadastro proprio. */
+const NEW_PAYMENT_METHOD = "+ Adicionar forma de pagamento";
 
 /* Fora do componente para o estado inicial e o useMemo usarem a MESMA lista:
    duas montagens divergentes abririam a edicao no modo errado. Serasa tem
@@ -94,6 +97,12 @@ export default function EntryModal({
   const [note, setNote] = useState(item?.note || "");
   const [date, setDate] = useState(isoToBr(isIncome ? item?.receiptDate : item?.dueDate));
   const [paymentMethod, setPaymentMethod] = useState(item?.paymentMethod || "");
+  /* Reabre em modo texto uma forma que nao esta na lista, como a web (linha 3251). */
+  const [paymentMethodMode, setPaymentMethodMode] = useState(() =>
+    !item?.paymentMethod || allPaymentMethods(extraPaymentMethods).includes(item.paymentMethod)
+      ? "select"
+      : "custom"
+  );
   const [voucher, setVoucher] = useState(!!(isIncome ? item?.voucherIncome : item?.paidWithVoucher));
   const [cltPj, setCltPj] = useState(!!(isIncome ? item?.cltPjIncome : item?.paidWithCltPj));
   const [recurrent, setRecurrent] = useState(!!item?.recurrent);
@@ -131,10 +140,16 @@ export default function EntryModal({
   );
   const categories = useMemo(() => [...knownCategories, NEW_CATEGORY], [knownCategories]);
 
-  const methods = useMemo(
-    () => [NENHUMA, ...allPaymentMethods(extraPaymentMethods)],
-    [extraPaymentMethods]
-  );
+  const knownMethods = useMemo(() => allPaymentMethods(extraPaymentMethods), [extraPaymentMethods]);
+  const methods = useMemo(() => [NENHUMA, ...knownMethods, NEW_PAYMENT_METHOD], [knownMethods]);
+
+  /* Normaliza como a categoria: "inter" digitado vira o "Inter" ja existente,
+     senao surgiriam duas formas que nunca se juntam nos totais dos cartoes. */
+  const typedMethod = paymentMethod.trim();
+  const resolvedMethod =
+    typedMethod === "" || typedMethod === NENHUMA || typedMethod === NEW_PAYMENT_METHOD
+      ? null
+      : knownMethods.find((m) => m.toLowerCase() === typedMethod.toLowerCase()) || typedMethod;
 
   const amount = parseAmount(value);
   const dateOk = isDateInputValid(date);
@@ -188,7 +203,7 @@ export default function EntryModal({
           ...repeatFields(repeatMode, parcelas, item, totalFilled ? typedTotal : null),
           ...(cfg.temCarteiras ? { paidWithVoucher: voucher, paidWithCltPj: cltPj } : {}),
           ...(cfg.temFormaPagamento
-            ? { paymentMethod: paymentMethod === NENHUMA ? null : paymentMethod || null }
+            ? { paymentMethod: resolvedMethod }
             : {}),
         };
 
@@ -267,12 +282,44 @@ export default function EntryModal({
 
       {cfg.temFormaPagamento ? (
         <Field label="Forma de pagamento (opcional)">
-          <SelectField
-            value={paymentMethod || NENHUMA}
-            options={methods}
-            onSelect={setPaymentMethod}
-            title="Forma de pagamento"
-          />
+          {paymentMethodMode === "select" ? (
+            <SelectField
+              value={paymentMethod || NENHUMA}
+              options={methods}
+              onSelect={(m) => {
+                if (m === NEW_PAYMENT_METHOD) {
+                  setPaymentMethodMode("custom");
+                  setPaymentMethod("");
+                } else {
+                  setPaymentMethod(m);
+                }
+              }}
+              title="Forma de pagamento"
+            />
+          ) : (
+            <View className="flex-row gap-2">
+              <View className="flex-1 min-w-0">
+                <TextField
+                  value={paymentMethod}
+                  onChangeText={setPaymentMethod}
+                  placeholder="Nome da forma de pagamento"
+                  autoFocus
+                />
+              </View>
+              <Touchable
+                variant="icon"
+                onPress={() => {
+                  setPaymentMethodMode("select");
+                  /* Volta para um valor da lista: texto pela metade no seletor
+                     mostraria algo que nao existe nele. */
+                  setPaymentMethod(knownMethods.includes(paymentMethod) ? paymentMethod : "");
+                }}
+                className="h-[46px] w-[46px] shrink-0 rounded-xl border border-slate-200 items-center justify-center"
+              >
+                <X size={16} color="#94a3b8" />
+              </Touchable>
+            </View>
+          )}
         </Field>
       ) : null}
 
