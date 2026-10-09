@@ -15,12 +15,14 @@ export function useDebouncedSave(value, save, { enabled, delay = 1000 } = {}) {
   const timerRef = useRef(null);
   saveRef.current = save;
 
+  /* Devolve a promise da gravacao (ou undefined sem pendente), para quem precisa
+     ESPERAR o PUT terminar — ex.: antes de reiniciar o app numa atualizacao. */
   const flush = useCallback(() => {
-    if (!pendingRef.current) return;
+    if (!pendingRef.current) return undefined;
     const run = pendingRef.current;
     pendingRef.current = null;
     clearTimeout(timerRef.current);
-    run();
+    return run();
   }, []);
 
   useEffect(() => {

@@ -11,8 +11,8 @@ import {
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, LogOut, PiggyBank, WifiOff } from "lucide-react-native";
-import { fmt, formatDateBR, monthKey, monthLabel } from "../core/format";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, LogOut, PiggyBank, Plus, WifiOff } from "lucide-react-native";
+import { addMonths, fmt, formatDateBR, monthKey, monthLabel } from "../core/format";
 import { nextExpenses, nextIncomes } from "../core/upcoming";
 import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
@@ -36,6 +36,7 @@ import ChecklistModal from "../modals/ChecklistModal";
 import EntryModal from "../modals/EntryModal";
 import ConfirmModal from "../modals/ConfirmModal";
 import { useDebouncedSave } from "../hooks/useDebouncedSave";
+import { VersionFooter } from "../ui/VersionFooter";
 import { useSaveStatus } from "../hooks/useSaveStatus";
 import { uid } from "../core/uid";
 import { todayISO } from "../core/format";
@@ -131,6 +132,7 @@ export default function HomeScreen({ email, onSignOut }) {
   /* Ultima tentativa de rede falhou: mostra a faixa "sem conexao". Separado do
      "nao sincronizado" para a faixa nao piscar no segundo entre o cache e a rede. */
   const [offline, setOffline] = useState(false);
+  const [creatingMonth, setCreatingMonth] = useState(false);
   const insets = useSafeAreaInsets();
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
@@ -313,6 +315,59 @@ export default function HomeScreen({ email, onSignOut }) {
     }
   };
 
+  /* Mesmo calculo da web (meu-caixa.jsx nextMonthKey): o mes seguinte ao ultimo
+     que existe, nao ao que esta na tela. */
+  const nextMonthKey = useMemo(
+    () => addMonths(months.length > 0 ? months[months.length - 1] : month, 1),
+    [months, month]
+  );
+
+  /* Espelha handleAddNextMonth da web. O servidor copia do mes anterior os
+     recorrentes e as parcelas em andamento; o mes chega pronto na resposta,
+     entao ja nasce sincronizado (veio da rede) e entra no cache. */
+  const createNextMonth = async () => {
+    if (creatingMonth) return;
+    const target = nextMonthKey;
+    setCreatingMonth(true);
+    /* O pendente do mes atual grava antes de a tela trocar de mes. */
+    flushSave();
+    flushClosings();
+    try {
+      const data = await store.createMonth(target);
+      const exp = Array.isArray(data?.expenses) ? data.expenses : [];
+      const inc = Array.isArray(data?.incomes) ? data.incomes : [];
+      const nextMonths = months.includes(target) ? months : [...months, target];
+      setMonths(nextMonths);
+      writeCache("months", nextMonths);
+      monthRef.current = target;
+      syncedMonthRef.current = target;
+      setMonth(target);
+      setExpenses(exp);
+      setIncomes(inc);
+      /* Mes novo comeca sem fechamentos — createMonth nao os leva adiante. */
+      setCardClosings([]);
+      setSyncedMonth(target);
+      writeCache(monthKeyFor(target), { expenses: exp, incomes: inc, cardClosings: [] });
+    } catch (err) {
+      if (err?.message !== "unauthorized") {
+        Alert.alert("Não foi possível criar o mês", err?.message || "Tente novamente.");
+      }
+    } finally {
+      setCreatingMonth(false);
+    }
+  };
+
+  /* Confirmacao: no app nao ha como apagar um mes criado. */
+  const confirmCreateMonth = () =>
+    Alert.alert(
+      `Criar ${monthLabel(nextMonthKey)}?`,
+      "Os gastos recorrentes e as parcelas em andamento do mês anterior serão copiados para ele.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { text: "Criar", onPress: createNextMonth },
+      ]
+    );
+
   /* Recarrega tudo, nao so o mes: desejos, listas, serasa e cartoes sao
      colecoes globais e ficariam paradas num puxao de atualizar. E tambem o
      jeito de sair do modo offline depois que a conexao volta. */
@@ -387,10 +442,11 @@ export default function HomeScreen({ email, onSignOut }) {
      para shoppingLists. Sao dois PUTs, mas o debounce ja os agrupa. */
   const flushShopping = useDebouncedSave(
     shopping,
-    (snap) => {
-      track(store.saveShoppingList("mercado", snap.mercado));
-      track(store.saveShoppingList("farmacia", snap.farmacia));
-    },
+    (snap) =>
+      Promise.all([
+        track(store.saveShoppingList("mercado", snap.mercado)),
+        track(store.saveShoppingList("farmacia", snap.farmacia)),
+      ]),
     { enabled: globalsReady }
   );
 
@@ -415,6 +471,18 @@ export default function HomeScreen({ email, onSignOut }) {
      rede), o toque avisa em vez de abrir o modal: a edicao nao teria como ser
      gravada e seria apagada quando a rede trouxesse a versao do servidor. */
   const editable = monthSynced && globalsReady;
+
+  /* Antes de reiniciar o app para aplicar uma atualizacao: grava e ESPERA tudo
+     o que estiver pendente (o reload descarta a memoria). */
+  const flushAll = () =>
+    Promise.allSettled([
+      flushSave(),
+      flushClosings(),
+      flushSerasa(),
+      flushCards(),
+      flushWishlist(),
+      flushShopping(),
+    ]);
   const guard = (fn) => (...args) => {
     if (!editable) {
       Alert.alert(
@@ -742,7 +810,8 @@ export default function HomeScreen({ email, onSignOut }) {
         </View>
       </LinearGradient>
 
-      {months.length > 1 && (
+      {/* Sempre visivel (antes so com 2+ meses): e onde mora o "+ Proximo mes". */}
+      {months.length > 0 && (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -772,6 +841,19 @@ export default function HomeScreen({ email, onSignOut }) {
                 </Touchable>
               );
             })}
+            <Touchable
+              onPress={guard(confirmCreateMonth)}
+              disabled={creatingMonth}
+              hitSlop={{ top: 6, bottom: 6 }}
+              className="flex-row items-center gap-1.5 px-4 py-2 rounded-full border border-dashed border-slate-300 bg-white disabled:opacity-60"
+            >
+              {creatingMonth ? (
+                <ActivityIndicator size="small" color="#16382c" />
+              ) : (
+                <Plus size={14} color="#16382c" />
+              )}
+              <Text className="text-sm font-medium text-slate-600">{monthLabel(nextMonthKey)}</Text>
+            </Touchable>
           </View>
         </ScrollView>
       )}
@@ -908,6 +990,8 @@ export default function HomeScreen({ email, onSignOut }) {
           onDragChange={setDragging}
         />
       )}
+
+      <VersionFooter onBeforeReload={flushAll} />
 
       {listModal ? (
         <ChecklistModal
