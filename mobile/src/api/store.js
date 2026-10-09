@@ -17,6 +17,9 @@ export const store = {
     const d = await request("/api/months");
     return keep("months")(Array.isArray(d.months) ? d.months : []);
   },
+  /* Cria o mes no servidor, que ja traz do mes anterior os recorrentes e as
+     parcelas em andamento (server/db.js createMonth). Recusa mes existente. */
+  createMonth: (month) => request("/api/months", { method: "POST", body: { month } }),
   load: async (month) => {
     const d = await request(`/api/data?month=${encodeURIComponent(month)}`);
     return d && Array.isArray(d.expenses) ? d : null;
