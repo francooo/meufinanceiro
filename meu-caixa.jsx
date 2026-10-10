@@ -941,10 +941,12 @@ export default function App() {
     }));
   };
   if (!authChecked) {
+    // Mesmo fundo do login: sem isto a página piscava de cinza-claro para verde.
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#F1F4F2" }}>
-        <div className="flex items-center gap-3 text-slate-500">
-          <div className="h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+      <div className="relative min-h-screen flex items-center justify-center overflow-hidden">
+        <LoginBackdrop />
+        <div className="relative z-10 flex items-center gap-3 font-brand" style={{ color: "rgba(209,250,229,0.8)" }}>
+          <div className="h-5 w-5 rounded-full border-2 border-white/25 border-t-white animate-spin" />
           <span className="text-sm">Verificando sessão…</span>
         </div>
       </div>
@@ -1399,10 +1401,54 @@ export default function App() {
 }
 
 /* ---------- login ---------- */
+// Fundo da tela de entrada (mock login-premium-variante-1): verde-escuro com dois
+// brilhos nos cantos e um gráfico de linha decorativo. "slice" e não "none" no SVG
+// para os pontos continuarem redondos em qualquer proporção de tela.
+const CHART_DOTS = [
+  [121, 339],
+  [273, 299],
+  [806, 211],
+  [924, 106],
+];
+
+function LoginBackdrop() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0"
+      style={{
+        background:
+          "radial-gradient(ellipse at 8% 0%, rgba(52,140,98,0.45) 0%, transparent 40%)," +
+          "radial-gradient(ellipse at 96% 88%, rgba(52,140,98,0.38) 0%, transparent 32%)," +
+          "linear-gradient(160deg, #0d3326 0%, #0b2d22 45%, #07211a 100%)",
+      }}
+    >
+      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 1000 560" preserveAspectRatio="xMidYMid slice">
+        {CHART_DOTS.map(([x, y]) => (
+          <line key={`v${x}`} x1={x} y1={y} x2={x} y2={560} stroke="rgba(74,160,115,0.12)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+        ))}
+        <path
+          d="M0,422 C60,390 90,345 121,339 S170,352 200,352 S250,320 273,299 C330,250 420,280 520,300 S640,300 690,292 C740,280 770,225 806,211 S850,200 870,190 S900,130 924,106 S980,60 1000,55"
+          fill="none"
+          stroke="rgba(74,160,115,0.35)"
+          strokeWidth="1.5"
+          vectorEffect="non-scaling-stroke"
+        />
+        {CHART_DOTS.map(([x, y]) => (
+          <circle key={`d${x}`} cx={x} cy={y} r="5" fill="rgba(74,160,115,0.55)" />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 function LoginScreen({ onLogin }) {
   const [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   const buttonRef = useRef(null);
+  // Sempre visível (o buttonRef fica "hidden" até o botão carregar): é dele que
+  // sai a largura para o botão do Google ocupar o cartão, como no mock.
+  const slotRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1442,13 +1488,17 @@ function LoginScreen({ onLogin }) {
         callback: handleCredentialResponse,
       });
       if (buttonRef.current) {
+        // O Google limita a largura a 400px; abaixo disso, acompanha o cartão.
+        const width = Math.min(400, Math.max(200, slotRef.current?.offsetWidth || 320));
         window.google.accounts.id.renderButton(buttonRef.current, {
           type: "standard",
           theme: "outline",
           size: "large",
-          width: 296,
+          width,
           text: "continue_with",
           shape: "rectangular",
+          logo_alignment: "center",
+          locale: "pt-BR",
         });
       }
       setReady(true);
@@ -1462,30 +1512,56 @@ function LoginScreen({ onLogin }) {
   }, [onLogin]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "#F1F4F2" }}>
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center text-center mb-8">
-          <div
-            className="h-16 w-16 rounded-3xl flex items-center justify-center text-white shadow-lg mb-4"
-            style={{ background: "linear-gradient(135deg,#0f2e25 0%,#16382c 55%,#1e4a38 100%)" }}
-          >
-            <DollarSign size={30} />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-800">Meu financeiro</h1>
-          <p className="text-sm text-slate-500 mt-1">Organize seus ganhos e gastos em um só lugar</p>
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 py-10">
+      <LoginBackdrop />
+
+      <main
+        className="relative z-10 w-full max-w-[520px] rounded-[28px] px-6 py-10 sm:px-12 sm:py-12 text-center font-brand"
+        style={{
+          background: "#FAF9F7",
+          boxShadow: "0 40px 90px -30px rgba(0,0,0,0.65), 0 10px 30px -10px rgba(0,0,0,0.35)",
+        }}
+      >
+        <div
+          className="relative mx-auto h-[72px] w-[72px] rounded-[20px] flex items-center justify-center text-white overflow-hidden"
+          style={{
+            background: "linear-gradient(145deg, #0f2e25 0%, #16382c 45%, #2a6b4f 100%)",
+            boxShadow: "0 12px 24px -10px rgba(15,46,37,0.6)",
+          }}
+        >
+          {/* realce de luz no ícone, como no mock */}
+          <span
+            aria-hidden="true"
+            className="absolute inset-0"
+            style={{ background: "radial-gradient(circle at 25% 85%, rgba(110,200,150,0.35), transparent 55%)" }}
+          />
+          <DollarSign size={34} strokeWidth={2.25} className="relative" />
         </div>
 
-        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-6">
-          <div className="min-h-[44px] flex items-center justify-center">
-            {!ready && !error && <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />}
+        <p className="mt-5 text-[24px] sm:text-[26px] font-bold tracking-tight" style={{ color: "#0f2a22" }}>
+          Meu financeiro
+        </p>
+
+        <h1
+          className="mt-6 mx-auto max-w-[420px] font-display font-semibold text-[28px] sm:text-[40px] leading-[1.12] text-balance"
+          style={{ color: "#10251d" }}
+        >
+          Tenha mais controle sobre o seu dinheiro.
+        </h1>
+        <p className="mt-3 text-[15px] sm:text-[17px] text-slate-500">Organize seus ganhos e gastos com clareza.</p>
+
+        <div className="mt-9 flex justify-center">
+          <div ref={slotRef} className="w-full max-w-[400px] min-h-[44px] flex items-center justify-center">
+            {!ready && !error && (
+              <div className="h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
+            )}
             <div ref={buttonRef} className={ready ? "flex justify-center" : "hidden"} />
           </div>
-          {error && <p className="text-xs text-rose-500 text-center mt-3">{error}</p>}
-          <p className="text-[11px] text-slate-400 text-center mt-4 leading-relaxed">
-            Acesso restrito à conta autorizada.
-          </p>
         </div>
-      </div>
+        {error && <p className="text-xs text-rose-600 mt-3">{error}</p>}
+
+        <p className="mt-7 text-[13px] text-slate-400">Acesso restrito à conta autorizada.</p>
+      </main>
     </div>
   );
 }
