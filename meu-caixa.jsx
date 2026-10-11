@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  Wallet, Plus, Pencil, Trash2, X, Check,
+  Plus, Pencil, Trash2, X, Check,
   ArrowUpRight, ArrowDownRight, PiggyBank, Tag,
   Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
   Landmark, Car, CreditCard, Repeat, Gamepad2,
   DollarSign, LogOut, Search, ChevronUp, ChevronDown,
-  HandCoins, FileText, AlertTriangle, Shirt, History, Calculator,
+  HandCoins, FileText, AlertTriangle, Shirt, Calculator,
+  Eye, EyeOff, ChevronLeft, ChevronRight, Menu, Settings, BarChart3, CheckSquare, CheckCircle2,
 } from "lucide-react";
 
 /* ---------- dados de referência ---------- */
@@ -88,6 +89,20 @@ const SERASA_CATS = [
 ];
 const serasaCatMeta = (n) => SERASA_CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };
 
+/* ---------- navegação (menu lateral) ---------- */
+// As abas antigas agrupadas nas seções do mock. `tab` continua sendo a fonte da
+// verdade em todo o App; a seção é derivada dela.
+const SECTIONS = [
+  { id: "inicio", label: "Início", icon: Home, tabs: [["overview", "Visão geral"]] },
+  { id: "lancamentos", label: "Lançamentos", icon: FileText, tabs: [["gastos", "Gastos"], ["ganhos", "Ganhos"]] },
+  { id: "cartoes", label: "Cartões", icon: CreditCard, tabs: [["cartoes", "Cartões"], ["fechamento", "Fechamento"]] },
+  { id: "dividas", label: "Dívidas", icon: BarChart3, tabs: [["serasa", "Serasa"]] },
+  { id: "listas", label: "Listas", icon: CheckSquare, tabs: [["desejos", "Desejos"], ["mercado", "Mercado"], ["farmacia", "Farmácia"]] },
+];
+const SETTINGS_SECTION = { id: "config", label: "Configurações", icon: Settings, tabs: [["config", "Configurações"]] };
+const sectionOfTab = (t) =>
+  [...SECTIONS, SETTINGS_SECTION].find((s) => s.tabs.some(([id]) => id === t)) || SECTIONS[0];
+
 const uid = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID)
     ? crypto.randomUUID()
@@ -95,11 +110,28 @@ const uid = () =>
 
 /* ---------- helpers ---------- */
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const fmt = (n) => brl.format(Number(n) || 0);
+// Modo "ocultar valores" (olho da barra superior). Variável de módulo e não
+// contexto: o App a atualiza no início de cada render, e todas as telas leem
+// valores só pelo fmt e re-renderizam a partir do App — então vale para a web toda.
+let HIDE_VALUES = false;
+const fmt = (n) => (HIDE_VALUES ? "R$ ••••" : brl.format(Number(n) || 0));
 
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+const addDaysISO = (iso, n) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+};
+
+const SHORT_MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+// "05 out" — rótulo da linha do tempo de Próximos 7 dias.
+const formatDayMonth = (iso) => {
+  const [, m, d] = iso.split("-");
+  return `${d} ${SHORT_MONTHS[Number(m) - 1]}`;
 };
 
 const formatDateBR = (iso) => {
@@ -351,6 +383,30 @@ export default function App() {
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef(null);
 
+  // Estrutura da web (menu lateral + barra superior).
+  const [email, setEmail] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false); // gaveta do menu abaixo de lg
+  // Última sub-aba visitada em cada seção: voltar para "Listas" reabre Mercado,
+  // se foi lá que a pessoa estava.
+  const lastTabBySection = useRef({});
+  const [hideValues, setHideValues] = useState(() => {
+    try {
+      return localStorage.getItem("mf:hideValues") === "1";
+    } catch {
+      return false;
+    }
+  });
+  // Carteira mostrada no card "Sobra do mês" (e no subtítulo da home).
+  const [wallet, setWallet] = useState(() => {
+    try {
+      return localStorage.getItem("mf:wallet") === "va" ? "va" : "cltPj";
+    } catch {
+      return "cltPj";
+    }
+  });
+  // Lido pelo fmt durante este render (ver HIDE_VALUES).
+  HIDE_VALUES = hideValues;
+
   // Seleção da calculadora: estado de UI puro, compartilhado entre abas.
   // Nunca vai para os objetos de dados — os autosaves abaixo reenviariam a
   // coleção inteira ao banco a cada clique no checkbox.
@@ -385,7 +441,43 @@ export default function App() {
     }
     setAuthed(false);
     setLoaded(false);
+    setEmail("");
     exitSelection();
+  };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mf:hideValues", hideValues ? "1" : "0");
+    } catch {
+      /* sem storage: o modo vale só nesta sessão */
+    }
+  }, [hideValues]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mf:wallet", wallet);
+    } catch {
+      /* idem */
+    }
+  }, [wallet]);
+
+  // Email da sessão para o avatar e Configurações. Roda também depois do login
+  // (authed vira true sem recarregar a página).
+  useEffect(() => {
+    if (!authed || email) return;
+    fetch("/api/auth/me")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.email && setEmail(d.email))
+      .catch(() => {});
+  }, [authed, email]);
+
+  useEffect(() => {
+    lastTabBySection.current[sectionOfTab(tab).id] = tab;
+  }, [tab]);
+
+  const goSection = (s) => {
+    setTab(lastTabBySection.current[s.id] || s.tabs[0][0]);
+    setMenuOpen(false);
   };
 
   useEffect(() => {
@@ -599,33 +691,6 @@ export default function App() {
     [expenses]
   );
   const cltPjSobra = cltPjRecebido - cltPjGasto;
-
-  const nextIncomes = useMemo(() => {
-    const today = todayISO();
-    const upcoming = incomes
-      .filter((i) => i.receiptDate && i.receiptDate >= today)
-      .sort((a, b) => (a.receiptDate < b.receiptDate ? -1 : 1));
-    if (upcoming.length === 0) return [];
-    const nextDate = upcoming[0].receiptDate;
-    return upcoming.filter((i) => i.receiptDate === nextDate);
-  }, [incomes]);
-
-  // Espelha nextIncomes, com duas diferenças deliberadas: filtra por paidAt,
-  // porque gasto já quitado não é cobrança a vencer; e não recorta por hoje,
-  // porque um gasto vencido é justamente o que mais precisa de aviso — ele
-  // continua aparecendo, marcado como atrasado.
-  const nextExpenses = useMemo(() => {
-    const pending = expenses
-      .filter((e) => !e.paidAt && e.dueDate)
-      .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
-    if (pending.length === 0) return null;
-    const nextDate = pending[0].dueDate;
-    return {
-      date: nextDate,
-      items: pending.filter((e) => e.dueDate === nextDate),
-      overdue: nextDate < todayISO(),
-    };
-  }, [expenses]);
 
   const byCat = useMemo(() => {
     const m = new Map();
@@ -978,160 +1043,63 @@ export default function App() {
     );
   }
 
+  const section = sectionOfTab(tab);
+  const wallets = {
+    cltPj: { recebido: cltPjRecebido, gasto: cltPjGasto },
+    va: { recebido: vaRecebido, gasto: vaUsado },
+  };
+  const homeSobra = wallets[wallet].recebido - wallets[wallet].gasto;
+
   return (
-    <div className="min-h-screen tabular-nums" style={{ background: "#F1F4F2" }}>
-      <div className="max-w-2xl mx-auto px-4 pt-6 pb-28">
-        {/* topo */}
-        <header className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-2xl flex items-center justify-center text-white shadow-sm" style={{ background: "#16382c" }}>
-              <Wallet size={20} />
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-slate-800 leading-tight">Meu financeiro</h1>
-              <MonthDropdown
-                months={months}
-                month={month}
-                nextMonthKey={nextMonthKey}
-                onChange={handleMonthChange}
-                onAddNext={handleAddNextMonth}
-                disabled={switchingMonth || creatingMonth}
-              />
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={"text-xs text-emerald-600 flex items-center gap-1 transition-opacity duration-300 " + (saved ? "opacity-100" : "opacity-0")}
-            >
-              <Check size={13} /> Salvo
-            </span>
-            <button
-              onClick={() => setModal({ mode: "pair" })}
-              title="Parear celular"
-              className="h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <Smartphone size={16} />
-            </button>
-            <button
-              onClick={handleLogout}
-              title="Sair"
-              className="h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:border-slate-300 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <LogOut size={16} />
-            </button>
-          </div>
-        </header>
+    <div className="min-h-screen tabular-nums font-brand" style={{ background: "#F6F5F1" }}>
+      <Sidebar active={section.id} onSelect={goSection} open={menuOpen} onClose={() => setMenuOpen(false)} />
 
-        {nextIncomes.length > 0 && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm rounded-2xl px-4 py-3 mb-5">
-            <div className="flex items-center gap-2 font-medium">
-              <ArrowUpRight size={16} className="shrink-0" />
-              <span>
-                Você vai receber no dia <strong>{formatDateBR(nextIncomes[0].receiptDate)}</strong>
-              </span>
-            </div>
-            <ul className="mt-2 pl-6 space-y-1 list-disc marker:text-emerald-400">
-              {nextIncomes.map((inc) => (
-                <li key={inc.id}>
-                  <strong className="tabular-nums">{fmt(inc.value)}</strong> de <strong>{inc.source}</strong>
-                </li>
+      <div className="lg:pl-[260px]">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pt-5 sm:pt-7 pb-28">
+          <TopBar
+            onOpenMenu={() => setMenuOpen(true)}
+            months={months}
+            month={month}
+            nextMonthKey={nextMonthKey}
+            onChangeMonth={handleMonthChange}
+            onAddNextMonth={handleAddNextMonth}
+            monthDisabled={switchingMonth || creatingMonth}
+            saved={saved}
+            hideValues={hideValues}
+            onToggleHide={() => setHideValues((v) => !v)}
+            email={email}
+            onLogout={handleLogout}
+          />
+
+          <div className="mt-7 sm:mt-9 mb-6">
+            <h1 className="font-display font-semibold text-[34px] sm:text-[46px] leading-[1.05]" style={{ color: "#10251d" }}>
+              {tab === "overview" ? "Visão geral" : section.label}
+            </h1>
+            {tab === "overview" && (
+              <p className="mt-1.5 font-display text-[18px] sm:text-[23px]" style={{ color: "#4a6b5d" }}>
+                {homeSobra >= 0 ? "Seu mês em equilíbrio" : "Atenção aos gastos deste mês"}
+              </p>
+            )}
+          </div>
+
+          {/* sub-abas da seção (ex.: Lançamentos → Gastos | Ganhos) */}
+          {section.tabs.length > 1 && (
+            <div className="mb-5 inline-flex flex-wrap gap-1 rounded-full bg-white border border-slate-200 p-1 shadow-sm">
+              {section.tabs.map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setTab(id)}
+                  className={
+                    "px-4 py-1.5 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 " +
+                    (tab === id ? "text-white" : "text-slate-500 hover:text-slate-800")
+                  }
+                  style={tab === id ? { background: "#16382c" } : undefined}
+                >
+                  {label}
+                </button>
               ))}
-            </ul>
-          </div>
-        )}
-
-        {nextExpenses && (
-          <div
-            className={
-              "border text-sm rounded-2xl px-4 py-3 mb-5 " +
-              (nextExpenses.overdue
-                ? "bg-rose-50 border-rose-200 text-rose-700"
-                : "bg-amber-50 border-amber-200 text-amber-800")
-            }
-          >
-            <div className="flex items-center gap-2 font-medium">
-              {nextExpenses.overdue ? (
-                <AlertTriangle size={16} className="shrink-0" />
-              ) : (
-                <ArrowDownRight size={16} className="shrink-0" />
-              )}
-              <span>
-                {nextExpenses.overdue ? "Gasto vencido em" : "Você precisa pagar no dia"}{" "}
-                <strong>{formatDateBR(nextExpenses.date)}</strong>
-              </span>
             </div>
-            <ul
-              className={
-                "mt-2 pl-6 space-y-1 list-disc " +
-                (nextExpenses.overdue ? "marker:text-rose-400" : "marker:text-amber-400")
-              }
-            >
-              {nextExpenses.items.map((exp) => (
-                <li key={exp.id}>
-                  <strong className="tabular-nums">{fmt(exp.value)}</strong> de{" "}
-                  <strong>{exp.description}</strong>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* hero: carteiras */}
-        <section
-          className="rounded-3xl p-6 text-white shadow-lg mb-5"
-          style={{ background: "linear-gradient(135deg,#0f2e25 0%,#16382c 55%,#1e4a38 100%)" }}
-        >
-          <div>
-            <p className="text-xs uppercase tracking-wider text-emerald-200/80 mb-3">Vale Alimentação</p>
-            <div className="flex items-center justify-between gap-3">
-              <HeroStat icon={<ArrowUpRight size={15} />} label="Recebido" value={fmt(vaRecebido)} tone="up" />
-              <div className="h-8 w-px bg-white/15" />
-              <HeroStat icon={<ArrowDownRight size={15} />} label="Usado" value={fmt(vaUsado)} tone="down" />
-              <div className="h-8 w-px bg-white/15" />
-              <HeroStat icon={<PiggyBank size={15} />} label="Restante" value={fmt(vaRestante)} tone={vaRestante >= 0 ? "up" : "down"} />
-            </div>
-          </div>
-
-          <div className="h-px bg-white/10 my-5" />
-
-          <div>
-            <p className="text-xs uppercase tracking-wider text-emerald-200/80 mb-3">CLT/PJ</p>
-            <div className="flex items-center justify-between gap-3">
-              <HeroStat icon={<ArrowUpRight size={15} />} label="Recebido" value={fmt(cltPjRecebido)} tone="up" />
-              <div className="h-8 w-px bg-white/15" />
-              <HeroStat icon={<ArrowDownRight size={15} />} label="Gasto" value={fmt(cltPjGasto)} tone="down" />
-              <div className="h-8 w-px bg-white/15" />
-              <HeroStat icon={<PiggyBank size={15} />} label="Sobra" value={fmt(cltPjSobra)} tone={cltPjSobra >= 0 ? "up" : "down"} />
-            </div>
-          </div>
-        </section>
-
-        {/* tabs */}
-        <div className="flex gap-1 overflow-x-auto bg-white rounded-full p-1 border border-slate-200 mb-5 shadow-sm">
-          {[
-            ["overview", "Visão geral"],
-            ["gastos", "Gastos"],
-            ["ganhos", "Ganhos"],
-            ["desejos", "Desejos"],
-            ["mercado", "Mercado"],
-            ["farmacia", "Farmácia"],
-            ["serasa", "Serasa"],
-            ["cartoes", "Cartões"],
-            ["fechamento", "Fechamento de cartão"],
-          ].map(([id, label]) => (
-            <button
-              key={id}
-              onClick={() => setTab(id)}
-              className={
-                "shrink-0 px-4 text-sm font-medium py-2 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 " +
-                (tab === id ? "text-white" : "text-slate-500 hover:text-slate-800")
-              }
-              style={tab === id ? { background: "#16382c" } : undefined}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+          )}
 
         {tab === "overview" && (
           <Overview
@@ -1141,8 +1109,15 @@ export default function App() {
             incomes={incomes}
             onEditItem={(mode, item) => setModal({ mode, item })}
             onDeleteItem={(mode, item) => setConfirmState({ kind: "delete", mode, payload: item })}
+            wallet={wallet}
+            onWalletChange={setWallet}
+            wallets={wallets}
+            onGo={setTab}
           />
         )}
+
+        {/* as outras abas ficam numa coluna de leitura, sem esticar na tela larga */}
+        <div className="max-w-3xl">
 
         {tab === "gastos" && (
           <Gastos
@@ -1261,13 +1236,19 @@ export default function App() {
             onDelete={(item) => setConfirmState({ kind: "delete", mode: "closing", payload: item })}
           />
         )}
+
+        {tab === "config" && (
+          <SettingsSection email={email} onPair={() => setModal({ mode: "pair" })} onLogout={handleLogout} />
+        )}
+        </div>
+        </div>
       </div>
 
       {/* calculadora de seleção — z-40 fica sob o Overlay dos modais (z-50) */}
-      {!selecting && (
-        <div className="fixed bottom-0 inset-x-0 z-40 pointer-events-none">
+      {!selecting && tab !== "config" && (
+        <div className="fixed bottom-0 inset-x-0 lg:left-[260px] z-40 pointer-events-none">
           {/* pb maior no mobile: 20px deixavam o botao atras da barra do navegador */}
-          <div className="max-w-2xl mx-auto px-4 pb-8 sm:pb-5 flex justify-end">
+          <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pb-8 sm:pb-5 flex justify-end">
             <button
               type="button"
               onClick={() => setSelecting(true)}
@@ -1283,8 +1264,8 @@ export default function App() {
       )}
 
       {selecting && (
-        <div className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)]">
-          <div className="max-w-2xl mx-auto px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-3">
+        <div className="fixed bottom-0 inset-x-0 lg:left-[260px] z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)]">
+          <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="text-[11px] text-slate-500 truncate">
                 {selectionStats.count === 0 ? "Marque itens para somar" : selectionLabel}
@@ -1567,43 +1548,8 @@ function LoginScreen({ onLogin }) {
 }
 
 /* ---------- subcomponentes ---------- */
-const ADD_NEXT_MONTH = "__add_next__";
 const NEW_CATEGORY = "__new_category__";
 const NEW_PAYMENT_METHOD = "__new_payment_method__";
-
-function MonthDropdown({ months, month, nextMonthKey, onChange, onAddNext, disabled }) {
-  return (
-    <select
-      value={month}
-      disabled={disabled}
-      onChange={(e) => {
-        if (e.target.value === ADD_NEXT_MONTH) onAddNext();
-        else onChange(e.target.value);
-      }}
-      className="text-xs text-slate-500 leading-tight bg-transparent border-none -ml-1 pl-1 pr-1 py-0 rounded cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-60 disabled:cursor-wait"
-    >
-      {months.map((m) => (
-        <option key={m} value={m}>
-          {monthLabel(m)}
-        </option>
-      ))}
-      <option value={ADD_NEXT_MONTH}>+ Adicionar {monthLabel(nextMonthKey)}</option>
-    </select>
-  );
-}
-
-function HeroStat({ icon, label, value, subValue, tone }) {
-  return (
-    <div className="flex-1 min-w-0">
-      <div className={"flex items-center gap-1 text-[11px] " + (tone === "up" ? "text-emerald-300" : "text-rose-300")}>
-        {icon}
-        <span className="text-emerald-100/70 uppercase tracking-wide">{label}</span>
-      </div>
-      <div className="text-sm font-semibold text-white truncate mt-0.5 tabular-nums">{value}</div>
-      {subValue && <div className="text-[11px] text-emerald-100/60 truncate tabular-nums">{subValue}</div>}
-    </div>
-  );
-}
 
 function Card({ children, className = "" }) {
   return (
@@ -1611,159 +1557,659 @@ function Card({ children, className = "" }) {
   );
 }
 
-function Overview({ byCat, totalGastos, expenses, incomes, onEditItem, onDeleteItem }) {
-  const [search, setSearch] = useState("");
-  const query = search.trim().toLowerCase();
-  const isSearching = query !== "";
+/* ---------- estrutura da web: menu lateral e barra superior ---------- */
+function SidebarNav({ active, onSelect }) {
+  const item = (s) => {
+    const Icon = s.icon;
+    const on = active === s.id;
+    return (
+      <button
+        key={s.id}
+        onClick={() => onSelect(s)}
+        aria-current={on ? "page" : undefined}
+        className={
+          "w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-[15px] transition-colors focus:outline-none focus:ring-2 focus:ring-white/30 " +
+          (on ? "text-white" : "text-emerald-50/75 hover:text-white hover:bg-white/5")
+        }
+        style={on ? { background: "rgba(255,255,255,0.09)" } : undefined}
+      >
+        <Icon size={22} strokeWidth={on ? 2.25 : 1.75} />
+        <span className={on ? "font-semibold" : ""}>{s.label}</span>
+      </button>
+    );
+  };
+  return (
+    <div className="flex h-full flex-col px-4 py-7">
+      <div className="flex items-center gap-3 px-2 mb-10">
+        <span
+          className="h-11 w-11 rounded-xl flex items-center justify-center text-white shrink-0"
+          style={{ background: "linear-gradient(145deg,#1d5a43 0%,#16382c 60%,#0f2e25 100%)", boxShadow: "0 6px 16px -6px rgba(0,0,0,0.5)" }}
+        >
+          <DollarSign size={22} strokeWidth={2.25} />
+        </span>
+        <span className="text-[19px] font-bold text-white tracking-tight">Meu financeiro</span>
+      </div>
+      <nav className="space-y-1.5">{SECTIONS.map(item)}</nav>
+      <div className="mt-auto pt-6 border-t border-white/10">{item(SETTINGS_SECTION)}</div>
+    </div>
+  );
+}
 
-  const sortedGastos = useMemo(
-    () => [...expenses].filter((e) => e.value > 0).sort((a, b) => b.value - a.value),
-    [expenses]
+const SIDEBAR_BG = "linear-gradient(180deg,#0f3a2c 0%,#0d3326 50%,#0a2a20 100%)";
+
+// Fixo a partir de lg; abaixo disso, o mesmo menu abre como gaveta.
+function Sidebar({ active, onSelect, open, onClose }) {
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  return (
+    <>
+      <aside className="hidden lg:block fixed inset-y-0 left-0 w-[260px] z-30" style={{ background: SIDEBAR_BG }}>
+        <SidebarNav active={active} onSelect={onSelect} />
+      </aside>
+      {open && (
+        <div className="lg:hidden fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-slate-900/50" onClick={onClose} />
+          <aside className="absolute inset-y-0 left-0 w-[260px] shadow-2xl" style={{ background: SIDEBAR_BG }}>
+            <button
+              onClick={onClose}
+              aria-label="Fechar menu"
+              className="absolute right-3 top-3 h-9 w-9 rounded-lg text-emerald-50/80 hover:bg-white/10 flex items-center justify-center"
+            >
+              <X size={18} />
+            </button>
+            <SidebarNav active={active} onSelect={onSelect} />
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ‹ Outubro de 2026 › — as setas andam pelos meses que existem; o nome abre a
+// lista completa com "+ Adicionar" o próximo mês (substitui o antigo <select>).
+function MonthNavigator({ months, month, nextMonthKey, onChange, onAddNext, disabled }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  const idx = months.indexOf(month);
+  const prev = idx > 0 ? months[idx - 1] : null;
+  const next = idx >= 0 && idx < months.length - 1 ? months[idx + 1] : null;
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    const onKey = (e) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const arrow =
+    "h-11 w-9 sm:w-11 flex items-center justify-center text-slate-600 rounded-2xl hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent focus:outline-none focus:ring-2 focus:ring-slate-300";
+  return (
+    <div ref={ref} className="relative flex items-center bg-white rounded-2xl border border-slate-200/80 shadow-sm">
+      <button className={arrow} onClick={() => onChange(prev)} disabled={!prev || disabled} aria-label="Mês anterior">
+        <ChevronLeft size={20} />
+      </button>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="h-11 px-1 sm:px-3 min-w-[118px] sm:min-w-[170px] text-[14px] sm:text-[15px] font-medium text-slate-800 hover:bg-slate-50 rounded-xl disabled:opacity-60 disabled:cursor-wait focus:outline-none focus:ring-2 focus:ring-slate-300"
+      >
+        {monthLabel(month)}
+      </button>
+      <button className={arrow} onClick={() => onChange(next)} disabled={!next || disabled} aria-label="Próximo mês">
+        <ChevronRight size={20} />
+      </button>
+      {open && (
+        <div
+          className="absolute left-0 top-full mt-2 z-40 w-64 bg-white rounded-2xl border border-slate-200 shadow-lg py-2 max-h-80 overflow-y-auto"
+          role="listbox"
+        >
+          {months.map((m) => (
+            <button
+              key={m}
+              role="option"
+              aria-selected={m === month}
+              onClick={() => {
+                setOpen(false);
+                onChange(m);
+              }}
+              className={
+                "w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-slate-50 " +
+                (m === month ? "font-semibold text-slate-800" : "text-slate-600")
+              }
+            >
+              {monthLabel(m)}
+              {m === month && <Check size={15} className="text-emerald-700" />}
+            </button>
+          ))}
+          <div className="my-1 border-t border-slate-100" />
+          <button
+            onClick={() => {
+              setOpen(false);
+              onAddNext();
+            }}
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+          >
+            <Plus size={15} /> Adicionar {monthLabel(nextMonthKey)}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const initialsOf = (email) => (email.split("@")[0].replace(/[^a-zA-Z]/g, "").slice(0, 2) || "MF").toUpperCase();
+
+function TopBar({ onOpenMenu, months, month, nextMonthKey, onChangeMonth, onAddNextMonth, monthDisabled, saved, hideValues, onToggleHide, email, onLogout }) {
+  const square = "h-11 w-11 shrink-0 rounded-xl flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300";
+  return (
+    <div className="flex items-center gap-2 sm:gap-3">
+      <button onClick={onOpenMenu} aria-label="Abrir menu" className={square + " lg:hidden bg-white border border-slate-200/80 shadow-sm text-slate-600"}>
+        <Menu size={20} />
+      </button>
+      <MonthNavigator
+        months={months}
+        month={month}
+        nextMonthKey={nextMonthKey}
+        onChange={onChangeMonth}
+        onAddNext={onAddNextMonth}
+        disabled={monthDisabled}
+      />
+      <div className="ml-auto flex items-center gap-2 sm:gap-4">
+        <span
+          className={"hidden sm:flex items-center gap-1.5 text-[15px] text-slate-600 transition-opacity duration-300 " + (saved ? "opacity-100" : "opacity-0")}
+          aria-live="polite"
+        >
+          <CheckCircle2 size={20} className="text-emerald-600" /> Salvo
+        </span>
+        <div className="hidden sm:block h-8 w-px bg-slate-200" />
+        <button
+          onClick={onToggleHide}
+          title={hideValues ? "Mostrar valores" : "Ocultar valores"}
+          aria-label={hideValues ? "Mostrar valores" : "Ocultar valores"}
+          aria-pressed={hideValues}
+          className={square + " bg-white border border-slate-200/80 shadow-sm text-slate-700 hover:border-slate-300"}
+        >
+          {hideValues ? <EyeOff size={20} /> : <Eye size={20} />}
+        </button>
+        <span
+          title={email}
+          className="hidden sm:flex h-12 w-12 shrink-0 rounded-full items-center justify-center text-white text-[15px] font-bold"
+          style={{ background: "#0f2e25" }}
+        >
+          {initialsOf(email)}
+        </span>
+        <button onClick={onLogout} title="Sair" aria-label="Sair" className={square + " text-slate-700 hover:bg-white"}>
+          <LogOut size={21} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function HomeCard({ children, className = "" }) {
+  return (
+    <section
+      className={"rounded-[22px] bg-white border border-slate-200/70 p-5 sm:p-6 " + className}
+      style={{ boxShadow: "0 1px 2px rgba(16,37,29,0.04), 0 10px 28px -16px rgba(16,37,29,0.18)" }}
+    >
+      {children}
+    </section>
+  );
+}
+
+function HomeCardHeader({ title, action, onAction, chevronOnly }) {
+  return (
+    <div className="flex items-center justify-between gap-3 mb-5">
+      <h2 className="font-display font-semibold text-[21px] sm:text-[22px] leading-tight" style={{ color: "#10251d" }}>
+        {title}
+      </h2>
+      {onAction && (
+        <button
+          onClick={onAction}
+          aria-label={chevronOnly ? `Ver ${title.toLowerCase()}` : undefined}
+          className="shrink-0 whitespace-nowrap flex items-center gap-1 text-[14px] sm:text-[15px] font-medium rounded-lg px-1.5 py-1 hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-200"
+          style={{ color: chevronOnly ? "#10251d" : "#a9822f" }}
+        >
+          {action}
+          <ChevronRight size={chevronOnly ? 22 : 17} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ---------- home ("Visão geral") ---------- */
+const INCOME_GREEN = "#1F6B4C";
+const EXPENSE_RED = "#BF5B3D";
+const DONUT_COLORS = ["#1F5C45", "#8A8F4E", "#D4A84B", "#C9785A"];
+
+function SobraCard({ wallet, onWalletChange, wallets }) {
+  const { recebido, gasto } = wallets[wallet];
+  const sobra = recebido - gasto;
+  const pct = recebido > 0 ? Math.round((gasto / recebido) * 100) : gasto > 0 ? 100 : 0;
+  const bar = Math.min(100, pct);
+  const empty = recebido === 0 && gasto === 0;
+  const message = empty
+    ? "Nenhum lançamento nesta carteira neste mês."
+    : pct <= 80
+    ? `Você destinou ${pct}% da sua renda e manteve uma ótima sobra este mês.`
+    : pct <= 100
+    ? `Você já destinou ${pct}% da sua renda — atenção ao restante do mês.`
+    : "Seus gastos passaram do que entrou neste mês.";
+  const barColor = pct <= 80 ? "linear-gradient(90deg,#5fb98a,#7fd3a3)" : pct <= 100 ? "#D4A84B" : "#C9785A";
+
+  const toggle = (id, label) => (
+    <button
+      onClick={() => onWalletChange(id)}
+      aria-pressed={wallet === id}
+      className={
+        "px-3.5 sm:px-4 py-2 rounded-lg text-[13px] sm:text-[14px] transition-colors focus:outline-none focus:ring-2 focus:ring-amber-200/60 " +
+        (wallet === id ? "font-medium" : "text-emerald-50/85 hover:text-white")
+      }
+      style={wallet === id ? { color: "#f3dfae", boxShadow: "inset 0 0 0 1.5px #d4a84b" } : undefined}
+    >
+      {label}
+    </button>
   );
 
-  const listedGastos = useMemo(
-    () => (isSearching ? sortedGastos.filter((e) => e.description.toLowerCase().includes(query)) : sortedGastos.slice(0, 5)),
-    [sortedGastos, isSearching, query]
+  const stat = (up, label, value) => (
+    <div className="flex items-center gap-3 sm:gap-4 min-w-0">
+      <span
+        className="h-11 w-11 sm:h-12 sm:w-12 shrink-0 rounded-full flex items-center justify-center text-white"
+        style={{ background: up ? "#2c7a57" : "#c0603f" }}
+      >
+        {up ? <ArrowUpRight size={20} className="-rotate-45" /> : <ArrowDownRight size={20} className="rotate-45" />}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[13px] sm:text-[14px] text-emerald-50/80">{label}</p>
+        <p className="font-display font-semibold text-[19px] sm:text-[22px] leading-tight truncate">{fmt(value)}</p>
+      </div>
+    </div>
   );
 
-  const foundTotal = useMemo(
-    () => listedGastos.reduce((s, e) => s + (Number(e.value) || 0), 0),
-    [listedGastos]
-  );
+  return (
+    <section
+      className="relative overflow-hidden rounded-[22px] p-6 sm:p-8 text-white"
+      style={{
+        background:
+          "radial-gradient(ellipse at 85% 10%, rgba(64,150,108,0.28) 0%, transparent 45%)," +
+          "linear-gradient(135deg,#0d3a2b 0%,#0b3125 55%,#082a20 100%)",
+        boxShadow: "0 18px 40px -22px rgba(8,42,32,0.75)",
+      }}
+    >
+      {/* linha de gráfico decorativa, como no mock */}
+      <svg aria-hidden="true" className="pointer-events-none absolute right-0 top-10 h-48 w-2/3 opacity-60" viewBox="0 0 400 180" preserveAspectRatio="none">
+        <path
+          d="M0,170 C60,150 90,120 140,110 S230,70 260,62 S330,20 400,0"
+          fill="none"
+          stroke="rgba(110,200,150,0.35)"
+          strokeWidth="1.5"
+          vectorEffect="non-scaling-stroke"
+        />
+        {[
+          [140, 110],
+          [260, 62],
+          [345, 22],
+        ].map(([x, y]) => (
+          <g key={x}>
+            <line x1={x} y1={y} x2={x} y2={180} stroke="rgba(110,200,150,0.12)" vectorEffect="non-scaling-stroke" />
+            <circle cx={x} cy={y} r="3.5" fill="rgba(110,200,150,0.55)" />
+          </g>
+        ))}
+      </svg>
 
-  const recentItems = useMemo(() => {
-    const combined = [
-      ...expenses.map((e) => ({ kind: "expense", label: e.description, item: e })),
-      ...incomes.map((i) => ({ kind: "income", label: i.source, item: i })),
-    ].filter((it) => it.item.createdAt);
-    return combined.sort((a, b) => (a.item.createdAt < b.item.createdAt ? 1 : -1)).slice(0, 8);
+      <div className="relative">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-display font-semibold text-[21px] sm:text-[22px]">Sobra do mês</h2>
+          <div className="flex items-center gap-1 rounded-xl border border-white/15 p-1">
+            {toggle("cltPj", "CLT/PJ")}
+            {toggle("va", "Vale alimentação")}
+          </div>
+        </div>
+
+        <p
+          className="mt-5 font-display font-semibold text-[38px] sm:text-[50px] leading-none"
+          style={sobra < 0 ? { color: "#f2b8a2" } : undefined}
+        >
+          {fmt(sobra)}
+        </p>
+        <p className="mt-2 text-[16px] sm:text-[19px] text-emerald-50/80">
+          {sobra < 0 ? "Acima do que foi recebido" : "Disponível para seus planos"}
+        </p>
+
+        <div className="mt-7 sm:mt-8 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-10">
+          {stat(true, "Recebido", recebido)}
+          <div className="hidden sm:block h-12 w-px bg-white/15" />
+          {stat(false, "Gastos", gasto)}
+        </div>
+
+        <div className="mt-7 sm:mt-8 flex items-center gap-4">
+          <div
+            className="h-3 flex-1 rounded-full overflow-hidden"
+            style={{ background: "rgba(255,255,255,0.1)" }}
+            role="progressbar"
+            aria-valuenow={pct}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label="Parte da renda já gasta"
+          >
+            <div className="h-full rounded-full" style={{ width: `${bar}%`, background: barColor }} />
+          </div>
+          <span className="text-[16px] sm:text-[18px] text-emerald-50/85 tabular-nums">{pct}%</span>
+        </div>
+        <p className="mt-4 text-[14px] sm:text-[15px] text-emerald-50/80">{message}</p>
+      </div>
+    </section>
+  );
+}
+
+// Ganhos a receber e contas a pagar dos próximos 7 dias (do mês carregado). Gastos
+// vencidos e não pagos entram no topo: é o alerta que o antigo aviso vermelho dava.
+function UpcomingCard({ expenses, incomes, onGo }) {
+  const items = useMemo(() => {
+    const today = todayISO();
+    const limit = addDaysISO(today, 7);
+    const byDate = (a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+    const inc = incomes
+      .filter((i) => i.receiptDate && i.receiptDate >= today && i.receiptDate <= limit)
+      .map((i) => ({
+        kind: "income",
+        id: i.id,
+        date: i.receiptDate,
+        title: i.source,
+        subtitle: ["Recebimento", i.cltPjIncome ? "CLT/PJ" : i.voucherIncome ? "Vale alimentação" : null].filter(Boolean).join(" · "),
+        value: i.value,
+      }));
+    const exp = expenses
+      .filter((e) => !e.paidAt && e.dueDate && e.dueDate <= limit)
+      .map((e) => ({
+        kind: "expense",
+        id: e.id,
+        date: e.dueDate,
+        overdue: e.dueDate < today,
+        title: e.description,
+        subtitle: e.category,
+        category: e.category,
+        value: e.value,
+      }));
+    const overdue = exp.filter((x) => x.overdue).sort(byDate);
+    const upcoming = [...inc, ...exp.filter((x) => !x.overdue)].sort(byDate);
+    return [...overdue, ...upcoming].slice(0, 5);
   }, [expenses, incomes]);
 
   return (
-    <div className="space-y-5">
-      <Card className="p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-4 flex items-center gap-2">
-          <History size={15} className="text-slate-400" />
-          Adicionados recentemente
-        </h2>
-        {recentItems.length === 0 ? (
-          <Empty text="Nenhum item adicionado ainda neste mês." />
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {recentItems.map((it) => (
-              <div key={`${it.kind}-${it.item.id}`} className="flex items-center gap-3 py-2.5">
+    <HomeCard>
+      <HomeCardHeader title="Próximos 7 dias" onAction={() => onGo("gastos")} chevronOnly />
+      {items.length === 0 ? (
+        <p className="text-sm text-slate-400 py-6 text-center">Nada previsto para os próximos 7 dias.</p>
+      ) : (
+        <ol className="relative">
+          {/* fio da linha do tempo, passando pelos pontos */}
+          <span aria-hidden="true" className="hidden sm:block absolute left-[71px] top-6 bottom-6 w-px bg-slate-200" />
+          {items.map((it) => {
+            const income = it.kind === "income";
+            const Icon = income ? HandCoins : catMeta(it.category).icon;
+            const dot = income ? INCOME_GREEN : it.overdue ? "#C9785A" : "#C89B3C";
+            return (
+              <li key={`${it.kind}-${it.id}`} className="relative flex items-center gap-3 py-3">
                 <span
-                  className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
-                  style={
-                    it.kind === "expense"
-                      ? { background: "#D6493B1F", color: "#D6493B" }
-                      : { background: "#2F9E441F", color: "#2F9E44" }
-                  }
+                  className={"w-[52px] shrink-0 text-[13px] sm:text-[14px] " + (it.overdue ? "font-medium" : "text-slate-500")}
+                  style={it.overdue ? { color: EXPENSE_RED } : undefined}
                 >
-                  {it.kind === "expense" ? <ArrowDownRight size={15} /> : <ArrowUpRight size={15} />}
+                  {formatDayMonth(it.date)}
                 </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-slate-700 truncate">{it.label}</p>
-                  <p className="text-xs text-slate-400">{formatRelativeTime(it.item.createdAt)}</p>
+                <span className="hidden sm:block relative z-10 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white" style={{ background: dot }} />
+                <span
+                  className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-full flex items-center justify-center"
+                  style={income ? { background: "#e6f2ea", color: INCOME_GREEN } : { background: "#fbece6", color: EXPENSE_RED }}
+                >
+                  <Icon size={20} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-display text-[16px] sm:text-[17px] leading-tight line-clamp-2 break-words" style={{ color: "#10251d" }}>
+                    {it.title}
+                  </p>
+                  <p className="text-[13px] text-slate-500 truncate">
+                    {it.overdue ? <span style={{ color: EXPENSE_RED }}>Vencido · </span> : null}
+                    {it.subtitle}
+                  </p>
                 </div>
-                <span className="text-sm font-semibold text-slate-800 tabular-nums shrink-0">{fmt(it.item.value)}</span>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => onEditItem(it.kind, it.item)}
-                    className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-                    title="Editar"
+                <span className="shrink-0 text-[15px] sm:text-[16px] xl:text-[17px] font-medium tabular-nums" style={{ color: income ? INCOME_GREEN : EXPENSE_RED }}>
+                  {income ? "+ " : "− "}
+                  {fmt(it.value)}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+    </HomeCard>
+  );
+}
+
+// Rosca em SVG próprio: as 3 maiores categorias + "Outros" (só quando há mais de
+// 4). Paleta fixa por posição, a do mock — cor de série, não da categoria.
+function SpendingCard({ byCat, totalGastos, onGo }) {
+  const slices = useMemo(() => {
+    const base =
+      byCat.length <= 4
+        ? byCat.map((c) => ({ name: c.name, value: c.value }))
+        : [
+            ...byCat.slice(0, 3).map((c) => ({ name: c.name, value: c.value })),
+            { name: "Outros", value: byCat.slice(3).reduce((s, c) => s + c.value, 0) },
+          ];
+    // % inteiros que somam exatamente 100: o resto do arredondamento vai na última.
+    let acc = 0;
+    return base.map((s, i) => {
+      const pct = i === base.length - 1 ? 100 - acc : Math.round((s.value / (totalGastos || 1)) * 100);
+      acc += pct;
+      return { ...s, pct, color: DONUT_COLORS[i] };
+    });
+  }, [byCat, totalGastos]);
+
+  const R = 80;
+  const C = 2 * Math.PI * R;
+  let offset = 0;
+
+  return (
+    <HomeCard>
+      <HomeCardHeader title="Para onde vai o dinheiro" action="Ver todas" onAction={() => onGo("gastos")} />
+      {slices.length === 0 ? (
+        <p className="text-sm text-slate-400 py-10 text-center">Sem gastos ainda neste mês.</p>
+      ) : (
+        <div className="flex flex-col sm:flex-row items-center gap-8 sm:gap-10">
+          <div className="relative h-56 w-56 sm:h-64 sm:w-64 shrink-0">
+            <svg viewBox="0 0 200 200" className="h-full w-full" role="img" aria-label="Distribuição dos gastos por categoria">
+              {slices.map((s) => {
+                const len = (s.value / (totalGastos || 1)) * C;
+                const gap = slices.length > 1 ? 1.6 : 0; // fio branco entre as fatias
+                const el = (
+                  <circle
+                    key={s.name}
+                    cx="100"
+                    cy="100"
+                    r={R}
+                    fill="none"
+                    stroke={s.color}
+                    strokeWidth="34"
+                    strokeDasharray={`${Math.max(0, len - gap)} ${C}`}
+                    strokeDashoffset={-offset}
+                    transform="rotate(-90 100 100)"
+                  />
+                );
+                offset += len;
+                return el;
+              })}
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+              <span className="font-display font-semibold text-[18px] sm:text-[20px] leading-tight" style={{ color: "#10251d" }}>
+                {fmt(totalGastos)}
+              </span>
+              <span className="text-[14px] text-slate-500">em gastos</span>
+            </div>
+          </div>
+          <ul className="w-full space-y-4">
+            {slices.map((s) => (
+              <li key={s.name} className="flex items-center gap-3 text-[15px] sm:text-[16px]">
+                <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: s.color }} />
+                <span className="flex-1 min-w-0 truncate text-slate-700">{s.name}</span>
+                <span className="tabular-nums text-slate-700">{s.pct}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </HomeCard>
+  );
+}
+
+function RecentCard({ expenses, incomes, onEditItem, onDeleteItem, onGo }) {
+  const items = useMemo(
+    () =>
+      [
+        ...expenses.map((e) => ({ kind: "expense", label: e.description, meta: e.category, item: e })),
+        ...incomes.map((i) => ({
+          kind: "income",
+          label: i.source,
+          meta: i.cltPjIncome ? "CLT/PJ" : i.voucherIncome ? "Vale alimentação" : "Ganho",
+          item: i,
+        })),
+      ]
+        .filter((it) => it.item.createdAt)
+        .sort((a, b) => (a.item.createdAt < b.item.createdAt ? 1 : -1))
+        .slice(0, 5),
+    [expenses, incomes]
+  );
+
+  return (
+    <HomeCard>
+      <HomeCardHeader title="Adicionados recentemente" action="Ver lançamentos" onAction={() => onGo("gastos")} />
+      {items.length === 0 ? (
+        <p className="text-sm text-slate-400 py-10 text-center">Nenhum item adicionado ainda neste mês.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {items.map((it) => {
+            const income = it.kind === "income";
+            const meta = income ? null : catMeta(it.item.category);
+            const Icon = income ? Landmark : meta.icon;
+            const color = income ? INCOME_GREEN : meta.color;
+            const edit = () => onEditItem(it.kind, it.item);
+            return (
+              <li key={`${it.kind}-${it.item.id}`} className="group">
+                {/* clicar na linha edita, como antes; excluir aparece ao passar o mouse */}
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={edit}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      edit();
+                    }
+                  }}
+                  className="flex items-center gap-3 py-3 -mx-2 px-2 rounded-xl cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                >
+                  <span
+                    className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-full flex items-center justify-center"
+                    style={{ background: color + "1F", color }}
                   >
-                    <Pencil size={15} />
-                  </button>
+                    <Icon size={20} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-display text-[16px] sm:text-[17px] leading-tight line-clamp-2 break-words" style={{ color: "#10251d" }}>
+                      {it.label}
+                    </p>
+                    <p className="text-[13px] text-slate-500 truncate">
+                      {formatRelativeTime(it.item.createdAt)} · {it.meta}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-[15px] sm:text-[16px] xl:text-[17px] font-medium tabular-nums" style={{ color: income ? INCOME_GREEN : EXPENSE_RED }}>
+                    {income ? "+ " : "− "}
+                    {fmt(it.item.value)}
+                  </span>
                   <button
-                    onClick={() => onDeleteItem(it.kind, it.item)}
-                    className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteItem(it.kind, it.item);
+                    }}
                     title="Excluir"
+                    aria-label={`Excluir ${it.label}`}
+                    className="h-8 w-8 shrink-0 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity focus:outline-none focus:ring-2 focus:ring-rose-300"
                   >
                     <Trash2 size={15} />
                   </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </HomeCard>
+  );
+}
 
-      <Card className="p-5">
-        <h2 className="text-sm font-semibold text-slate-800 mb-4">Para onde vai o dinheiro</h2>
-        {byCat.length === 0 ? (
-          <Empty text="Sem gastos ainda. Adicione o primeiro na aba Gastos." />
-        ) : (
-          <div className="space-y-3.5">
-            {byCat.map((c) => {
-              const pct = totalGastos > 0 ? Math.round((c.value / totalGastos) * 100) : 0;
-              const Icon = c.icon;
-              return (
-                <div key={c.name}>
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <span
-                      className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
-                      style={{ background: c.color + "1F", color: c.color }}
-                    >
-                      <Icon size={15} />
-                    </span>
-                    <span className="text-sm text-slate-700 flex-1 truncate">{c.name}</span>
-                    <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(c.value)}</span>
-                    <span className="text-xs text-slate-400 w-9 text-right tabular-nums">{pct}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-slate-100 overflow-hidden ml-9">
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: c.color }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
+function Overview({ byCat, totalGastos, expenses, incomes, onEditItem, onDeleteItem, wallet, onWalletChange, wallets, onGo }) {
+  return (
+    <div className="grid grid-cols-1 gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(0,1fr)] [&>*]:min-w-0">
+      <SobraCard wallet={wallet} onWalletChange={onWalletChange} wallets={wallets} />
+      <UpcomingCard expenses={expenses} incomes={incomes} onGo={onGo} />
+      <SpendingCard byCat={byCat} totalGastos={totalGastos} onGo={onGo} />
+      <RecentCard expenses={expenses} incomes={incomes} onEditItem={onEditItem} onDeleteItem={onDeleteItem} onGo={onGo} />
+    </div>
+  );
+}
 
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-slate-800">{isSearching ? "Resultado da busca" : "Maiores gastos"}</h2>
-          {isSearching && <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(foundTotal)}</span>}
+function SettingsSection({ email, onPair, onLogout }) {
+  return (
+    <div className="space-y-5">
+      <HomeCard>
+        <h2 className="font-display font-semibold text-[22px] mb-4" style={{ color: "#10251d" }}>
+          Conta
+        </h2>
+        <div className="flex items-center gap-4">
+          <span className="h-12 w-12 shrink-0 rounded-full flex items-center justify-center text-white font-bold" style={{ background: "#0f2e25" }}>
+            {initialsOf(email)}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm text-slate-500">Conectado como</p>
+            <p className="text-[15px] font-medium text-slate-800 truncate">{email || "—"}</p>
+          </div>
         </div>
-
-        <div className="relative mb-3.5">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar gasto por título…"
-            className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-          {isSearching && (
-            <button
-              onClick={() => setSearch("")}
-              title="Limpar busca"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
-
-        {listedGastos.length === 0 ? (
-          <Empty text={isSearching ? "Nenhum gasto encontrado." : "Nada por aqui."} />
-        ) : (
-          <div className="divide-y divide-slate-100">
-            {listedGastos.map((e, i) => {
-              const c = catMeta(e.category);
-              return (
-                <div key={e.id} className="flex items-center gap-3 py-2.5">
-                  <span className="text-xs font-semibold text-slate-300 w-4 tabular-nums">{i + 1}</span>
-                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: c.color }} />
-                  <span className="text-sm text-slate-700 flex-1 truncate">{e.description}</span>
-                  <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(e.value)}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
+      </HomeCard>
+      <HomeCard>
+        <h2 className="font-display font-semibold text-[22px] mb-1" style={{ color: "#10251d" }}>
+          Celular
+        </h2>
+        <p className="text-sm text-slate-500 mb-4">Gere um código para entrar no app do celular sem precisar do login do Google.</p>
+        <button
+          onClick={onPair}
+          className="inline-flex items-center gap-2 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
+          style={{ background: "#16382c" }}
+        >
+          <Smartphone size={16} /> Parear celular
+        </button>
+      </HomeCard>
+      <HomeCard>
+        <button
+          onClick={onLogout}
+          className="inline-flex items-center gap-2 text-sm font-medium text-rose-700 px-4 py-2.5 rounded-xl border border-rose-200 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-200"
+        >
+          <LogOut size={16} /> Sair da conta
+        </button>
+      </HomeCard>
     </div>
   );
 }
