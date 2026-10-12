@@ -2029,8 +2029,10 @@ function SpendingCard({ byCat, totalGastos, onGo }) {
       {slices.length === 0 ? (
         <p className="text-sm text-slate-400 py-10 text-center">Sem gastos ainda neste mês.</p>
       ) : (
-        <div className="flex flex-col sm:flex-row items-center gap-8 sm:gap-10">
-          <div className="relative h-56 w-56 sm:h-64 sm:w-64 shrink-0">
+        <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
+          {/* Rosca menor em larguras intermediárias: no grid de 2 colunas o card
+              pode ter só ~500px úteis (tela menor ou zoom do navegador). */}
+          <div className="relative h-52 w-52 sm:h-48 sm:w-48 2xl:h-60 2xl:w-60 shrink-0">
             <svg viewBox="0 0 200 200" className="h-full w-full" role="img" aria-label="Distribuição dos gastos por categoria">
               {slices.map((s) => {
                 const len = (s.value / (totalGastos || 1)) * C;
@@ -2054,18 +2056,23 @@ function SpendingCard({ byCat, totalGastos, onGo }) {
               })}
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="font-display font-semibold text-[18px] sm:text-[20px] leading-tight" style={{ color: "#10251d" }}>
+              <span className="font-display font-semibold text-[16px] sm:text-[15px] 2xl:text-[19px] leading-tight" style={{ color: "#10251d" }}>
                 {fmt(totalGastos)}
               </span>
-              <span className="text-[14px] text-slate-500">em gastos</span>
+              <span className="text-[13px] text-slate-500">em gastos</span>
             </div>
           </div>
-          <ul className="w-full space-y-4">
+          {/* min-w-0 + flex-1: sem isso a lista não encolhia abaixo da linha mais
+              larga ("Cartões / Financeiro 35%") e as % vazavam para fora do card.
+              Agora o nome trunca e a % (shrink-0) nunca é cortada. */}
+          <ul className="w-full sm:w-auto sm:flex-1 min-w-0 space-y-4">
             {slices.map((s) => (
               <li key={s.name} className="flex items-center gap-3 text-[15px] sm:text-[16px]">
                 <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: s.color }} />
-                <span className="flex-1 min-w-0 truncate text-slate-700">{s.name}</span>
-                <span className="tabular-nums text-slate-700">{s.pct}%</span>
+                <span className="flex-1 min-w-0 truncate text-slate-700" title={s.name}>
+                  {s.name}
+                </span>
+                <span className="shrink-0 tabular-nums text-slate-700">{s.pct}%</span>
               </li>
             ))}
           </ul>
