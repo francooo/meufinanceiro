@@ -158,6 +158,11 @@ export async function migrate() {
   await pool.query(`ALTER TABLE incomes ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE wishlist_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
   await pool.query(`ALTER TABLE shopping_items ADD COLUMN IF NOT EXISTS order_index INTEGER DEFAULT NULL`);
+  // Campos opcionais pedidos pelo UI kit da web: quantidade do item ("5 kg"),
+  // data desejada do desejo e o final do cartão ("4821"). Nulos em tudo que já existe.
+  await pool.query(`ALTER TABLE shopping_items ADD COLUMN IF NOT EXISTS quantity TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE wishlist_items ADD COLUMN IF NOT EXISTS target_date TEXT DEFAULT NULL`);
+  await pool.query(`ALTER TABLE cards ADD COLUMN IF NOT EXISTS last_digits TEXT DEFAULT NULL`);
 
   await pool.query("INSERT INTO months (month) VALUES ($1) ON CONFLICT DO NOTHING", [month]);
   await pool.query(`
@@ -396,9 +401,22 @@ export async function createMonth(newMonth) {
   return getData(newMonth);
 }
 
+// Texto opcional: vazio vira nulo (o banco não guarda "" como "sem valor").
+const optionalText = (v) => {
+  const t = typeof v === "string" ? v.trim() : "";
+  return t ? t.slice(0, 60) : null;
+};
+// Data opcional AAAA-MM-DD; qualquer outra coisa vira nulo.
+const optionalDate = (v) => (typeof v === "string" && /^d{4}-d{2}-d{2}$/.test(v) ? v : null);
+// Final do cartão: exatamente 4 dígitos, ou nulo.
+const lastDigitsOf = (v) => {
+  const d = String(v ?? "").replace(/D/g, "");
+  return d.length === 4 ? d : null;
+};
+
 export async function getWishlist() {
   const { rows } = await pool.query(
-    `SELECT id, title, value, note, done_at AS "doneAt", order_index AS "order"
+    `SELECT id, title, value, note, done_at AS "doneAt", order_index AS "order", target_date AS "targetDate"
      FROM wishlist_items
      ORDER BY (done_at IS NULL) DESC, order_index NULLS LAST, title`
   );
@@ -412,8 +430,8 @@ export async function replaceWishlist(items) {
     await client.query("DELETE FROM wishlist_items");
     for (const it of items) {
       await client.query(
-        "INSERT INTO wishlist_items (id, title, value, note, done_at, order_index) VALUES ($1, $2, $3, $4, $5, $6)",
-        [it.id, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null, it.order ?? null]
+        "INSERT INTO wishlist_items (id, title, value, note, done_at, order_index, target_date) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [it.id, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null, it.order ?? null, optionalDate(it.targetDate)]
       );
     }
     await client.query("COMMIT");
@@ -427,7 +445,7 @@ export async function replaceWishlist(items) {
 
 export async function getShoppingList(listType) {
   const { rows } = await pool.query(
-    `SELECT id, title, value, note, done_at AS "doneAt", order_index AS "order"
+    `SELECT id, title, value, note, done_at AS "doneAt", order_index AS "order", quantity
      FROM shopping_items
      WHERE list_type = $1
      ORDER BY (done_at IS NULL) DESC, order_index NULLS LAST, title`,
@@ -443,8 +461,8 @@ export async function replaceShoppingList(listType, items) {
     await client.query("DELETE FROM shopping_items WHERE list_type = $1", [listType]);
     for (const it of items) {
       await client.query(
-        "INSERT INTO shopping_items (id, list_type, title, value, note, done_at, order_index) VALUES ($1, $2, $3, $4, $5, $6, $7)",
-        [it.id, listType, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null, it.order ?? null]
+        "INSERT INTO shopping_items (id, list_type, title, value, note, done_at, order_index, quantity) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        [it.id, listType, it.title, Number(it.value) || 0, it.note || "", it.doneAt || null, it.order ?? null, optionalText(it.quantity)]
       );
     }
     await client.query("COMMIT");
@@ -501,7 +519,8 @@ export async function replaceSerasaItems(items) {
 
 export async function getCards() {
   const { rows } = await pool.query(
-    `SELECT id, payment_method AS "paymentMethod", balance, reference_date AS "referenceDate", note
+    `SELECT id, payment_method AS "paymentMethod", balance, reference_date AS "referenceDate", note,
+            last_digits AS "lastDigits"
      FROM cards ORDER BY payment_method`
   );
   return rows.map((r) => ({ ...r, balance: Number(r.balance) }));
@@ -519,9 +538,9 @@ export async function replaceCards(items) {
       if (!method || !it.referenceDate || seen.has(method)) continue;
       seen.add(method);
       await client.query(
-        `INSERT INTO cards (id, payment_method, balance, reference_date, note)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [it.id, method, Number(it.balance) || 0, it.referenceDate, it.note || ""]
+        `INSERT INTO cards (id, payment_method, balance, reference_date, note, last_digits)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [it.id, method, Number(it.balance) || 0, it.referenceDate, it.note || "", lastDigitsOf(it.lastDigits)]
       );
     }
     await client.query("COMMIT");

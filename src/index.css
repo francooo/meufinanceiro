@@ -1,3 +1,70 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Tokens do UI kit (assets/meu-financeiro-ui-kit/assets/styles/ui-kit.css) em trios
+   RGB, para o Tailwind aceitar opacidade (`bg-forest/10`). O modo escuro só troca os
+   valores sob `.dark` no <html>; os componentes usam as cores pelo nome. */
+:root {
+  --canvas: 245 245 242;
+  --surface: 255 255 255;
+  --surface-2: 246 247 245;
+  --line: 230 233 229;
+  --ink: 23 37 31;
+  --heading: 16 38 30;
+  --muted: 117 128 121;
+  --forest: 15 46 37;
+  --forest-2: 22 56 44;
+  --mint: 126 214 167;
+  --champagne: 200 169 106;
+  --coral: 191 91 61;
+  --positive: 22 130 94;
+  --gold: 169 130 47;
+  --tint-green: 234 245 239;
+  --tint-coral: 251 239 235;
+  --tint-gold: 248 242 228;
+  --shadow-card: 0 1px 2px rgba(16, 37, 29, 0.04), 0 10px 28px -16px rgba(16, 37, 29, 0.18);
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: 11 20 17;
+  --surface: 17 30 25;
+  --surface-2: 23 39 32;
+  --line: 37 54 46;
+  --ink: 230 238 233;
+  --heading: 233 240 235;
+  --muted: 154 171 162;
+  --forest: 10 33 26;
+  --forest-2: 31 92 69;
+  --coral: 224 138 114;
+  --positive: 95 199 154;
+  --gold: 212 168 75;
+  --tint-green: 22 51 42;
+  --tint-coral: 58 37 32;
+  --tint-gold: 58 50 32;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 28px -16px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+body {
+  background: rgb(var(--canvas));
+  color: rgb(var(--ink));
+}
+
+/* Esqueleto de carregamento (home-carregamento). */
+@keyframes mf-shine {
+  to {
+    background-position: -200% 0;
+  }
+}
+.mf-skeleton {
+  background: linear-gradient(90deg, rgb(var(--line)), rgb(var(--surface-2)), rgb(var(--line)));
+  background-size: 200% 100%;
+  animation: mf-shine 1.5s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mf-skeleton {
+    animation: none;
+  }
+}
