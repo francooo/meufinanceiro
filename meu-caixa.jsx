@@ -1,33 +1,30 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  Plus, Pencil, Trash2, X, Check,
-  ArrowUpRight, ArrowDownRight, PiggyBank, Tag,
-  Home, GraduationCap, HeartPulse, Lightbulb, Smartphone,
-  Landmark, Car, CreditCard, Repeat, Gamepad2,
-  DollarSign, LogOut, Search, ChevronUp, ChevronDown,
-  HandCoins, FileText, AlertTriangle, Shirt, Calculator,
+  Plus, Trash2, X, Check,
+  ArrowUpRight, ArrowDownRight, Landmark, HandCoins, Smartphone,
+  DollarSign, LogOut, Calculator, Home, FileText, CreditCard,
   Eye, EyeOff, ChevronLeft, ChevronRight, Menu, Settings, BarChart3, CheckSquare, CheckCircle2,
+  Moon, Sun, User,
 } from "lucide-react";
-
-/* ---------- dados de referência ---------- */
-const CATS = [
-  { name: "Moradia", color: "#2E7D6B", icon: Home },
-  { name: "Educação", color: "#3B6EA5", icon: GraduationCap },
-  { name: "Saúde", color: "#C65D7B", icon: HeartPulse },
-  { name: "Casa / Utilidades", color: "#E8873C", icon: Lightbulb },
-  { name: "Telefonia", color: "#1098AD", icon: Smartphone },
-  { name: "Impostos", color: "#7A5AF8", icon: Landmark },
-  { name: "Transporte", color: "#2F9E44", icon: Car },
-  { name: "Cartões / Financeiro", color: "#D6493B", icon: CreditCard },
-  { name: "Assinaturas / Serviços", color: "#B5892E", icon: Repeat },
-  { name: "Lazer / Hobbies", color: "#E64980", icon: Gamepad2 },
-];
-const FALLBACK = { color: "#64748B", icon: Tag };
-const catMeta = (n) => CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };
-
-const CARTOES_CATEGORY = "Cartões / Financeiro";
-const PAYMENT_METHODS = ["Pix", "Cartão Nubank Fran", "Cartão Nubank Andrews", "Cartão Sams", "Cartão Renner"];
-const PAYMENT_METHOD_FALLBACK = "Sem forma de pagamento";
+import {
+  CATS, catMeta, PAYMENT_METHODS, PAYMENT_METHOD_FALLBACK, allPaymentMethods,
+  SERASA_CATS, serasaCatMeta, cardChargeOf,
+} from "./src/web/lib/catalog.jsx";
+import {
+  setHideValues as applyHideValues, fmt, todayISO, addDaysISO, formatDayMonth,
+  formatRelativeTime, monthKey, monthLabel, addMonths, uid,
+} from "./src/web/lib/format.js";
+import { Button, Panel, PageHeader, Skeleton, Toast } from "./src/web/ui/core.jsx";
+import { ConfirmDialog } from "./src/web/ui/form.jsx";
+import Gastos from "./src/web/screens/Gastos.jsx";
+import Ganhos from "./src/web/screens/Ganhos.jsx";
+import Dividas from "./src/web/screens/Dividas.jsx";
+import { CartoesSaldos, CartoesFechamentos } from "./src/web/screens/Cartoes.jsx";
+import { Desejos, ListaCompras } from "./src/web/screens/Listas.jsx";
+import {
+  ExpenseModal, IncomeModal, DebtModal, CardModal, BalanceModal, ClosingModal,
+  WishModal, ShoppingItemModal, PairModal,
+} from "./src/web/modals/index.jsx";
 
 /* ---------- calculadora de seleção ---------- */
 /* `kind` reusa o mesmo vocabulário de modal.mode. direction: +1 entra, -1 sai. */
@@ -41,147 +38,32 @@ const SELECTION_SOURCES = {
 };
 const selKey = (kind, id) => `${kind}:${id}`;
 
-/* ícones de marca (fonte: simple-icons.org, cores oficiais das marcas) */
-function PixIcon({ size = 16, className }) {
-  return (
-    <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
-      <path d="M5.283 18.36a3.505 3.505 0 0 0 2.493-1.032l3.6-3.6a.684.684 0 0 1 .946 0l3.613 3.613a3.504 3.504 0 0 0 2.493 1.032h.71l-4.56 4.56a3.647 3.647 0 0 1-5.156 0L4.85 18.36ZM18.428 5.627a3.505 3.505 0 0 0-2.493 1.032l-3.613 3.614a.67.67 0 0 1-.946 0l-3.6-3.6A3.505 3.505 0 0 0 5.283 5.64h-.434l4.573-4.572a3.646 3.646 0 0 1 5.156 0l4.559 4.559ZM1.068 9.422 3.79 6.699h1.492a2.483 2.483 0 0 1 1.744.722l3.6 3.6a1.73 1.73 0 0 0 2.443 0l3.614-3.613a2.482 2.482 0 0 1 1.744-.723h1.767l2.737 2.737a3.646 3.646 0 0 1 0 5.156l-2.736 2.736h-1.768a2.482 2.482 0 0 1-1.744-.722l-3.613-3.613a1.77 1.77 0 0 0-2.444 0l-3.6 3.6a2.483 2.483 0 0 1-1.744.722H3.791l-2.723-2.723a3.646 3.646 0 0 1 0-5.156" />
-    </svg>
-  );
-}
-function NubankIcon({ size = 16, className }) {
-  return (
-    <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
-      <path d="M7.2795 5.4336c-1.1815 0-2.1846.4628-2.9432 1.252h-.002c-.0541-.0022-.1074-.002-.162-.002-1.5436 0-2.9925.8835-3.699 2.2559-.3088.5996-.4234 1.2442-.459 1.9003-.0321.589 0 1.1863 0 1.7696v5.6523H3.184s.0022-2.784 0-5.1777c-.0014-1.6112-.0118-3.0471 0-3.3418.056-1.3937.4372-2.3053 1.1484-3.0508 2.3585.0018 3.8852 1.6091 3.9705 4.168.0196.5874.0254 3.7304.0254 3.7304v3.672h3.1678v-4.965c0-1.5007.0127-2.8006-.0918-3.6952-.292-2.5-1.821-4.168-4.1248-4.168zm8.3903.3008l-3.166.0039v4.9648c0 1.5009-.0127 2.8007.0919 3.6953.2921 2.5001 1.821 4.168 4.1248 4.168 1.1815 0 2.1846-.4628 2.9432-1.252.0003-.0003.0016.0004.002 0 .0542.0023.1093.002.164.002 1.5435 0 2.9905-.8835 3.6971-2.2558.3088-.5997.4233-1.2442.459-1.9004.032-.5889 0-1.1862 0-1.7695V5.7383H20.816s-.0022 2.784 0 5.1777c.0015 1.6113.0119 3.047 0 3.3418-.056 1.3935-.4372 2.3053-1.1483 3.0508-2.3586-.0018-3.8853-1.6091-3.9706-4.168-.0196-.5874-.0273-2.0437-.0273-3.7324Z" />
-    </svg>
-  );
-}
-function SamsClubIcon({ size = 16, className }) {
-  return (
-    <svg role="img" viewBox="0 0 24 24" width={size} height={size} fill="currentColor" className={className} xmlns="http://www.w3.org/2000/svg">
-      <path d="m14.275 1.71 9.403 9.504a1.119 1.119 0 0 1 .001 1.569l-9.401 9.507-1.624-1.64a1.136 1.136 0 0 1 0-1.596L19.631 12l-6.917-6.99a1.225 1.225 0 0 1 0-1.72l1.56-1.579zm-3.026 1.572L9.695 1.71.34 11.17a1.186 1.186 0 0 0 0 1.663l9.356 9.457 1.553-1.57a1.237 1.237 0 0 0 0-1.737L4.341 12l6.909-6.985a1.235 1.235 0 0 0-.001-1.734z" />
-    </svg>
-  );
-}
-
-const PAYMENT_METHOD_META = {
-  "Pix": { icon: PixIcon, color: "#77B6A8" },
-  "Cartão Nubank Fran": { icon: NubankIcon, color: "#820AD1" },
-  "Cartão Nubank Andrews": { icon: NubankIcon, color: "#820AD1" },
-  "Cartão Sams": { icon: SamsClubIcon, color: "#0067A0" },
-  "Cartão Renner": { icon: Shirt, color: "#E4002B" },
-};
-const PAYMENT_METHOD_FALLBACK_META = { icon: CreditCard, color: "#64748B" };
-const paymentMethodMeta = (name) => PAYMENT_METHOD_META[name] || PAYMENT_METHOD_FALLBACK_META;
-
-/* lista completa: as formas fixas primeiro, as criadas pelo usuário depois */
-const allPaymentMethods = (extra = []) => [
-  ...PAYMENT_METHODS,
-  ...extra.filter((p) => !PAYMENT_METHODS.includes(p)),
-];
-
-const SERASA_CATS = [
-  { name: "Cartão de crédito", color: "#D6493B", icon: CreditCard },
-  { name: "Empréstimo", color: "#7A5AF8", icon: HandCoins },
-  { name: "Financiamento", color: "#1098AD", icon: FileText },
-  { name: "Conta atrasada", color: "#E8873C", icon: AlertTriangle },
-  { name: "Outros", color: "#64748B", icon: Tag },
-];
-const serasaCatMeta = (n) => SERASA_CATS.find((c) => c.name === n) || { name: n, ...FALLBACK };
-
 /* ---------- navegação (menu lateral) ---------- */
-// As abas antigas agrupadas nas seções do mock. `tab` continua sendo a fonte da
-// verdade em todo o App; a seção é derivada dela.
+// As abas agrupadas nas seções do kit. `tab` continua sendo a fonte da verdade em
+// todo o App; a seção é derivada dela. Seções com mais de uma aba mostram os
+// sub-itens no menu quando estão ativas.
 const SECTIONS = [
   { id: "inicio", label: "Início", icon: Home, tabs: [["overview", "Visão geral"]] },
   { id: "lancamentos", label: "Lançamentos", icon: FileText, tabs: [["gastos", "Gastos"], ["ganhos", "Ganhos"]] },
-  { id: "cartoes", label: "Cartões", icon: CreditCard, tabs: [["cartoes", "Cartões"], ["fechamento", "Fechamento"]] },
-  { id: "dividas", label: "Dívidas", icon: BarChart3, tabs: [["serasa", "Serasa"]] },
+  { id: "cartoes", label: "Cartões", icon: CreditCard, tabs: [["cartoes", "Saldos"], ["fechamento", "Fechamentos"]] },
+  { id: "dividas", label: "Dívidas", icon: BarChart3, tabs: [["serasa", "Dívidas"]] },
   { id: "listas", label: "Listas", icon: CheckSquare, tabs: [["desejos", "Desejos"], ["mercado", "Mercado"], ["farmacia", "Farmácia"]] },
 ];
 const SETTINGS_SECTION = { id: "config", label: "Configurações", icon: Settings, tabs: [["config", "Configurações"]] };
 const sectionOfTab = (t) =>
   [...SECTIONS, SETTINGS_SECTION].find((s) => s.tabs.some(([id]) => id === t)) || SECTIONS[0];
 
-const uid = () =>
-  (typeof crypto !== "undefined" && crypto.randomUUID)
-    ? crypto.randomUUID()
-    : "id-" + Math.random().toString(36).slice(2) + Date.now();
-
-/* ---------- helpers ---------- */
-const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-// Modo "ocultar valores" (olho da barra superior). Variável de módulo e não
-// contexto: o App a atualiza no início de cada render, e todas as telas leem
-// valores só pelo fmt e re-renderizam a partir do App — então vale para a web toda.
-let HIDE_VALUES = false;
-const fmt = (n) => (HIDE_VALUES ? "R$ ••••" : brl.format(Number(n) || 0));
-
-const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// Tema inicial: o que a pessoa escolheu da última vez ou, sem escolha, o do sistema.
+const initialTheme = () => {
+  try {
+    const saved = localStorage.getItem("mf:theme");
+    if (saved === "dark" || saved === "light") return saved;
+  } catch {
+    /* sem storage */
+  }
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 };
 
-const addDaysISO = (iso, n) => {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(y, m - 1, d + n);
-  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
-};
-
-const SHORT_MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
-// "05 out" — rótulo da linha do tempo de Próximos 7 dias.
-const formatDayMonth = (iso) => {
-  const [, m, d] = iso.split("-");
-  return `${d} ${SHORT_MONTHS[Number(m) - 1]}`;
-};
-
-const formatDateBR = (iso) => {
-  const [y, m, d] = iso.split("-");
-  return `${d}/${m}/${y}`;
-};
-
-const formatRelativeTime = (iso) => {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  const diffMin = Math.floor((Date.now() - date.getTime()) / 60000);
-  if (diffMin < 1) return "agora mesmo";
-  if (diffMin < 60) return `há ${diffMin} min`;
-  const diffHour = Math.floor(diffMin / 60);
-  if (diffHour < 24) return `há ${diffHour}h`;
-  const diffDay = Math.floor(diffHour / 24);
-  if (diffDay === 1) return "ontem";
-  if (diffDay < 7) return `há ${diffDay} dias`;
-  return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-};
-
-const monthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-
-const monthLabel = (key) => {
-  const [y, m] = key.split("-").map(Number);
-  const s = new Date(y, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-};
-
-const addMonths = (key, n) => {
-  const [y, m] = key.split("-").map(Number);
-  return monthKey(new Date(y, m - 1 + n, 1));
-};
-
-// Quanto a linha tirou do cartão no mês dela. Numa compra parcelada o limite cai
-// o valor CHEIO de uma vez, na hora da compra — 280 de uma 280 em 3x, não os
-// 93,33 da parcela. Então a parcela 1 cobra o total e as seguintes cobram só a
-// parcela, que é o que você deve naquele mês.
-// purchaseTotal é nulo em tudo gravado antes dessa coluna existir; o fallback
-// parcela × total mantém esses lançamentos com um número razoável.
-// Espelho de mobile/src/core/cards.js — mudou aqui, muda lá.
-const cardChargeOf = (e) => {
-  const value = Number(e.value) || 0;
-  const total = Number(e.installmentTotal) || 0;
-  if (total < 2) return value;
-  if ((e.installmentNumber ?? 1) !== 1) return value;
-  const declared = Number(e.purchaseTotal) || 0;
-  return declared > 0 ? declared : value * total;
-};
 
 const store = {
   async loadMonths() {
@@ -404,8 +286,8 @@ export default function App() {
       return "cltPj";
     }
   });
-  // Lido pelo fmt durante este render (ver HIDE_VALUES).
-  HIDE_VALUES = hideValues;
+  // Lido pelo fmt durante este render (ver setHideValues em src/web/lib/format.js).
+  applyHideValues(hideValues);
 
   // Seleção da calculadora: estado de UI puro, compartilhado entre abas.
   // Nunca vai para os objetos de dados — os autosaves abaixo reenviariam a
@@ -1005,6 +887,68 @@ export default function App() {
       [listType]: prev[listType].filter((it) => !it.doneAt),
     }));
   };
+  // Arrastar na lista de desejos: a tela devolve a ordem nova dos ids do grupo.
+  const reorderWish = (ids) => {
+    const orderById = new Map(ids.map((id, i) => [id, i]));
+    setWishlist((prev) => prev.map((w) => (orderById.has(w.id) ? { ...w, order: orderById.get(w.id) } : w)));
+  };
+
+  /* Aviso "Gasto marcado como pago · Desfazer" + destaque da linha por ~5s. */
+  const [toast, setToast] = useState(null); // {message, onUndo}
+  const [highlightId, setHighlightId] = useState(null);
+  const toastTimer = useRef(null);
+  const dismissToast = useCallback(() => {
+    clearTimeout(toastTimer.current);
+    setToast(null);
+    setHighlightId(null);
+  }, []);
+  const showToast = (message, id, onUndo) => {
+    clearTimeout(toastTimer.current);
+    setToast({ message, onUndo });
+    setHighlightId(id);
+    toastTimer.current = setTimeout(() => {
+      setToast(null);
+      setHighlightId(null);
+    }, 5000);
+  };
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+
+  const markExpensePaid = (item) => {
+    togglePaid(item.id);
+    if (item.paidAt) return dismissToast(); // desmarcar não precisa de aviso
+    showToast("Gasto marcado como pago", item.id, () =>
+      setExpenses((prev) => prev.map((e) => (e.id === item.id ? { ...e, paidAt: null } : e)))
+    );
+  };
+  const markDebtPaid = (item) => {
+    toggleSerasaPaid(item.id);
+    if (item.paidAt) return dismissToast();
+    showToast("Dívida marcada como paga", item.id, () =>
+      setSerasa((prev) => prev.map((s) => (s.id === item.id ? { ...s, paidAt: null } : s)))
+    );
+  };
+
+  // Modo escuro: classe `dark` no <html> (os tokens de src/index.css trocam sob ela).
+  const [theme, setTheme] = useState(initialTheme);
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+  const toggleTheme = () =>
+    setTheme((t) => {
+      const next = t === "dark" ? "light" : "dark";
+      try {
+        localStorage.setItem("mf:theme", next);
+      } catch {
+        /* sem storage: vale só nesta sessão */
+      }
+      return next;
+    });
+
+  const closingSuggestions = useMemo(
+    () => [...new Set([...cards.map((c) => c.paymentMethod), ...allPaymentMethods(extraPaymentMethods).filter((p) => p !== "Pix")])],
+    [cards, extraPaymentMethods]
+  );
+
   if (!authChecked) {
     // Mesmo fundo do login: sem isto a página piscava de cinza-claro para verde.
     return (
@@ -1024,24 +968,15 @@ export default function App() {
 
   if (loadError) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "#F1F4F2" }}>
-        <p className="text-sm text-slate-500 text-center max-w-xs">
+      <div className="min-h-screen flex items-center justify-center px-4 bg-canvas font-brand">
+        <p className="text-sm text-muted text-center max-w-xs">
           Não foi possível carregar seus dados. Verifique sua conexão e recarregue a página.
         </p>
       </div>
     );
   }
 
-  if (!loaded) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "#F1F4F2" }}>
-        <div className="flex items-center gap-3 text-slate-500">
-          <div className="h-5 w-5 rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
-          <span className="text-sm">Carregando seu caixa…</span>
-        </div>
-      </div>
-    );
-  }
+  if (!loaded) return <LoadingScreen />;
 
   const section = sectionOfTab(tab);
   const wallets = {
@@ -1049,13 +984,29 @@ export default function App() {
     va: { recebido: vaRecebido, gasto: vaUsado },
   };
   const homeSobra = wallets[wallet].recebido - wallets[wallet].gasto;
+  const closeModal = () => setModal(null);
+  const selectionProps = (kind) => ({
+    selecting,
+    isSelected: (id) => selectedKeys.has(selKey(kind, id)),
+    onToggleSelect: (id) => toggleSelected(kind, id),
+  });
+  const askDelete = (mode) => (item) => setConfirmState({ kind: "delete", mode, payload: item });
 
   return (
-    <div className="min-h-screen tabular-nums font-brand" style={{ background: "#F6F5F1" }}>
-      <Sidebar active={section.id} onSelect={goSection} open={menuOpen} onClose={() => setMenuOpen(false)} />
+    <div className="min-h-screen tabular-nums font-brand bg-canvas text-ink">
+      <Sidebar
+        tab={tab}
+        onSelectSection={goSection}
+        onSelectTab={(t) => {
+          setTab(t);
+          setMenuOpen(false);
+        }}
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+      />
 
       <div className="lg:pl-[260px]">
-        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pt-5 sm:pt-7 pb-28">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pt-5 sm:pt-7 pb-32">
           <TopBar
             onOpenMenu={() => setMenuOpen(true)}
             months={months}
@@ -1067,312 +1018,225 @@ export default function App() {
             saved={saved}
             hideValues={hideValues}
             onToggleHide={() => setHideValues((v) => !v)}
+            theme={theme}
+            onToggleTheme={toggleTheme}
             email={email}
             onLogout={handleLogout}
           />
 
-          <div className="mt-7 sm:mt-9 mb-6">
-            <h1 className="font-display font-semibold text-[34px] sm:text-[46px] leading-[1.05]" style={{ color: "#10251d" }}>
-              {tab === "overview" ? "Visão geral" : section.label}
-            </h1>
+          <main className="mt-7 sm:mt-9">
             {tab === "overview" && (
-              <p className="mt-1.5 font-display text-[18px] sm:text-[23px]" style={{ color: "#4a6b5d" }}>
-                {homeSobra >= 0 ? "Seu mês em equilíbrio" : "Atenção aos gastos deste mês"}
-              </p>
+              <>
+                <PageHeader title="Visão geral" subtitle={homeSobra >= 0 ? "Seu mês em equilíbrio" : "Atenção aos gastos deste mês"} />
+                <Overview
+                  byCat={byCat}
+                  totalGastos={totalGastos}
+                  expenses={expenses}
+                  incomes={incomes}
+                  onEditItem={(mode, item) => setModal({ mode, item })}
+                  onDeleteItem={(mode, item) => setConfirmState({ kind: "delete", mode, payload: item })}
+                  wallet={wallet}
+                  onWalletChange={setWallet}
+                  wallets={wallets}
+                  onGo={setTab}
+                />
+              </>
             )}
-          </div>
 
-          {/* sub-abas da seção (ex.: Lançamentos → Gastos | Ganhos) */}
-          {section.tabs.length > 1 && (
-            <div className="mb-5 inline-flex flex-wrap gap-1 rounded-full bg-white border border-slate-200 p-1 shadow-sm">
-              {section.tabs.map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => setTab(id)}
-                  className={
-                    "px-4 py-1.5 rounded-full text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 " +
-                    (tab === id ? "text-white" : "text-slate-500 hover:text-slate-800")
-                  }
-                  style={tab === id ? { background: "#16382c" } : undefined}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-          )}
+            {tab === "gastos" && (
+              <Gastos
+                grouped={gastosGrouped}
+                total={totalGastos}
+                extraPaymentMethods={extraPaymentMethods}
+                onAdd={() => setModal({ mode: "expense", item: null })}
+                onEdit={(item) => setModal({ mode: "expense", item })}
+                onDelete={askDelete("expense")}
+                onTogglePaid={markExpensePaid}
+                onMove={moveExpense}
+                onMovePaymentMethod={moveExpensePaymentMethod}
+                highlightId={highlightId}
+                {...selectionProps("expense")}
+              />
+            )}
 
-        {tab === "overview" && (
-          <Overview
-            byCat={byCat}
-            totalGastos={totalGastos}
-            expenses={expenses}
-            incomes={incomes}
-            onEditItem={(mode, item) => setModal({ mode, item })}
-            onDeleteItem={(mode, item) => setConfirmState({ kind: "delete", mode, payload: item })}
-            wallet={wallet}
-            onWalletChange={setWallet}
-            wallets={wallets}
-            onGo={setTab}
-          />
-        )}
+            {tab === "ganhos" && (
+              <Ganhos
+                incomes={incomes}
+                total={totalGanhos}
+                month={month}
+                onAdd={() => setModal({ mode: "income", item: null })}
+                onEdit={(item) => setModal({ mode: "income", item })}
+                onDelete={askDelete("income")}
+                {...selectionProps("income")}
+              />
+            )}
 
-        {/* as outras abas ficam numa coluna de leitura, sem esticar na tela larga */}
-        <div className="max-w-3xl">
+            {/* sem props de seleção: saldo de cartão não é item de fluxo de caixa, então
+                nada entra em SELECTION_SOURCES — uma chave `card:` quebraria selectionStats */}
+            {tab === "cartoes" && (
+              <CartoesSaldos
+                cards={cardsWithUsage}
+                unregistered={unregisteredMethodSpend}
+                month={month}
+                canAdd={canAddCard}
+                onAdd={(presetMethod) =>
+                  setModal({ mode: "card", item: null, presetMethod: typeof presetMethod === "string" ? presetMethod : undefined })
+                }
+                onEdit={(item) => setModal({ mode: "card", item })}
+                onUpdateBalance={(item) => setModal({ mode: "balance", item })}
+                onDelete={askDelete("card")}
+              />
+            )}
 
-        {tab === "gastos" && (
-          <Gastos
-            grouped={gastosGrouped}
-            total={totalGastos}
-            extraPaymentMethods={extraPaymentMethods}
-            onAdd={() => setModal({ mode: "expense", item: null })}
-            onEdit={(item) => setModal({ mode: "expense", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "expense", payload: item })}
-            onTogglePaid={(item) => togglePaid(item.id)}
-            onMove={moveExpense}
-            onMovePaymentMethod={moveExpensePaymentMethod}
-            selecting={selecting}
-            isSelected={(id) => selectedKeys.has(selKey("expense", id))}
-            onToggleSelect={(id) => toggleSelected("expense", id)}
-          />
-        )}
+            {/* Sem props de seleção: fechamento não é item de fluxo de caixa, igual a Cartões. */}
+            {tab === "fechamento" && (
+              <CartoesFechamentos
+                items={cardClosings}
+                month={month}
+                onAdd={() => setModal({ mode: "closing", item: null })}
+                onEdit={(item) => setModal({ mode: "closing", item })}
+                onDelete={askDelete("closing")}
+              />
+            )}
 
-        {tab === "ganhos" && (
-          <Ganhos
-            incomes={incomes}
-            total={totalGanhos}
-            onAdd={() => setModal({ mode: "income", item: null })}
-            onEdit={(item) => setModal({ mode: "income", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "income", payload: item })}
-            selecting={selecting}
-            isSelected={(id) => selectedKeys.has(selKey("income", id))}
-            onToggleSelect={(id) => toggleSelected("income", id)}
-          />
-        )}
+            {tab === "serasa" && (
+              <Dividas
+                grouped={serasaGrouped}
+                total={totalSerasa}
+                items={serasa}
+                onAdd={() => setModal({ mode: "serasa", item: null })}
+                onEdit={(item) => setModal({ mode: "serasa", item })}
+                onDelete={askDelete("serasa")}
+                onTogglePaid={markDebtPaid}
+                onMove={moveSerasaItem}
+                highlightId={highlightId}
+                {...selectionProps("serasa")}
+              />
+            )}
 
-        {tab === "desejos" && (
-          <Desejos
-            pending={wishGrouped.pending}
-            done={wishGrouped.done}
-            onAdd={() => setModal({ mode: "wish", item: null })}
-            onEdit={(item) => setModal({ mode: "wish", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "wish", payload: item })}
-            onToggleDone={(item) => toggleWishDone(item.id)}
-            onMove={moveWish}
-            selecting={selecting}
-            isSelected={(id) => selectedKeys.has(selKey("wish", id))}
-            onToggleSelect={(id) => toggleSelected("wish", id)}
-          />
-        )}
+            {tab === "desejos" && (
+              <Desejos
+                pending={wishGrouped.pending}
+                done={wishGrouped.done}
+                onAdd={() => setModal({ mode: "wish", item: null })}
+                onEdit={(item) => setModal({ mode: "wish", item })}
+                onDelete={askDelete("wish")}
+                onToggleDone={(item) => toggleWishDone(item.id)}
+                onMove={moveWish}
+                onReorder={reorderWish}
+                {...selectionProps("wish")}
+              />
+            )}
 
-        {tab === "mercado" && (
-          <ShoppingListTab
-            items={shoppingLists.mercado}
-            onAdd={() => setModal({ mode: "mercado", item: null })}
-            onEdit={(item) => setModal({ mode: "mercado", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "mercado", payload: item })}
-            onToggleDone={(item) => toggleShoppingItemDone("mercado", item.id)}
-            onClearDone={() => clearDoneShoppingItems("mercado")}
-            selecting={selecting}
-            isSelected={(id) => selectedKeys.has(selKey("mercado", id))}
-            onToggleSelect={(id) => toggleSelected("mercado", id)}
-          />
-        )}
+            {(tab === "mercado" || tab === "farmacia") && (
+              <ListaCompras
+                key={tab}
+                kind={tab}
+                items={shoppingLists[tab]}
+                onAdd={() => setModal({ mode: tab, item: null })}
+                onEdit={(item) => setModal({ mode: tab, item })}
+                onDelete={askDelete(tab)}
+                onToggleDone={(item) => toggleShoppingItemDone(tab, item.id)}
+                onClearDone={tab === "mercado" ? () => clearDoneShoppingItems("mercado") : undefined}
+                {...selectionProps(tab)}
+              />
+            )}
 
-        {tab === "farmacia" && (
-          <ShoppingListTab
-            items={shoppingLists.farmacia}
-            onAdd={() => setModal({ mode: "farmacia", item: null })}
-            onEdit={(item) => setModal({ mode: "farmacia", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "farmacia", payload: item })}
-            onToggleDone={(item) => toggleShoppingItemDone("farmacia", item.id)}
-            selecting={selecting}
-            isSelected={(id) => selectedKeys.has(selKey("farmacia", id))}
-            onToggleSelect={(id) => toggleSelected("farmacia", id)}
-          />
-        )}
-
-        {tab === "serasa" && (
-          <Serasa
-            grouped={serasaGrouped}
-            total={totalSerasa}
-            onAdd={() => setModal({ mode: "serasa", item: null })}
-            onEdit={(item) => setModal({ mode: "serasa", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "serasa", payload: item })}
-            onTogglePaid={(item) => toggleSerasaPaid(item.id)}
-            onMove={moveSerasaItem}
-            selecting={selecting}
-            isSelected={(id) => selectedKeys.has(selKey("serasa", id))}
-            onToggleSelect={(id) => toggleSelected("serasa", id)}
-          />
-        )}
-
-        {/* sem props de seleção: saldo de cartão não é item de fluxo de caixa, então
-            nada entra em SELECTION_SOURCES — uma chave `card:` quebraria selectionStats */}
-        {tab === "cartoes" && (
-          <Cartoes
-            cards={cardsWithUsage}
-            unregistered={unregisteredMethodSpend}
-            month={month}
-            canAdd={canAddCard}
-            onAdd={(presetMethod) =>
-              setModal({
-                mode: "card",
-                item: null,
-                presetMethod: typeof presetMethod === "string" ? presetMethod : undefined,
-              })
-            }
-            onEdit={(item) => setModal({ mode: "card", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "card", payload: item })}
-          />
-        )}
-
-        {/* Sem props de seleção: fechamento não é item de fluxo de caixa, igual a Cartões. */}
-        {tab === "fechamento" && (
-          <Fechamento
-            items={cardClosings}
-            month={month}
-            onAdd={() => setModal({ mode: "closing", item: null })}
-            onEdit={(item) => setModal({ mode: "closing", item })}
-            onDelete={(item) => setConfirmState({ kind: "delete", mode: "closing", payload: item })}
-          />
-        )}
-
-        {tab === "config" && (
-          <SettingsSection email={email} onPair={() => setModal({ mode: "pair" })} onLogout={handleLogout} />
-        )}
-        </div>
+            {tab === "config" && (
+              <>
+                <PageHeader title="Configurações" subtitle="Sua conta e o app do celular" />
+                <SettingsSection email={email} onPair={() => setModal({ mode: "pair" })} onLogout={handleLogout} />
+              </>
+            )}
+          </main>
         </div>
       </div>
 
-      {/* calculadora de seleção — z-40 fica sob o Overlay dos modais (z-50) */}
+      {/* calculadora de seleção — z-40 fica sob os modais (z-50) */}
       {!selecting && tab !== "config" && (
         <div className="fixed bottom-0 inset-x-0 lg:left-[260px] z-40 pointer-events-none">
           {/* pb maior no mobile: 20px deixavam o botao atras da barra do navegador */}
-          <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pb-8 sm:pb-5 flex justify-end">
+          <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pb-8 sm:pb-6 flex justify-end">
             <button
               type="button"
               onClick={() => setSelecting(true)}
               title="Somar itens"
               aria-label="Somar itens"
-              className="pointer-events-auto touch-manipulation h-16 w-16 sm:h-14 sm:w-14 rounded-2xl text-white shadow-lg flex items-center justify-center hover:opacity-90 active:scale-95 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-              style={{ background: "#16382c" }}
+              className="pointer-events-auto touch-manipulation h-16 w-16 rounded-2xl bg-forest-2 text-white shadow-[0_14px_30px_-10px_rgba(11,48,37,0.6)] flex items-center justify-center hover:opacity-90 active:scale-95 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-champagne"
             >
-              <Calculator className="h-7 w-7 sm:h-[22px] sm:w-[22px]" />
+              <Calculator className="h-7 w-7" />
             </button>
           </div>
         </div>
       )}
 
       {selecting && (
-        <div className="fixed bottom-0 inset-x-0 lg:left-[260px] z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(15,23,42,0.08)]">
-          <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex items-center gap-3">
-            <div className="min-w-0 flex-1">
-              <p className="text-[11px] text-slate-500 truncate">
-                {selectionStats.count === 0 ? "Marque itens para somar" : selectionLabel}
-              </p>
-              <p
-                className={
-                  "text-lg font-bold tabular-nums leading-tight " +
-                  (selectionStats.mixed
-                    ? selectionStats.net >= 0
-                      ? "text-emerald-600"
-                      : "text-rose-600"
-                    : selectionStats.inflow > 0
-                    ? "text-emerald-600"
-                    : "text-slate-800")
-                }
-              >
-                <span className="text-[11px] font-medium text-slate-500 mr-1.5">
-                  {selectionStats.mixed ? "Saldo" : "Total"}
-                </span>
-                {selectionStats.mixed
-                  ? `${selectionStats.net >= 0 ? "+ " : "− "}${fmt(Math.abs(selectionStats.net))}`
-                  : fmt(selectionStats.inflow > 0 ? selectionStats.inflow : selectionStats.outflow)}
-              </p>
-              {selectionStats.mixed && (
-                <p className="text-[11px] text-slate-500 tabular-nums flex items-center gap-2.5 leading-tight">
-                  <span className="flex items-center gap-0.5">
-                    <ArrowUpRight size={11} className="text-emerald-600" />
-                    entra {fmt(selectionStats.inflow)}
-                  </span>
-                  <span className="flex items-center gap-0.5">
-                    <ArrowDownRight size={11} className="text-rose-500" />
-                    sai {fmt(selectionStats.outflow)}
-                  </span>
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={clearSelection}
-              disabled={selectionStats.count === 0}
-              className="shrink-0 text-xs font-medium text-slate-500 px-2.5 py-2 rounded-lg hover:text-slate-800 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              Limpar
-            </button>
-            <button
-              type="button"
-              onClick={exitSelection}
-              title="Fechar calculadora"
-              aria-label="Fechar calculadora"
-              className="shrink-0 h-9 w-9 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center hover:text-slate-800 hover:bg-slate-200 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
+        <SelectionBar stats={selectionStats} label={selectionLabel} onClear={clearSelection} onClose={exitSelection} />
       )}
 
-      {modal && modal.mode === "wish" && (
-        <WishModal
-          item={modal.item}
-          onClose={() => setModal(null)}
-          onSave={saveWish}
+      {toast && !modal && (
+        <Toast
+          message={toast.message}
+          actionLabel="Desfazer"
+          onAction={() => {
+            toast.onUndo();
+            dismissToast();
+          }}
+          onClose={dismissToast}
         />
       )}
 
-      {modal && (modal.mode === "mercado" || modal.mode === "farmacia") && (
-        <ShoppingItemModal
+      {modal?.mode === "expense" && (
+        <ExpenseModal
           item={modal.item}
-          onClose={() => setModal(null)}
-          onSave={(data, id) => saveShoppingItem(modal.mode, data, id)}
-        />
-      )}
-
-      {modal && modal.mode === "pair" && <PairModal onClose={() => setModal(null)} />}
-
-      {modal && modal.mode === "card" && (
-        <CardModal
-          item={modal.item}
-          presetMethod={modal.presetMethod}
-          cards={cards}
+          extraCategories={extraExpenseCategories}
           extraPaymentMethods={extraPaymentMethods}
-          onClose={() => setModal(null)}
-          onSave={saveCard}
-        />
-      )}
-
-      {modal && modal.mode === "closing" && (
-        <CardClosingModal item={modal.item} onClose={() => setModal(null)} onSave={saveClosing} />
-      )}
-
-      {modal && (modal.mode === "expense" || modal.mode === "income" || modal.mode === "serasa") && (
-        <EntryModal
-          mode={modal.mode}
-          item={modal.item}
-          extraCategories={modal.mode === "serasa" ? extraSerasaCategories : extraExpenseCategories}
-          extraPaymentMethods={extraPaymentMethods}
-          onClose={() => setModal(null)}
+          onClose={closeModal}
           onSave={saveEntry}
           months={months}
           currentMonth={month}
           onMoveMonth={moveExpenseToMonth}
         />
       )}
+      {modal?.mode === "income" && <IncomeModal item={modal.item} onClose={closeModal} onSave={saveEntry} />}
+      {modal?.mode === "serasa" && (
+        <DebtModal item={modal.item} extraCategories={extraSerasaCategories} onClose={closeModal} onSave={saveEntry} />
+      )}
+      {modal?.mode === "card" && (
+        <CardModal
+          item={modal.item}
+          presetMethod={modal.presetMethod}
+          cards={cards}
+          extraPaymentMethods={extraPaymentMethods}
+          onClose={closeModal}
+          onSave={saveCard}
+        />
+      )}
+      {modal?.mode === "balance" && <BalanceModal card={modal.item} onClose={closeModal} onSave={saveCard} />}
+      {modal?.mode === "closing" && (
+        <ClosingModal item={modal.item} suggestions={closingSuggestions} onClose={closeModal} onSave={saveClosing} />
+      )}
+      {modal?.mode === "wish" && <WishModal item={modal.item} onClose={closeModal} onSave={saveWish} />}
+      {(modal?.mode === "mercado" || modal?.mode === "farmacia") && (
+        <ShoppingItemModal
+          kind={modal.mode}
+          item={modal.item}
+          onClose={closeModal}
+          onSave={(data, id) => saveShoppingItem(modal.mode, data, id)}
+        />
+      )}
+      {modal?.mode === "pair" && <PairModal onClose={closeModal} />}
 
       {confirmState && (
-        <ConfirmModal
-          state={confirmState}
+        <ConfirmDialog
+          title="Excluir lançamento?"
+          message={`“${
+            confirmState.payload.description ||
+            confirmState.payload.source ||
+            confirmState.payload.title ||
+            confirmState.payload.cardName ||
+            confirmState.payload.paymentMethod
+          }” será removido. Não dá pra desfazer.`}
           onCancel={() => setConfirmState(null)}
           onConfirm={() => removeEntry(confirmState.mode, confirmState.payload.id)}
         />
@@ -1380,6 +1244,7 @@ export default function App() {
     </div>
   );
 }
+
 
 /* ---------- login ---------- */
 // Fundo da tela de entrada (mock login-premium-variante-1): verde-escuro com dois
@@ -1548,38 +1413,55 @@ function LoginScreen({ onLogin }) {
 }
 
 /* ---------- subcomponentes ---------- */
-const NEW_CATEGORY = "__new_category__";
-const NEW_PAYMENT_METHOD = "__new_payment_method__";
-
-function Card({ children, className = "" }) {
-  return (
-    <div className={"bg-white rounded-2xl border border-slate-200 shadow-sm " + className}>{children}</div>
-  );
-}
 
 /* ---------- estrutura da web: menu lateral e barra superior ---------- */
-function SidebarNav({ active, onSelect }) {
+// A seção ativa abre os sub-itens (Lançamentos → Gastos/Ganhos…), como no kit.
+function SidebarNav({ tab, onSelectSection, onSelectTab }) {
+  const active = sectionOfTab(tab).id;
   const item = (s) => {
     const Icon = s.icon;
     const on = active === s.id;
+    const nested = on && s.tabs.length > 1;
     return (
-      <button
-        key={s.id}
-        onClick={() => onSelect(s)}
-        aria-current={on ? "page" : undefined}
-        className={
-          "w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-[15px] transition-colors focus:outline-none focus:ring-2 focus:ring-white/30 " +
-          (on ? "text-white" : "text-emerald-50/75 hover:text-white hover:bg-white/5")
-        }
-        style={on ? { background: "rgba(255,255,255,0.09)" } : undefined}
-      >
-        <Icon size={22} strokeWidth={on ? 2.25 : 1.75} />
-        <span className={on ? "font-semibold" : ""}>{s.label}</span>
-      </button>
+      <div key={s.id}>
+        <button
+          onClick={() => onSelectSection(s)}
+          aria-current={on && !nested ? "page" : undefined}
+          aria-expanded={s.tabs.length > 1 ? on : undefined}
+          className={
+            "w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-[15px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 " +
+            (on ? "text-white bg-white/[0.09]" : "text-emerald-50/75 hover:text-white hover:bg-white/5")
+          }
+        >
+          <Icon size={22} strokeWidth={on ? 2.25 : 1.75} />
+          <span className={"flex-1 text-left " + (on ? "font-semibold" : "")}>{s.label}</span>
+        </button>
+        {nested && (
+          <div className="mt-1 mb-2 space-y-0.5">
+            {s.tabs.map(([id, label]) => {
+              const cur = tab === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => onSelectTab(id)}
+                  aria-current={cur ? "page" : undefined}
+                  className={
+                    "w-[calc(100%-1.75rem)] ml-7 flex items-center gap-3 pl-4 pr-4 py-2.5 rounded-xl text-[15px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 " +
+                    (cur ? "text-white bg-white/[0.08]" : "text-emerald-50/70 hover:text-white hover:bg-white/5")
+                  }
+                >
+                  <span className={"h-3 w-3 rounded-full " + (cur ? "bg-mint/90" : "border border-emerald-50/50")} />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     );
   };
   return (
-    <div className="flex h-full flex-col px-4 py-7">
+    <div className="flex h-full flex-col px-4 py-7 overflow-y-auto">
       <div className="flex items-center gap-3 px-2 mb-10">
         <span
           className="h-11 w-11 rounded-xl flex items-center justify-center text-white shrink-0"
@@ -1598,7 +1480,7 @@ function SidebarNav({ active, onSelect }) {
 const SIDEBAR_BG = "linear-gradient(180deg,#0f3a2c 0%,#0d3326 50%,#0a2a20 100%)";
 
 // Fixo a partir de lg; abaixo disso, o mesmo menu abre como gaveta.
-function Sidebar({ active, onSelect, open, onClose }) {
+function Sidebar({ open, onClose, ...nav }) {
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -1609,7 +1491,7 @@ function Sidebar({ active, onSelect, open, onClose }) {
   return (
     <>
       <aside className="hidden lg:block fixed inset-y-0 left-0 w-[260px] z-30" style={{ background: SIDEBAR_BG }}>
-        <SidebarNav active={active} onSelect={onSelect} />
+        <SidebarNav {...nav} />
       </aside>
       {open && (
         <div className="lg:hidden fixed inset-0 z-50">
@@ -1622,7 +1504,7 @@ function Sidebar({ active, onSelect, open, onClose }) {
             >
               <X size={18} />
             </button>
-            <SidebarNav active={active} onSelect={onSelect} />
+            <SidebarNav {...nav} />
           </aside>
         </div>
       )}
@@ -1631,7 +1513,7 @@ function Sidebar({ active, onSelect, open, onClose }) {
 }
 
 // ‹ Outubro de 2026 › — as setas andam pelos meses que existem; o nome abre a
-// lista completa com "+ Adicionar" o próximo mês (substitui o antigo <select>).
+// lista completa com "+ Adicionar" o próximo mês.
 function MonthNavigator({ months, month, nextMonthKey, onChange, onAddNext, disabled }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -1652,9 +1534,9 @@ function MonthNavigator({ months, month, nextMonthKey, onChange, onAddNext, disa
   }, [open]);
 
   const arrow =
-    "h-11 w-9 sm:w-11 flex items-center justify-center text-slate-600 rounded-2xl hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent focus:outline-none focus:ring-2 focus:ring-slate-300";
+    "h-11 w-9 sm:w-11 flex items-center justify-center text-muted rounded-2xl hover:bg-surface-2 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent focus:outline-none focus-visible:ring-2 focus-visible:ring-champagne/50";
   return (
-    <div ref={ref} className="relative flex items-center bg-white rounded-2xl border border-slate-200/80 shadow-sm">
+    <div ref={ref} className="relative flex items-center bg-surface rounded-2xl border border-line shadow-card">
       <button className={arrow} onClick={() => onChange(prev)} disabled={!prev || disabled} aria-label="Mês anterior">
         <ChevronLeft size={20} />
       </button>
@@ -1663,7 +1545,7 @@ function MonthNavigator({ months, month, nextMonthKey, onChange, onAddNext, disa
         disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
-        className="h-11 px-1 sm:px-3 min-w-[118px] sm:min-w-[170px] text-[14px] sm:text-[15px] font-medium text-slate-800 hover:bg-slate-50 rounded-xl disabled:opacity-60 disabled:cursor-wait focus:outline-none focus:ring-2 focus:ring-slate-300"
+        className="h-11 px-1 sm:px-3 min-w-[118px] sm:min-w-[170px] whitespace-nowrap text-[14px] sm:text-[15px] font-medium text-ink hover:bg-surface-2 rounded-xl disabled:opacity-60 disabled:cursor-wait focus:outline-none focus-visible:ring-2 focus-visible:ring-champagne/50"
       >
         {monthLabel(month)}
       </button>
@@ -1671,10 +1553,7 @@ function MonthNavigator({ months, month, nextMonthKey, onChange, onAddNext, disa
         <ChevronRight size={20} />
       </button>
       {open && (
-        <div
-          className="absolute left-0 top-full mt-2 z-40 w-64 bg-white rounded-2xl border border-slate-200 shadow-lg py-2 max-h-80 overflow-y-auto"
-          role="listbox"
-        >
+        <div className="absolute left-0 top-full mt-2 z-40 w-64 bg-surface rounded-2xl border border-line shadow-lg py-2 max-h-80 overflow-y-auto" role="listbox">
           {months.map((m) => (
             <button
               key={m}
@@ -1684,22 +1563,19 @@ function MonthNavigator({ months, month, nextMonthKey, onChange, onAddNext, disa
                 setOpen(false);
                 onChange(m);
               }}
-              className={
-                "w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-slate-50 " +
-                (m === month ? "font-semibold text-slate-800" : "text-slate-600")
-              }
+              className={"w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-surface-2 " + (m === month ? "font-semibold text-ink" : "text-muted")}
             >
               {monthLabel(m)}
-              {m === month && <Check size={15} className="text-emerald-700" />}
+              {m === month && <Check size={15} className="text-positive" />}
             </button>
           ))}
-          <div className="my-1 border-t border-slate-100" />
+          <div className="my-1 border-t border-line" />
           <button
             onClick={() => {
               setOpen(false);
               onAddNext();
             }}
-            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-emerald-800 hover:bg-emerald-50"
+            className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-positive hover:bg-tint-green"
           >
             <Plus size={15} /> Adicionar {monthLabel(nextMonthKey)}
           </button>
@@ -1711,11 +1587,14 @@ function MonthNavigator({ months, month, nextMonthKey, onChange, onAddNext, disa
 
 const initialsOf = (email) => (email.split("@")[0].replace(/[^a-zA-Z]/g, "").slice(0, 2) || "MF").toUpperCase();
 
-function TopBar({ onOpenMenu, months, month, nextMonthKey, onChangeMonth, onAddNextMonth, monthDisabled, saved, hideValues, onToggleHide, email, onLogout }) {
-  const square = "h-11 w-11 shrink-0 rounded-xl flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300";
+function TopBar({ onOpenMenu, months, month, nextMonthKey, onChangeMonth, onAddNextMonth, monthDisabled, saved, hideValues, onToggleHide, theme, onToggleTheme, email, onLogout }) {
+  const square =
+    "h-11 w-11 shrink-0 rounded-xl flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-champagne/50";
+  const boxed = square + " bg-surface border border-line shadow-card text-ink hover:border-muted/40";
+  const dark = theme === "dark";
   return (
     <div className="flex items-center gap-2 sm:gap-3">
-      <button onClick={onOpenMenu} aria-label="Abrir menu" className={square + " lg:hidden bg-white border border-slate-200/80 shadow-sm text-slate-600"}>
+      <button onClick={onOpenMenu} aria-label="Abrir menu" className={boxed + " lg:hidden"}>
         <Menu size={20} />
       </button>
       <MonthNavigator
@@ -1726,31 +1605,40 @@ function TopBar({ onOpenMenu, months, month, nextMonthKey, onChangeMonth, onAddN
         onAddNext={onAddNextMonth}
         disabled={monthDisabled}
       />
-      <div className="ml-auto flex items-center gap-2 sm:gap-4">
+      <div className="ml-auto flex items-center gap-2 sm:gap-3">
         <span
-          className={"hidden sm:flex items-center gap-1.5 text-[15px] text-slate-600 transition-opacity duration-300 " + (saved ? "opacity-100" : "opacity-0")}
+          className={"hidden md:flex items-center gap-1.5 text-[15px] text-muted transition-opacity duration-300 " + (saved ? "opacity-100" : "opacity-0")}
           aria-live="polite"
         >
-          <CheckCircle2 size={20} className="text-emerald-600" /> Salvo
+          <CheckCircle2 size={20} className="text-positive" /> Salvo
         </span>
-        <div className="hidden sm:block h-8 w-px bg-slate-200" />
+        <div className="hidden md:block h-8 w-px bg-line" />
+        <button
+          onClick={onToggleTheme}
+          title={dark ? "Modo claro" : "Modo escuro"}
+          aria-label={dark ? "Ativar modo claro" : "Ativar modo escuro"}
+          aria-pressed={dark}
+          className={boxed}
+        >
+          {dark ? <Sun size={20} /> : <Moon size={20} />}
+        </button>
         <button
           onClick={onToggleHide}
           title={hideValues ? "Mostrar valores" : "Ocultar valores"}
           aria-label={hideValues ? "Mostrar valores" : "Ocultar valores"}
           aria-pressed={hideValues}
-          className={square + " bg-white border border-slate-200/80 shadow-sm text-slate-700 hover:border-slate-300"}
+          className={boxed}
         >
           {hideValues ? <EyeOff size={20} /> : <Eye size={20} />}
         </button>
         <span
           title={email}
-          className="hidden sm:flex h-12 w-12 shrink-0 rounded-full items-center justify-center text-white text-[15px] font-bold"
-          style={{ background: "#0f2e25" }}
+          className="hidden sm:flex h-12 w-12 shrink-0 rounded-full items-center justify-center text-white text-[15px] font-bold bg-forest dark:bg-forest-2"
         >
           {initialsOf(email)}
         </span>
-        <button onClick={onLogout} title="Sair" aria-label="Sair" className={square + " text-slate-700 hover:bg-white"}>
+        {/* no celular a barra não comporta: "Sair" fica em Configurações */}
+        <button onClick={onLogout} title="Sair" aria-label="Sair" className={square + " hidden sm:flex text-ink hover:bg-surface"}>
           <LogOut size={21} />
         </button>
       </div>
@@ -1758,11 +1646,139 @@ function TopBar({ onOpenMenu, months, month, nextMonthKey, onChangeMonth, onAddN
   );
 }
 
+// Barra de baixo do modo "Somar itens" (somar-itens.jpg).
+function SelectionBar({ stats, label, onClear, onClose }) {
+  const tone = stats.mixed ? (stats.net >= 0 ? "text-positive" : "text-coral") : stats.inflow > 0 ? "text-positive" : "text-heading";
+  return (
+    <div className="fixed bottom-0 inset-x-0 lg:left-[260px] z-40 px-3 sm:px-6 lg:px-10 pb-[max(0.75rem,env(safe-area-inset-bottom))] pointer-events-none">
+      <div className="max-w-[1280px] mx-auto">
+        <div className="pointer-events-auto ml-auto max-w-[760px] flex items-center gap-3 sm:gap-5 rounded-2xl bg-surface border border-line shadow-[0_-4px_28px_rgba(15,23,42,0.14)] px-4 sm:px-6 py-3.5">
+          <span className="hidden sm:flex h-11 w-11 shrink-0 rounded-full bg-tint-green text-positive items-center justify-center">
+            <Calculator size={20} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] sm:text-[14px] text-muted truncate">
+              {stats.count === 0 ? "Marque itens para somar" : stats.count === 1 ? "1 item selecionado" : `${stats.count} itens selecionados`}
+              {stats.count > 0 && label && <span className="hidden md:inline"> · {label}</span>}
+            </p>
+            {stats.mixed && (
+              <p className="text-[12px] text-muted tabular-nums flex items-center gap-2.5 leading-tight">
+                <span className="flex items-center gap-0.5">
+                  <ArrowUpRight size={12} className="text-positive" />
+                  entra {fmt(stats.inflow)}
+                </span>
+                <span className="flex items-center gap-0.5">
+                  <ArrowDownRight size={12} className="text-coral" />
+                  sai {fmt(stats.outflow)}
+                </span>
+              </p>
+            )}
+          </div>
+          <div className="text-right shrink-0">
+            <p className="text-[12px] sm:text-[13px] text-muted">{stats.mixed ? "Saldo somado" : "Total somado"}</p>
+            <p className={"font-display text-[20px] sm:text-[24px] leading-tight tabular-nums " + tone}>
+              {stats.mixed
+                ? `${stats.net >= 0 ? "+ " : "− "}${fmt(Math.abs(stats.net))}`
+                : fmt(stats.inflow > 0 ? stats.inflow : stats.outflow)}
+            </p>
+          </div>
+          <Button variant="secondary" size="sm" onClick={onClear} disabled={stats.count === 0} className="shrink-0">
+            Limpar
+          </Button>
+          <button
+            type="button"
+            onClick={onClose}
+            title="Fechar calculadora"
+            aria-label="Fechar calculadora"
+            className="shrink-0 h-9 w-9 rounded-xl border border-line text-muted flex items-center justify-center hover:text-ink hover:bg-surface-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-champagne/50"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Carregamento em esqueleto (home-carregamento.jpg): a estrutura já aparece.
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen font-brand bg-canvas" aria-busy="true" aria-label="Carregando seu caixa">
+      <aside className="hidden lg:block fixed inset-y-0 left-0 w-[260px]" style={{ background: SIDEBAR_BG }}>
+        <div className="px-6 py-7 space-y-5">
+          <div className="flex items-center gap-3 mb-10">
+            <span className="h-11 w-11 rounded-xl bg-white/10" />
+            <span className="h-4 w-32 rounded bg-white/10" />
+          </div>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <span key={i} className="block h-4 rounded bg-white/[0.08]" style={{ width: `${70 - i * 6}%` }} />
+          ))}
+        </div>
+      </aside>
+      <div className="lg:pl-[260px]">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pt-5 sm:pt-7">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-11 w-[230px] rounded-2xl" />
+            <Skeleton className="ml-auto h-11 w-11 rounded-xl" />
+            <Skeleton className="h-11 w-11 rounded-xl" />
+            <Skeleton className="hidden sm:block h-12 w-12 rounded-full" />
+          </div>
+          <Skeleton className="mt-9 h-10 w-56" />
+          <Skeleton className="mt-3 h-5 w-72 max-w-full" />
+          <div className="mt-7 grid grid-cols-1 gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(0,1fr)]">
+            {[0, 1, 2, 3].map((i) => (
+              <Panel key={i} className="space-y-4">
+                <Skeleton className="h-6 w-40" />
+                <Skeleton className="h-10 w-2/3" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-5/6" />
+                <Skeleton className="h-4 w-1/2" />
+              </Panel>
+            ))}
+          </div>
+          <p className="sr-only">Carregando seu caixa…</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SettingsSection({ email, onPair, onLogout }) {
+  return (
+    <div className="grid gap-4 max-w-3xl">
+      <Panel>
+        <h2 className="font-display font-semibold text-[22px] mb-4 text-heading">Conta</h2>
+        <div className="flex items-center gap-4">
+          <span className="h-12 w-12 shrink-0 rounded-full flex items-center justify-center text-white font-bold bg-forest dark:bg-forest-2">
+            {email ? initialsOf(email) : <User size={20} />}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm text-muted">Conectado como</p>
+            <p className="text-[15px] font-medium text-ink truncate">{email || "—"}</p>
+          </div>
+        </div>
+      </Panel>
+      <Panel>
+        <h2 className="font-display font-semibold text-[22px] mb-1 text-heading">Celular</h2>
+        <p className="text-sm text-muted mb-4">Gere um código para entrar no app do celular sem precisar do login do Google.</p>
+        <Button icon={Smartphone} onClick={onPair}>
+          Parear celular
+        </Button>
+      </Panel>
+      <Panel>
+        <Button variant="danger" icon={LogOut} onClick={onLogout}>
+          Sair da conta
+        </Button>
+      </Panel>
+    </div>
+  );
+}
+
+
 function HomeCard({ children, className = "" }) {
   return (
     <section
-      className={"rounded-[22px] bg-white border border-slate-200/70 p-5 sm:p-6 " + className}
-      style={{ boxShadow: "0 1px 2px rgba(16,37,29,0.04), 0 10px 28px -16px rgba(16,37,29,0.18)" }}
+      className={"rounded-[22px] bg-surface border border-line shadow-card p-5 sm:p-6 " + className}
     >
       {children}
     </section>
@@ -1772,15 +1788,14 @@ function HomeCard({ children, className = "" }) {
 function HomeCardHeader({ title, action, onAction, chevronOnly }) {
   return (
     <div className="flex items-center justify-between gap-3 mb-5">
-      <h2 className="font-display font-semibold text-[21px] sm:text-[22px] leading-tight" style={{ color: "#10251d" }}>
+      <h2 className="font-display font-semibold text-[21px] sm:text-[22px] leading-tight text-heading">
         {title}
       </h2>
       {onAction && (
         <button
           onClick={onAction}
           aria-label={chevronOnly ? `Ver ${title.toLowerCase()}` : undefined}
-          className="shrink-0 whitespace-nowrap flex items-center gap-1 text-[14px] sm:text-[15px] font-medium rounded-lg px-1.5 py-1 hover:bg-amber-50 focus:outline-none focus:ring-2 focus:ring-amber-200"
-          style={{ color: chevronOnly ? "#10251d" : "#a9822f" }}
+          className={"shrink-0 whitespace-nowrap flex items-center gap-1 text-[14px] sm:text-[15px] font-medium rounded-lg px-1.5 py-1 hover:bg-tint-gold focus:outline-none focus:ring-2 focus:ring-champagne/40 " + (chevronOnly ? "text-heading" : "text-gold")}
         >
           {action}
           <ChevronRight size={chevronOnly ? 22 : 17} />
@@ -1791,8 +1806,8 @@ function HomeCardHeader({ title, action, onAction, chevronOnly }) {
 }
 
 /* ---------- home ("Visão geral") ---------- */
-const INCOME_GREEN = "#1F6B4C";
-const EXPENSE_RED = "#BF5B3D";
+const INCOME_GREEN = "rgb(var(--positive))";
+const EXPENSE_RED = "rgb(var(--coral))";
 const DONUT_COLORS = ["#1F5C45", "#8A8F4E", "#D4A84B", "#C9785A"];
 
 function SobraCard({ wallet, onWalletChange, wallets }) {
@@ -1953,11 +1968,11 @@ function UpcomingCard({ expenses, incomes, onGo }) {
     <HomeCard>
       <HomeCardHeader title="Próximos 7 dias" onAction={() => onGo("gastos")} chevronOnly />
       {items.length === 0 ? (
-        <p className="text-sm text-slate-400 py-6 text-center">Nada previsto para os próximos 7 dias.</p>
+        <p className="text-sm text-muted py-6 text-center">Nada previsto para os próximos 7 dias.</p>
       ) : (
         <ol className="relative">
           {/* fio da linha do tempo, passando pelos pontos */}
-          <span aria-hidden="true" className="hidden sm:block absolute left-[71px] top-6 bottom-6 w-px bg-slate-200" />
+          <span aria-hidden="true" className="hidden sm:block absolute left-[71px] top-6 bottom-6 w-px bg-line" />
           {items.map((it) => {
             const income = it.kind === "income";
             const Icon = income ? HandCoins : catMeta(it.category).icon;
@@ -1965,23 +1980,23 @@ function UpcomingCard({ expenses, incomes, onGo }) {
             return (
               <li key={`${it.kind}-${it.id}`} className="relative flex items-center gap-3 py-3">
                 <span
-                  className={"w-[52px] shrink-0 text-[13px] sm:text-[14px] " + (it.overdue ? "font-medium" : "text-slate-500")}
+                  className={"w-[52px] shrink-0 text-[13px] sm:text-[14px] " + (it.overdue ? "font-medium" : "text-muted")}
                   style={it.overdue ? { color: EXPENSE_RED } : undefined}
                 >
                   {formatDayMonth(it.date)}
                 </span>
-                <span className="hidden sm:block relative z-10 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-white" style={{ background: dot }} />
+                <span className="hidden sm:block relative z-10 h-3.5 w-3.5 shrink-0 rounded-full ring-4 ring-surface" style={{ background: dot }} />
                 <span
                   className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-full flex items-center justify-center"
-                  style={income ? { background: "#e6f2ea", color: INCOME_GREEN } : { background: "#fbece6", color: EXPENSE_RED }}
+                  style={income ? { background: "rgb(var(--tint-green))", color: INCOME_GREEN } : { background: "rgb(var(--tint-coral))", color: EXPENSE_RED }}
                 >
                   <Icon size={20} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-display text-[16px] sm:text-[17px] leading-tight line-clamp-2 break-words" style={{ color: "#10251d" }}>
+                  <p className="font-display text-[16px] sm:text-[17px] leading-tight line-clamp-2 break-words text-heading">
                     {it.title}
                   </p>
-                  <p className="text-[13px] text-slate-500 truncate">
+                  <p className="text-[13px] text-muted truncate">
                     {it.overdue ? <span style={{ color: EXPENSE_RED }}>Vencido · </span> : null}
                     {it.subtitle}
                   </p>
@@ -2027,7 +2042,7 @@ function SpendingCard({ byCat, totalGastos, onGo }) {
     <HomeCard>
       <HomeCardHeader title="Para onde vai o dinheiro" action="Ver todas" onAction={() => onGo("gastos")} />
       {slices.length === 0 ? (
-        <p className="text-sm text-slate-400 py-10 text-center">Sem gastos ainda neste mês.</p>
+        <p className="text-sm text-muted py-10 text-center">Sem gastos ainda neste mês.</p>
       ) : (
         <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
           {/* Rosca menor em larguras intermediárias: no grid de 2 colunas o card
@@ -2056,10 +2071,10 @@ function SpendingCard({ byCat, totalGastos, onGo }) {
               })}
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="font-display font-semibold text-[16px] sm:text-[15px] 2xl:text-[19px] leading-tight" style={{ color: "#10251d" }}>
+              <span className="font-display font-semibold text-[16px] sm:text-[15px] 2xl:text-[19px] leading-tight text-heading">
                 {fmt(totalGastos)}
               </span>
-              <span className="text-[13px] text-slate-500">em gastos</span>
+              <span className="text-[13px] text-muted">em gastos</span>
             </div>
           </div>
           {/* min-w-0 + flex-1: sem isso a lista não encolhia abaixo da linha mais
@@ -2069,10 +2084,10 @@ function SpendingCard({ byCat, totalGastos, onGo }) {
             {slices.map((s) => (
               <li key={s.name} className="flex items-center gap-3 text-[15px] sm:text-[16px]">
                 <span className="h-4 w-4 shrink-0 rounded-full" style={{ background: s.color }} />
-                <span className="flex-1 min-w-0 truncate text-slate-700" title={s.name}>
+                <span className="flex-1 min-w-0 truncate text-ink" title={s.name}>
                   {s.name}
                 </span>
-                <span className="shrink-0 tabular-nums text-slate-700">{s.pct}%</span>
+                <span className="shrink-0 tabular-nums text-ink">{s.pct}%</span>
               </li>
             ))}
           </ul>
@@ -2104,9 +2119,9 @@ function RecentCard({ expenses, incomes, onEditItem, onDeleteItem, onGo }) {
     <HomeCard>
       <HomeCardHeader title="Adicionados recentemente" action="Ver lançamentos" onAction={() => onGo("gastos")} />
       {items.length === 0 ? (
-        <p className="text-sm text-slate-400 py-10 text-center">Nenhum item adicionado ainda neste mês.</p>
+        <p className="text-sm text-muted py-10 text-center">Nenhum item adicionado ainda neste mês.</p>
       ) : (
-        <ul className="divide-y divide-slate-100">
+        <ul className="divide-y divide-line">
           {items.map((it) => {
             const income = it.kind === "income";
             const meta = income ? null : catMeta(it.item.category);
@@ -2127,19 +2142,19 @@ function RecentCard({ expenses, incomes, onEditItem, onDeleteItem, onGo }) {
                       edit();
                     }
                   }}
-                  className="flex items-center gap-3 py-3 -mx-2 px-2 rounded-xl cursor-pointer hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                  className="flex items-center gap-3 py-3 -mx-2 px-2 rounded-xl cursor-pointer hover:bg-surface-2 focus:outline-none focus:ring-2 focus:ring-line"
                 >
                   <span
                     className="h-10 w-10 sm:h-11 sm:w-11 shrink-0 rounded-full flex items-center justify-center"
-                    style={{ background: color + "1F", color }}
+                    style={{ background: income ? "rgb(var(--tint-green))" : color + "1F", color }}
                   >
                     <Icon size={20} />
                   </span>
                   <div className="min-w-0 flex-1">
-                    <p className="font-display text-[16px] sm:text-[17px] leading-tight line-clamp-2 break-words" style={{ color: "#10251d" }}>
+                    <p className="font-display text-[16px] sm:text-[17px] leading-tight line-clamp-2 break-words text-heading">
                       {it.label}
                     </p>
-                    <p className="text-[13px] text-slate-500 truncate">
+                    <p className="text-[13px] text-muted truncate">
                       {formatRelativeTime(it.item.createdAt)} · {it.meta}
                     </p>
                   </div>
@@ -2154,7 +2169,7 @@ function RecentCard({ expenses, incomes, onEditItem, onDeleteItem, onGo }) {
                     }}
                     title="Excluir"
                     aria-label={`Excluir ${it.label}`}
-                    className="h-8 w-8 shrink-0 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity focus:outline-none focus:ring-2 focus:ring-rose-300"
+                    className="h-8 w-8 shrink-0 rounded-lg text-muted hover:text-coral hover:bg-tint-coral flex items-center justify-center opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity focus:outline-none focus:ring-2 focus:ring-rose-300"
                   >
                     <Trash2 size={15} />
                   </button>
@@ -2176,2059 +2191,5 @@ function Overview({ byCat, totalGastos, expenses, incomes, onEditItem, onDeleteI
       <SpendingCard byCat={byCat} totalGastos={totalGastos} onGo={onGo} />
       <RecentCard expenses={expenses} incomes={incomes} onEditItem={onEditItem} onDeleteItem={onDeleteItem} onGo={onGo} />
     </div>
-  );
-}
-
-function SettingsSection({ email, onPair, onLogout }) {
-  return (
-    <div className="space-y-5">
-      <HomeCard>
-        <h2 className="font-display font-semibold text-[22px] mb-4" style={{ color: "#10251d" }}>
-          Conta
-        </h2>
-        <div className="flex items-center gap-4">
-          <span className="h-12 w-12 shrink-0 rounded-full flex items-center justify-center text-white font-bold" style={{ background: "#0f2e25" }}>
-            {initialsOf(email)}
-          </span>
-          <div className="min-w-0">
-            <p className="text-sm text-slate-500">Conectado como</p>
-            <p className="text-[15px] font-medium text-slate-800 truncate">{email || "—"}</p>
-          </div>
-        </div>
-      </HomeCard>
-      <HomeCard>
-        <h2 className="font-display font-semibold text-[22px] mb-1" style={{ color: "#10251d" }}>
-          Celular
-        </h2>
-        <p className="text-sm text-slate-500 mb-4">Gere um código para entrar no app do celular sem precisar do login do Google.</p>
-        <button
-          onClick={onPair}
-          className="inline-flex items-center gap-2 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-          style={{ background: "#16382c" }}
-        >
-          <Smartphone size={16} /> Parear celular
-        </button>
-      </HomeCard>
-      <HomeCard>
-        <button
-          onClick={onLogout}
-          className="inline-flex items-center gap-2 text-sm font-medium text-rose-700 px-4 py-2.5 rounded-xl border border-rose-200 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-200"
-        >
-          <LogOut size={16} /> Sair da conta
-        </button>
-      </HomeCard>
-    </div>
-  );
-}
-
-function sortByValueSort(items, valueSort) {
-  if (valueSort === "desc") return [...items].sort((a, b) => (Number(b.value) || 0) - (Number(a.value) || 0));
-  if (valueSort === "asc") return [...items].sort((a, b) => (Number(a.value) || 0) - (Number(b.value) || 0));
-  return items;
-}
-
-function groupByPaymentMethod(items, valueSort = "none") {
-  const m = new Map();
-  for (const e of items) {
-    const key = e.paymentMethod || PAYMENT_METHOD_FALLBACK;
-    if (!m.has(key)) m.set(key, []);
-    m.get(key).push(e);
-  }
-  return [...m.entries()]
-    .map(([name, groupItems]) => ({
-      name,
-      items:
-        valueSort !== "none"
-          ? sortByValueSort(groupItems, valueSort)
-          : [...groupItems].sort((a, b) => {
-              if (a.order != null && b.order != null) return a.order - b.order;
-              if (a.order != null) return -1;
-              if (b.order != null) return 1;
-              return (b.value || 0) - (a.value || 0);
-            }),
-      subtotal: groupItems.reduce((s, i) => s + (Number(i.value) || 0), 0),
-    }))
-    .sort((a, b) => b.subtotal - a.subtotal);
-}
-
-function Gastos({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, onMovePaymentMethod, extraPaymentMethods = [], selecting, isSelected, onToggleSelect }) {
-  const [search, setSearch] = useState("");
-  const [paymentMethodFilter, setPaymentMethodFilter] = useState("");
-  const [dueDateFrom, setDueDateFrom] = useState("");
-  const [dueDateTo, setDueDateTo] = useState("");
-  const [valueSort, setValueSort] = useState("none");
-  const [hidePaid, setHidePaid] = useState(false);
-  const paymentMethodOptions = useMemo(
-    () => allPaymentMethods(extraPaymentMethods),
-    [extraPaymentMethods]
-  );
-  const query = search.trim().toLowerCase();
-  const isSearching = query !== "";
-  const otherFiltersActive =
-    isSearching || paymentMethodFilter !== "" || dueDateFrom !== "" || dueDateTo !== "" || valueSort !== "none";
-  const filtersActive = otherFiltersActive || hidePaid;
-
-  const clearFilters = () => {
-    setSearch("");
-    setPaymentMethodFilter("");
-    setDueDateFrom("");
-    setDueDateTo("");
-    setValueSort("none");
-    setHidePaid(false);
-  };
-
-  const applyCommonFilters = (list) => {
-    if (!(query || paymentMethodFilter || dueDateFrom || dueDateTo)) return list;
-    return list
-      .map((g) => {
-        let items = g.items;
-        if (query) items = items.filter((e) => e.description.toLowerCase().includes(query));
-        if (paymentMethodFilter) {
-          items = items.filter((e) => (e.paymentMethod || PAYMENT_METHOD_FALLBACK) === paymentMethodFilter);
-        }
-        if (dueDateFrom) items = items.filter((e) => e.dueDate && e.dueDate >= dueDateFrom);
-        if (dueDateTo) items = items.filter((e) => e.dueDate && e.dueDate <= dueDateTo);
-        return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
-      })
-      .filter((g) => g.items.length > 0);
-  };
-
-  const filteredGrouped = useMemo(() => {
-    let result = applyCommonFilters(grouped);
-    if (hidePaid) {
-      result = result
-        .map((g) => {
-          const items = g.items.filter((e) => !e.paidAt);
-          return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
-        })
-        .filter((g) => g.items.length > 0);
-    }
-    if (valueSort !== "none") {
-      result = result.map((g) => ({ ...g, items: sortByValueSort(g.items, valueSort) }));
-    }
-    return result;
-  }, [grouped, query, paymentMethodFilter, dueDateFrom, dueDateTo, valueSort, hidePaid]);
-
-  // Total exibido nunca reflete o "ocultar pagos": esse recurso é só uma lente visual
-  // sobre o que ainda falta pagar, não deve mudar o total de gastos do mês.
-  const totalGroupedForDisplay = useMemo(
-    () => applyCommonFilters(grouped),
-    [grouped, query, paymentMethodFilter, dueDateFrom, dueDateTo]
-  );
-
-  const visibleTotal = useMemo(
-    () => totalGroupedForDisplay.reduce((s, g) => s + g.subtotal, 0),
-    [totalGroupedForDisplay]
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-500">{otherFiltersActive ? "Total encontrado" : "Total de gastos"}</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(otherFiltersActive ? visibleTotal : total)}</p>
-        </div>
-        <button
-          onClick={onAdd}
-          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-          style={{ background: "#16382c" }}
-        >
-          <Plus size={16} /> Novo gasto
-        </button>
-      </div>
-
-      <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar gasto por título…"
-          className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-        />
-        {isSearching && (
-          <button
-            onClick={() => setSearch("")}
-            title="Limpar busca"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setHidePaid((v) => !v)}
-          className={
-            "flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 " +
-            (hidePaid ? "text-white border-transparent" : "text-slate-700 bg-white border-slate-200 hover:bg-slate-50")
-          }
-          style={hidePaid ? { background: "#16382c" } : undefined}
-        >
-          <Check size={13} />
-          {hidePaid ? "Mostrar pagos" : "Ocultar pagos"}
-        </button>
-
-        <select
-          value={paymentMethodFilter}
-          onChange={(e) => setPaymentMethodFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-        >
-          <option value="">Todas as formas de pagamento</option>
-          {paymentMethodOptions.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-          <option value={PAYMENT_METHOD_FALLBACK}>{PAYMENT_METHOD_FALLBACK}</option>
-        </select>
-
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-slate-500">Vencimento</span>
-          <input
-            type="date"
-            value={dueDateFrom}
-            onChange={(e) => setDueDateFrom(e.target.value)}
-            className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-          <span className="text-xs text-slate-400">até</span>
-          <input
-            type="date"
-            value={dueDateTo}
-            onChange={(e) => setDueDateTo(e.target.value)}
-            className="px-2.5 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </div>
-
-        <select
-          value={valueSort}
-          onChange={(e) => setValueSort(e.target.value)}
-          className="px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-        >
-          <option value="none">Ordem padrão</option>
-          <option value="desc">Maior valor primeiro</option>
-          <option value="asc">Menor valor primeiro</option>
-        </select>
-
-        {filtersActive && (
-          <button
-            onClick={clearFilters}
-            className="flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 px-2 py-1 rounded-lg hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-          >
-            <X size={12} /> Limpar filtros
-          </button>
-        )}
-      </div>
-
-      {filteredGrouped.length === 0 && (
-        <Empty text={filtersActive ? "Nenhum gasto encontrado." : "Nenhum gasto cadastrado."} />
-      )}
-
-      {filteredGrouped.map((g) => {
-        const Icon = g.icon;
-        return (
-          <Card key={g.name} className="overflow-hidden">
-            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
-              <span className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: g.color + "1F", color: g.color }}>
-                <Icon size={15} />
-              </span>
-              <span className="text-sm font-semibold text-slate-700 flex-1">{g.name}</span>
-              <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(g.subtotal)}</span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {g.name === CARTOES_CATEGORY ? (
-                groupByPaymentMethod(g.items, valueSort).map((pm) => {
-                  const pmMeta = paymentMethodMeta(pm.name);
-                  const PmIcon = pmMeta.icon;
-                  return (
-                  <div key={pm.name}>
-                    <div className="flex items-center gap-2 px-4 py-2 bg-slate-50">
-                      <span className="h-5 w-5 rounded flex items-center justify-center shrink-0" style={{ background: pmMeta.color + "1F", color: pmMeta.color }}>
-                        <PmIcon size={12} />
-                      </span>
-                      <span className="text-xs font-medium text-slate-500 flex-1">{pm.name}</span>
-                      <span className="text-xs font-semibold text-slate-600 tabular-nums">{fmt(pm.subtotal)}</span>
-                    </div>
-                    <div className="divide-y divide-slate-100">
-                      {pm.items.map((e, idx) => (
-                        <Row
-                          key={e.id}
-                          title={e.description}
-                          note={e.note}
-                          value={e.value}
-                          muted={!e.value}
-                          recurrent={e.recurrent}
-                          paidAt={e.paidAt}
-                          dueDate={e.dueDate}
-                          installmentTotal={e.installmentTotal}
-                          installmentNumber={e.installmentNumber}
-                          paidWithVoucher={e.paidWithVoucher}
-                          paidWithCltPj={e.paidWithCltPj}
-                          position={idx + 1}
-                          selected={isSelected(e.id)}
-                          onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
-                          onMoveUp={!filtersActive && idx > 0 ? () => onMovePaymentMethod(g.name, pm.name, e.id, "up") : undefined}
-                          onMoveDown={!filtersActive && idx < pm.items.length - 1 ? () => onMovePaymentMethod(g.name, pm.name, e.id, "down") : undefined}
-                          onEdit={() => onEdit(e)}
-                          onDelete={() => onDelete(e)}
-                          onTogglePaid={() => onTogglePaid(e)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  );
-                })
-              ) : (
-                g.items.map((e, idx) => (
-                  <Row
-                    key={e.id}
-                    title={e.description}
-                    note={e.note}
-                    value={e.value}
-                    muted={!e.value}
-                    recurrent={e.recurrent}
-                    paidAt={e.paidAt}
-                    dueDate={e.dueDate}
-                    installmentTotal={e.installmentTotal}
-                    installmentNumber={e.installmentNumber}
-                    paidWithVoucher={e.paidWithVoucher}
-                    paidWithCltPj={e.paidWithCltPj}
-                    position={idx + 1}
-                    selected={isSelected(e.id)}
-                    onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
-                    onMoveUp={!filtersActive && idx > 0 ? () => onMove(e.category, e.id, "up") : undefined}
-                    onMoveDown={!filtersActive && idx < g.items.length - 1 ? () => onMove(e.category, e.id, "down") : undefined}
-                    onEdit={() => onEdit(e)}
-                    onDelete={() => onDelete(e)}
-                    onTogglePaid={() => onTogglePaid(e)}
-                  />
-                ))
-              )}
-            </div>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
-function Serasa({ grouped, total, onAdd, onEdit, onDelete, onTogglePaid, onMove, selecting, isSelected, onToggleSelect }) {
-  const [search, setSearch] = useState("");
-  const query = search.trim().toLowerCase();
-  const isSearching = query !== "";
-
-  const filteredGrouped = useMemo(() => {
-    if (!query) return grouped;
-    return grouped
-      .map((g) => {
-        const items = g.items.filter((s) => s.description.toLowerCase().includes(query));
-        return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
-      })
-      .filter((g) => g.items.length > 0);
-  }, [grouped, query]);
-
-  const visibleTotal = useMemo(
-    () => filteredGrouped.reduce((s, g) => s + g.subtotal, 0),
-    [filteredGrouped]
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-500">{isSearching ? "Total encontrado" : "Total de dívidas"}</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(isSearching ? visibleTotal : total)}</p>
-        </div>
-        <button
-          onClick={onAdd}
-          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-          style={{ background: "#16382c" }}
-        >
-          <Plus size={16} /> Nova dívida
-        </button>
-      </div>
-
-      <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar dívida por descrição…"
-          className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-        />
-        {isSearching && (
-          <button
-            onClick={() => setSearch("")}
-            title="Limpar busca"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-
-      {filteredGrouped.length === 0 && (
-        <Empty text={isSearching ? "Nenhuma dívida encontrada." : "Nenhuma dívida cadastrada."} />
-      )}
-
-      {filteredGrouped.map((g) => {
-        const Icon = g.icon;
-        return (
-          <Card key={g.name} className="overflow-hidden">
-            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
-              <span className="h-7 w-7 rounded-lg flex items-center justify-center" style={{ background: g.color + "1F", color: g.color }}>
-                <Icon size={15} />
-              </span>
-              <span className="text-sm font-semibold text-slate-700 flex-1">{g.name}</span>
-              <span className="text-sm font-semibold text-slate-800 tabular-nums">{fmt(g.subtotal)}</span>
-            </div>
-            <div className="divide-y divide-slate-100">
-              {g.items.map((s, idx) => (
-                <Row
-                  key={s.id}
-                  title={s.description}
-                  note={s.note}
-                  value={s.value}
-                  muted={!s.value}
-                  recurrent={s.recurrent}
-                  paidAt={s.paidAt}
-                  dueDate={s.dueDate}
-                  installmentTotal={s.installmentTotal}
-                  installmentNumber={s.installmentNumber}
-                  position={idx + 1}
-                  selected={isSelected(s.id)}
-                  onToggleSelect={selecting ? () => onToggleSelect(s.id) : undefined}
-                  onMoveUp={!isSearching && idx > 0 ? () => onMove(s.category, s.id, "up") : undefined}
-                  onMoveDown={!isSearching && idx < g.items.length - 1 ? () => onMove(s.category, s.id, "down") : undefined}
-                  onEdit={() => onEdit(s)}
-                  onDelete={() => onDelete(s)}
-                  onTogglePaid={() => onTogglePaid(s)}
-                />
-              ))}
-            </div>
-          </Card>
-        );
-      })}
-    </div>
-  );
-}
-
-function Cartoes({ cards, unregistered, month, canAdd, onAdd, onEdit, onDelete }) {
-  const totalRestante = cards.reduce((s, c) => s + c.remaining, 0);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-500">Sobra somada em {monthLabel(month)}</p>
-          <p className={"text-xl font-bold tabular-nums " + (totalRestante >= 0 ? "text-slate-800" : "text-rose-600")}>
-            {fmt(totalRestante)}
-          </p>
-        </div>
-        <button
-          onClick={() => onAdd()}
-          disabled={!canAdd}
-          title={canAdd ? undefined : "Todas as formas de pagamento já têm saldo cadastrado."}
-          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "#16382c" }}
-        >
-          <Plus size={16} /> Novo cartão
-        </button>
-      </div>
-
-      {cards.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-2xl px-4 py-3 flex items-start gap-2">
-          <AlertTriangle size={14} className="shrink-0 mt-0.5" />
-          <span>
-            Cada cartão mostra o saldo que você registrou menos os gastos lançados em{" "}
-            <strong>{monthLabel(month)}</strong>, contando compras parceladas pelo valor total. Gastos de
-            outros meses não entram nesta conta.
-          </span>
-        </div>
-      )}
-
-      {cards.length === 0 && (
-        <Empty text="Nenhum cartão cadastrado. Registre o saldo disponível de um cartão para acompanhar quanto sobra." />
-      )}
-
-      {cards.map((c) => {
-        // paymentMethodMeta não devolve `name` (diferente de catMeta): o nome vem do próprio cartão
-        const meta = paymentMethodMeta(c.paymentMethod);
-        const Icon = meta.icon;
-        const skipped = c.scope === "before";
-        return (
-          <Card key={c.id} className="overflow-hidden">
-            <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-100">
-              <span
-                className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
-                style={{ background: meta.color + "1F", color: meta.color }}
-              >
-                <Icon size={15} />
-              </span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-slate-700 truncate">{c.paymentMethod}</p>
-                {c.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{c.note}</p> : null}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={() => onEdit(c)}
-                  title="Editar"
-                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  onClick={() => onDelete(c)}
-                  title="Excluir"
-                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-
-            <div className="px-4 py-3 space-y-1.5">
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-slate-500">Saldo registrado em {formatDateBR(c.referenceDate)}</span>
-                <span className="text-slate-700 tabular-nums shrink-0">{fmt(c.balance)}</span>
-              </div>
-              {!skipped && (
-                <div className="flex items-center justify-between gap-3 text-xs">
-                  <span className="text-slate-500">Gastos de {monthLabel(month)}</span>
-                  <span className="text-rose-600 tabular-nums shrink-0">- {fmt(c.spent)}</span>
-                </div>
-              )}
-              {!skipped && c.upfrontExtra > 0 && (
-                <p className="text-[11px] text-slate-400">
-                  Inclui o valor total de {c.upfrontCount}{" "}
-                  {c.upfrontCount === 1 ? "compra parcelada" : "compras parceladas"} — o limite do cartão cai
-                  de uma vez, não parcela a parcela.
-                </p>
-              )}
-            </div>
-
-            {skipped ? (
-              <p className="px-4 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-500">
-                Saldo registrado em {formatDateBR(c.referenceDate)}, depois de {monthLabel(month)} — os gastos deste
-                mês já estavam descontados quando você anotou o saldo.
-              </p>
-            ) : (
-              <div className="px-4 py-3 border-t border-slate-100 bg-slate-50">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-xs font-medium text-slate-600">Sobra em {monthLabel(month)}</span>
-                  <span
-                    className={"text-lg font-bold tabular-nums " + (c.remaining >= 0 ? "text-slate-800" : "text-rose-600")}
-                  >
-                    {fmt(c.remaining)}
-                  </span>
-                </div>
-                {c.scope === "same" && (
-                  <p className="text-[11px] text-amber-600 mt-1">
-                    Pode incluir gastos anteriores a {formatDateBR(c.referenceDate)}, já descontados do saldo.
-                  </p>
-                )}
-                {/* O saldo é um retrato de uma data: em meses posteriores ele não conhece
-                    os gastos do meio do caminho, e só quem tem o número novo é o app do
-                    cartão. Avisar e oferecer a edição. */}
-                {c.scope === "after" && (
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-[11px] text-amber-600 flex-1">
-                      Saldo anotado em {formatDateBR(c.referenceDate)}, antes de {monthLabel(month)}. Os gastos
-                      dos meses entre uma coisa e outra não estão descontados deste número.
-                    </p>
-                    <button
-                      onClick={() => onEdit(c)}
-                      className="shrink-0 text-[11px] font-medium text-amber-800 bg-amber-100 hover:bg-amber-200 px-2.5 py-1.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-amber-300"
-                    >
-                      Atualizar saldo
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </Card>
-        );
-      })}
-
-      {unregistered.length > 0 && (
-        <Card className="overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100">
-            <p className="text-sm font-semibold text-slate-700">Sem saldo cadastrado</p>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Estas formas de pagamento tiveram gastos em {monthLabel(month)} e não entram na conta acima.
-            </p>
-          </div>
-          <div className="divide-y divide-slate-100">
-            {unregistered.map((u) => {
-              const meta = paymentMethodMeta(u.name);
-              const Icon = meta.icon;
-              return (
-                <div key={u.name} className="flex items-center gap-2.5 px-4 py-2.5">
-                  <span
-                    className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
-                    style={{ background: meta.color + "1F", color: meta.color }}
-                  >
-                    <Icon size={15} />
-                  </span>
-                  <span className="text-sm text-slate-700 flex-1 min-w-0 truncate">{u.name}</span>
-                  <span className="text-sm text-slate-500 tabular-nums shrink-0">{fmt(u.value)}</span>
-                  <button
-                    onClick={() => onAdd(u.name)}
-                    className="shrink-0 text-xs font-medium text-slate-500 px-2.5 py-1.5 rounded-lg hover:text-slate-800 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-                  >
-                    Cadastrar saldo
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-/* Fechamento de cartão do mês: lista de {nome do cartão, valor a pagar}, presa
-   ao mês acessado. Independente da aba Cartões (que trata saldo/limite). */
-function Fechamento({ items, month, onAdd, onEdit, onDelete }) {
-  const total = items.reduce((s, it) => s + (Number(it.value) || 0), 0);
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-500">Total a pagar em {monthLabel(month)}</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(total)}</p>
-        </div>
-        <button
-          onClick={() => onAdd()}
-          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-          style={{ background: "#16382c" }}
-        >
-          <Plus size={16} /> Novo fechamento
-        </button>
-      </div>
-
-      {items.length === 0 ? (
-        <Empty text="Nenhum fechamento de cartão neste mês. Registre o nome do cartão e o valor a pagar." />
-      ) : (
-        <Card className="overflow-hidden divide-y divide-slate-100">
-          {items.map((it) => (
-            <div key={it.id} className="flex items-center gap-2.5 px-4 py-3">
-              <span
-                className="h-7 w-7 rounded-lg flex items-center justify-center shrink-0"
-                style={{ background: "#D6493B1F", color: "#D6493B" }}
-              >
-                <CreditCard size={15} />
-              </span>
-              <span className="text-sm text-slate-800 flex-1 min-w-0 truncate">{it.cardName}</span>
-              <span className="text-sm font-semibold text-slate-800 tabular-nums shrink-0">{fmt(it.value)}</span>
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  onClick={() => onEdit(it)}
-                  title="Editar"
-                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  <Pencil size={15} />
-                </button>
-                <button
-                  onClick={() => onDelete(it)}
-                  title="Excluir"
-                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-                >
-                  <Trash2 size={15} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function CardClosingModal({ item, onClose, onSave }) {
-  const [cardName, setCardName] = useState(item?.cardName || "");
-  const [value, setValue] = useState(item ? String(item.value ?? "") : "");
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const canSave = cardName.trim() !== "" && !isNaN(parseFloat(value)) && parseFloat(value) >= 0;
-
-  const submit = () => {
-    if (!canSave) return;
-    onSave({ cardName: cardName.trim(), value: parseFloat(value) }, item?.id);
-  };
-
-  return (
-    <Overlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-slate-800">{item ? "Editar fechamento" : "Novo fechamento"}</h3>
-        <button onClick={onClose} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300">
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="space-y-3.5">
-        <Field label="Cartão">
-          <input
-            ref={inputRef}
-            value={cardName}
-            onChange={(e) => setCardName(e.target.value)}
-            placeholder="Ex.: Nubank"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        <Field label="Valor a pagar (R$)">
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="0,00"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-      </div>
-
-      <div className="flex gap-2 mt-5">
-        <button
-          onClick={onClose}
-          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={submit}
-          disabled={!canSave}
-          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "#16382c" }}
-        >
-          Salvar
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function Ganhos({ incomes, total, onAdd, onEdit, onDelete, selecting, isSelected, onToggleSelect }) {
-  const [search, setSearch] = useState("");
-  const query = search.trim().toLowerCase();
-  const isSearching = query !== "";
-
-  const filteredIncomes = useMemo(
-    () => (isSearching ? incomes.filter((i) => i.source.toLowerCase().includes(query)) : incomes),
-    [incomes, isSearching, query]
-  );
-
-  const visibleTotal = useMemo(
-    () => filteredIncomes.reduce((s, i) => s + (Number(i.value) || 0), 0),
-    [filteredIncomes]
-  );
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-500">{isSearching ? "Total encontrado" : "Total de ganhos"}</p>
-          <p className="text-xl font-bold text-emerald-600 tabular-nums">{fmt(isSearching ? visibleTotal : total)}</p>
-        </div>
-        <button
-          onClick={onAdd}
-          className="flex items-center gap-1.5 bg-emerald-600 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:bg-emerald-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-400"
-        >
-          <Plus size={16} /> Novo ganho
-        </button>
-      </div>
-
-      <div className="relative">
-        <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar ganho por título…"
-          className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400"
-        />
-        {isSearching && (
-          <button
-            onClick={() => setSearch("")}
-            title="Limpar busca"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 h-6 w-6 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-          >
-            <X size={14} />
-          </button>
-        )}
-      </div>
-
-      {filteredIncomes.length === 0 ? (
-        <Empty text={isSearching ? "Nenhum ganho encontrado." : "Nenhuma fonte de renda cadastrada."} />
-      ) : (
-        <Card className="divide-y divide-slate-100">
-          {filteredIncomes.map((i) => (
-            <Row
-              key={i.id}
-              title={i.source}
-              note={i.note}
-              value={i.value}
-              accent="#059669"
-              recurrent={i.recurrent}
-              paidWithVoucher={i.voucherIncome}
-              paidWithCltPj={i.cltPjIncome}
-              selected={isSelected(i.id)}
-              onToggleSelect={selecting ? () => onToggleSelect(i.id) : undefined}
-              onEdit={() => onEdit(i)}
-              onDelete={() => onDelete(i)}
-            />
-          ))}
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function Desejos({ pending, done, onAdd, onEdit, onDelete, onToggleDone, onMove, selecting, isSelected, onToggleSelect }) {
-  const totalPending = pending.reduce((s, w) => s + (Number(w.value) || 0), 0);
-  const ordered = [...pending, ...done];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-500">Total desejado</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(totalPending)}</p>
-        </div>
-        <button
-          onClick={onAdd}
-          className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-          style={{ background: "#16382c" }}
-        >
-          <Plus size={16} /> Novo desejo
-        </button>
-      </div>
-
-      {ordered.length === 0 ? (
-        <Empty text="Nenhum desejo cadastrado." />
-      ) : (
-        <Card className="divide-y divide-slate-100">
-          {ordered.map((w, idx) => {
-            const inPending = idx < pending.length;
-            const group = inPending ? pending : done;
-            const groupIdx = inPending ? idx : idx - pending.length;
-            return (
-              <WishRow
-                key={w.id}
-                item={w}
-                position={groupIdx + 1}
-                selected={isSelected(w.id)}
-                onToggleSelect={selecting ? () => onToggleSelect(w.id) : undefined}
-                onMoveUp={groupIdx > 0 ? () => onMove(w.id, "up") : undefined}
-                onMoveDown={groupIdx < group.length - 1 ? () => onMove(w.id, "down") : undefined}
-                onEdit={() => onEdit(w)}
-                onDelete={() => onDelete(w)}
-                onToggleDone={() => onToggleDone(w)}
-              />
-            );
-          })}
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function WishRow({ item, onEdit, onDelete, onToggleDone, position, onMoveUp, onMoveDown, selected, onToggleSelect }) {
-  const isDone = !!item.doneAt;
-  return (
-    <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-      {onToggleSelect ? (
-        <SelectCheckbox selected={selected} onToggle={onToggleSelect} label={item.title} />
-      ) : position != null ? (
-        <div className="flex flex-col items-center shrink-0">
-          {onMoveUp ? (
-            <button
-              onClick={onMoveUp}
-              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-              title="Mover para cima"
-            >
-              <ChevronUp size={12} />
-            </button>
-          ) : (
-            <span className="h-4 w-4" />
-          )}
-          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1 tabular-nums leading-tight">
-            {position}
-          </span>
-          {onMoveDown ? (
-            <button
-              onClick={onMoveDown}
-              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-              title="Mover para baixo"
-            >
-              <ChevronDown size={12} />
-            </button>
-          ) : (
-            <span className="h-4 w-4" />
-          )}
-        </div>
-      ) : null}
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-        <div className="min-w-0 sm:flex-1">
-          <p className={"text-sm line-clamp-2 break-words sm:line-clamp-none sm:truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
-          {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
-          {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Realizado em {formatDateBR(item.doneAt)}</p>}
-        </div>
-        <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
-          {item.value > 0 && (
-            <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
-              {fmt(item.value)}
-            </span>
-          )}
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={onToggleDone}
-              className={
-                "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
-                (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
-              }
-              title={isDone ? "Realizado — clique para desfazer" : "Confirmar realizado"}
-            >
-              <Check size={15} />
-            </button>
-            <button
-              onClick={onEdit}
-              className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-              title="Editar"
-            >
-              <Pencil size={15} />
-            </button>
-            <button
-              onClick={onDelete}
-              className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-              title="Excluir"
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SelectCheckbox({ selected, onToggle, label }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      role="checkbox"
-      aria-checked={!!selected}
-      aria-label={`Selecionar ${label}`}
-      title={selected ? "Remover da seleção" : "Adicionar à seleção"}
-      className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-    >
-      <span
-        className={
-          "h-5 w-5 rounded-md border flex items-center justify-center transition-colors " +
-          (selected ? "border-transparent text-white" : "bg-white border-slate-300 text-transparent")
-        }
-        style={selected ? { background: "#16382c" } : undefined}
-      >
-        <Check size={13} strokeWidth={3} />
-      </span>
-    </button>
-  );
-}
-
-function Row({ title, note, value, onEdit, onDelete, accent, muted, recurrent, paidAt, dueDate, onTogglePaid, installmentTotal, installmentNumber, position, onMoveUp, onMoveDown, paidWithVoucher, paidWithCltPj, selected, onToggleSelect }) {
-  const isPaid = !!paidAt;
-  return (
-    <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-      {onToggleSelect ? (
-        <SelectCheckbox selected={selected} onToggle={onToggleSelect} label={title} />
-      ) : position != null ? (
-        <div className="flex flex-col items-center shrink-0">
-          {onMoveUp ? (
-            <button
-              onClick={onMoveUp}
-              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-              title="Mover para cima"
-            >
-              <ChevronUp size={12} />
-            </button>
-          ) : (
-            <span className="h-4 w-4" />
-          )}
-          <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1 tabular-nums leading-tight">
-            {position}
-          </span>
-          {onMoveDown ? (
-            <button
-              onClick={onMoveDown}
-              className="h-4 w-4 flex items-center justify-center rounded text-slate-300 hover:text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-300"
-              title="Mover para baixo"
-            >
-              <ChevronDown size={12} />
-            </button>
-          ) : (
-            <span className="h-4 w-4" />
-          )}
-        </div>
-      ) : null}
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-        <div className="min-w-0 sm:flex-1">
-          <p className={"text-sm flex flex-wrap items-start sm:items-center gap-x-1.5 gap-y-1 " + (muted ? "text-slate-400" : "text-slate-800")}>
-            <span className="basis-full sm:basis-auto line-clamp-2 break-words sm:line-clamp-none sm:truncate">{title}</span>
-            {recurrent && <Repeat size={12} className="text-slate-400 shrink-0" aria-label="Recorrente" />}
-            {installmentTotal && (
-              <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 shrink-0 tabular-nums">
-                {installmentNumber}/{installmentTotal}
-              </span>
-            )}
-            {paidWithVoucher && (
-              <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 rounded px-1.5 py-0.5 shrink-0" title="Vale alimentação">
-                VA
-              </span>
-            )}
-            {paidWithCltPj && (
-              <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-100 rounded px-1.5 py-0.5 shrink-0" title="CLT/PJ">
-                CLT/PJ
-              </span>
-            )}
-          </p>
-          {note ? <p className="text-xs text-slate-400 truncate mt-0.5">{note}</p> : null}
-          {isPaid && <p className="text-xs text-emerald-600 truncate mt-0.5">Pago em {formatDateBR(paidAt)}</p>}
-        </div>
-        <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
-          <span
-            className="text-sm font-semibold tabular-nums shrink-0"
-            style={{ color: muted ? "#94a3b8" : accent || "#1e293b" }}
-          >
-            {fmt(value)}
-          </span>
-          <div className="flex items-center gap-1 shrink-0">
-            {dueDate && (
-              <span
-                className="text-[10px] font-semibold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5 tabular-nums"
-                title="Vencimento"
-              >
-                {formatDateBR(dueDate)}
-              </span>
-            )}
-            {onTogglePaid && (
-              <button
-                onClick={onTogglePaid}
-                className={
-                  "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
-                  (isPaid ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
-                }
-                title={isPaid ? "Pagamento confirmado — clique para desfazer" : "Confirmar pagamento"}
-              >
-                <Check size={15} />
-              </button>
-            )}
-            <button
-              onClick={onEdit}
-              className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-              title="Editar"
-            >
-              <Pencil size={15} />
-            </button>
-            <button
-              onClick={onDelete}
-              className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-              title="Excluir"
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Empty({ text }) {
-  return <p className="text-sm text-slate-400 py-6 text-center">{text}</p>;
-}
-
-/* ---------- modais ---------- */
-function WishModal({ item, onClose, onSave }) {
-  const [title, setTitle] = useState(item?.title || "");
-  const [value, setValue] = useState(item ? String(item.value ?? "") : "");
-  const [note, setNote] = useState(item?.note || "");
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const canSave = title.trim() !== "" && (value === "" || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0));
-
-  const submit = () => {
-    if (!canSave) return;
-    onSave({ title: title.trim(), value: value === "" ? 0 : parseFloat(value), note: note.trim() }, item?.id);
-  };
-
-  return (
-    <Overlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-slate-800">{item ? "Editar desejo" : "Novo desejo"}</h3>
-        <button onClick={onClose} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300">
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="space-y-3.5">
-        <Field label="O que você deseja?">
-          <input
-            ref={inputRef}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ex.: Fone de ouvido novo"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        <Field label="Valor estimado (opcional)">
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="0,00"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        <Field label="Observação (opcional)">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ex.: cor preta, comprar na loja X"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-      </div>
-
-      <div className="flex gap-2 mt-5">
-        <button
-          onClick={onClose}
-          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={submit}
-          disabled={!canSave}
-          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "#16382c" }}
-        >
-          Salvar
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function ShoppingListTab({ items, onAdd, onEdit, onDelete, onToggleDone, onClearDone, selecting, isSelected, onToggleSelect }) {
-  const pending = items.filter((it) => !it.doneAt);
-  const done = items.filter((it) => it.doneAt);
-  const totalPending = pending.reduce((s, it) => s + (Number(it.value) || 0), 0);
-  const ordered = [...pending, ...done];
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-xs text-slate-500">Total estimado</p>
-          <p className="text-xl font-bold text-slate-800 tabular-nums">{fmt(totalPending)}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {onClearDone && (
-            <button
-              onClick={onClearDone}
-              disabled={done.length === 0}
-              className="flex items-center gap-1.5 text-sm font-medium px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <Trash2 size={16} /> Limpar
-            </button>
-          )}
-          <button
-            onClick={onAdd}
-            className="flex items-center gap-1.5 text-white text-sm font-medium px-4 py-2.5 rounded-xl shadow-sm hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400"
-            style={{ background: "#16382c" }}
-          >
-            <Plus size={16} /> Novo item
-          </button>
-        </div>
-      </div>
-
-      {ordered.length === 0 ? (
-        <Empty text="Nenhum item cadastrado." />
-      ) : (
-        <Card className="divide-y divide-slate-100">
-          {ordered.map((it) => (
-            <ShoppingItemRow
-              key={it.id}
-              item={it}
-              selected={isSelected(it.id)}
-              onToggleSelect={selecting ? () => onToggleSelect(it.id) : undefined}
-              onEdit={() => onEdit(it)}
-              onDelete={() => onDelete(it)}
-              onToggleDone={() => onToggleDone(it)}
-            />
-          ))}
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function ShoppingItemRow({ item, onEdit, onDelete, onToggleDone, selected, onToggleSelect }) {
-  const isDone = !!item.doneAt;
-  return (
-    <div className="group flex items-start sm:items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors">
-      {onToggleSelect && <SelectCheckbox selected={selected} onToggle={onToggleSelect} label={item.title} />}
-      <div className="flex-1 min-w-0 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-3">
-        <div className="min-w-0 sm:flex-1">
-          <p className={"text-sm line-clamp-2 break-words sm:line-clamp-none sm:truncate " + (isDone ? "text-slate-400 line-through" : "text-slate-800")}>{item.title}</p>
-          {item.note ? <p className="text-xs text-slate-400 truncate mt-0.5">{item.note}</p> : null}
-          {isDone && <p className="text-xs text-emerald-600 truncate mt-0.5">Comprado em {formatDateBR(item.doneAt)}</p>}
-        </div>
-        <div className="flex items-center justify-between flex-wrap gap-2 sm:flex-nowrap sm:shrink-0 sm:gap-3">
-          {item.value > 0 && (
-            <span className={"text-sm font-semibold tabular-nums shrink-0 " + (isDone ? "text-slate-400" : "text-slate-800")}>
-              {fmt(item.value)}
-            </span>
-          )}
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={onToggleDone}
-              className={
-                "h-8 w-8 rounded-lg flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-300 " +
-                (isDone ? "bg-emerald-100 text-emerald-600 hover:bg-emerald-200" : "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50")
-              }
-              title={isDone ? "Comprado — clique para desfazer" : "Confirmar compra"}
-            >
-              <Check size={15} />
-            </button>
-            <button
-              onClick={onEdit}
-              className="h-8 w-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-              title="Editar"
-            >
-              <Pencil size={15} />
-            </button>
-            <button
-              onClick={onDelete}
-              className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-rose-300"
-              title="Excluir"
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ShoppingItemModal({ item, onClose, onSave }) {
-  const [title, setTitle] = useState(item?.title || "");
-  const [value, setValue] = useState(item ? String(item.value ?? "") : "");
-  const [note, setNote] = useState(item?.note || "");
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const canSave = title.trim() !== "" && (value === "" || (!isNaN(parseFloat(value)) && parseFloat(value) >= 0));
-
-  const submit = () => {
-    if (!canSave) return;
-    onSave({ title: title.trim(), value: value === "" ? 0 : parseFloat(value), note: note.trim() }, item?.id);
-  };
-
-  return (
-    <Overlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-slate-800">{item ? "Editar item" : "Novo item"}</h3>
-        <button onClick={onClose} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300">
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="space-y-3.5">
-        <Field label="O que você precisa comprar?">
-          <input
-            ref={inputRef}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Ex.: Arroz"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        <Field label="Valor estimado (opcional)">
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="0,00"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        <Field label="Observação (opcional)">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ex.: marca preferida, quantidade"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-      </div>
-
-      <div className="flex gap-2 mt-5">
-        <button
-          onClick={onClose}
-          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={submit}
-          disabled={!canSave}
-          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "#16382c" }}
-        >
-          Salvar
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function PairModal({ onClose }) {
-  const [state, setState] = useState({ status: "loading" });
-  const [now, setNow] = useState(() => Date.now());
-
-  const generate = useCallback(async () => {
-    setState({ status: "loading" });
-    try {
-      const res = await fetch("/api/auth/pair", { method: "POST" });
-      if (!res.ok) throw new Error();
-      const { code, expiresAt } = await res.json();
-      setState({ status: "ready", code, expiresAt });
-    } catch {
-      setState({ status: "error" });
-    }
-  }, []);
-
-  useEffect(() => {
-    generate();
-  }, [generate]);
-
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      clearInterval(t);
-    };
-  }, [onClose]);
-
-  /* A contagem aqui e so aviso: quem decide a validade e o expires_at do banco,
-     comparado com now() do Postgres na hora do resgate. */
-  const left = state.status === "ready" ? Math.max(0, Math.ceil((state.expiresAt - now) / 1000)) : 0;
-
-  return (
-    <Overlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-slate-800">Parear celular</h3>
-        <button
-          onClick={onClose}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          <X size={18} />
-        </button>
-      </div>
-      <p className="text-sm text-slate-500 mb-4">
-        Digite este código no aplicativo do celular. Ele vale uma única vez.
-      </p>
-
-      {state.status === "loading" && <p className="text-sm text-slate-400 py-8 text-center">Gerando…</p>}
-      {state.status === "error" && (
-        <p className="text-sm text-rose-500 py-8 text-center">Falha ao gerar o código.</p>
-      )}
-      {state.status === "ready" && (
-        <>
-          <div className="rounded-2xl bg-slate-50 border border-slate-200 py-6 text-center mb-3">
-            <span className="text-3xl font-bold tracking-[0.2em] text-slate-800 tabular-nums select-all">
-              {state.code}
-            </span>
-          </div>
-          <p className={"text-xs text-center mb-4 " + (left > 0 ? "text-slate-400" : "text-rose-500")}>
-            {left > 0
-              ? `Expira em ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}`
-              : "Código expirado."}
-          </p>
-        </>
-      )}
-
-      <button
-        onClick={generate}
-        disabled={state.status === "loading"}
-        className="w-full py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-slate-300"
-      >
-        Gerar novo código
-      </button>
-    </Overlay>
-  );
-}
-
-function CardModal({ item, presetMethod, cards = [], extraPaymentMethods = [], onClose, onSave }) {
-  const methodOptions = useMemo(() => {
-    const taken = new Set(cards.filter((c) => c.id !== item?.id).map((c) => c.paymentMethod));
-    const list = allPaymentMethods(extraPaymentMethods).filter((p) => !taken.has(p));
-    // forma de pagamento que sumiu da lista (último gasto apagado) segue editável no cartão que já a usa
-    return item?.paymentMethod && !list.includes(item.paymentMethod) ? [item.paymentMethod, ...list] : list;
-  }, [cards, item, extraPaymentMethods]);
-
-  const [paymentMethod, setPaymentMethod] = useState(
-    () =>
-      item?.paymentMethod ||
-      (presetMethod && methodOptions.includes(presetMethod) ? presetMethod : methodOptions[0] || "")
-  );
-  const [balance, setBalance] = useState(item ? String(item.balance ?? "") : "");
-  const [referenceDate, setReferenceDate] = useState(item?.referenceDate || todayISO());
-  const [note, setNote] = useState(item?.note || "");
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  const canSave =
-    paymentMethod !== "" &&
-    referenceDate !== "" &&
-    balance !== "" &&
-    !isNaN(parseFloat(balance)) &&
-    parseFloat(balance) >= 0;
-
-  const submit = () => {
-    if (!canSave) return;
-    onSave({ paymentMethod, balance: parseFloat(balance), referenceDate, note: note.trim() }, item?.id);
-  };
-
-  return (
-    <Overlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-slate-800">{item ? "Editar cartão" : "Novo cartão"}</h3>
-        <button
-          onClick={onClose}
-          className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="space-y-3.5">
-        <Field label="Forma de pagamento">
-          {methodOptions.length === 0 ? (
-            <span className="block text-sm text-slate-400">Todas as formas de pagamento já têm saldo cadastrado.</span>
-          ) : (
-            <select
-              value={paymentMethod}
-              onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-            >
-              {methodOptions.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          )}
-        </Field>
-
-        <Field label="Saldo disponível (R$)">
-          <input
-            ref={inputRef}
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            value={balance}
-            onChange={(e) => setBalance(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="0,00"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        <Field label="Data do saldo">
-          <input
-            type="date"
-            value={referenceDate}
-            onChange={(e) => setReferenceDate(e.target.value)}
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-          <span className="block text-[11px] text-slate-400 mt-1">
-            Quando você consultou esse saldo no app do cartão.
-          </span>
-        </Field>
-
-        <Field label="Observação (opcional)">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ex.: fecha dia 10"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-      </div>
-
-      <div className="flex gap-2 mt-5">
-        <button
-          onClick={onClose}
-          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={submit}
-          disabled={!canSave}
-          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "#16382c" }}
-        >
-          Salvar
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function EntryModal({ mode, item, onClose, onSave, extraCategories = [], extraPaymentMethods = [], months = [], currentMonth, onMoveMonth }) {
-  const isExpense = mode === "expense";
-  const isSerasa = mode === "serasa";
-  const hasCategory = isExpense || isSerasa;
-  const baseCategoryList = isSerasa ? SERASA_CATS : CATS;
-  const categoryList = useMemo(
-    () => [
-      ...baseCategoryList,
-      ...extraCategories
-        .filter((name) => !baseCategoryList.some((c) => c.name === name))
-        .map((name) => ({ name, ...FALLBACK })),
-    ],
-    [baseCategoryList, extraCategories]
-  );
-  const paymentMethodList = useMemo(
-    () => allPaymentMethods(extraPaymentMethods),
-    [extraPaymentMethods]
-  );
-  const [desc, setDesc] = useState(item ? (mode === "income" ? item.source : item.description) : "");
-  const [category, setCategory] = useState(item?.category || categoryList[0].name);
-  const [categoryMode, setCategoryMode] = useState(() =>
-    categoryList.some((c) => c.name === (item?.category || categoryList[0].name)) ? "select" : "custom"
-  );
-  const [value, setValue] = useState(item ? String(item.value) : "");
-  const [note, setNote] = useState(item?.note || "");
-  const [dueDate, setDueDate] = useState(item?.dueDate || "");
-  const [receiptDate, setReceiptDate] = useState(item?.receiptDate || "");
-  const [recurrent, setRecurrent] = useState(item?.recurrent || false);
-  const [repeatMode, setRepeatMode] = useState(() => {
-    if (item?.installmentTotal) return "installments";
-    if (item?.recurrent) return "recurrent";
-    return "none";
-  });
-  const [installmentTotal, setInstallmentTotal] = useState(item?.installmentTotal || 2);
-  const [purchaseTotal, setPurchaseTotal] = useState(item?.purchaseTotal ? String(item.purchaseTotal) : "");
-  const [paidWithVoucher, setPaidWithVoucher] = useState(item?.paidWithVoucher || false);
-  const [paidWithCltPj, setPaidWithCltPj] = useState(item?.paidWithCltPj || false);
-  const [voucherIncome, setVoucherIncome] = useState(item?.voucherIncome || false);
-  const [cltPjIncome, setCltPjIncome] = useState(item?.cltPjIncome || false);
-  const [paymentMethod, setPaymentMethod] = useState(item?.paymentMethod || "");
-  const [paymentMethodMode, setPaymentMethodMode] = useState(() =>
-    !item?.paymentMethod || paymentMethodList.includes(item.paymentMethod) ? "select" : "custom"
-  );
-  const [moveTarget, setMoveTarget] = useState("");
-  const [moving, setMoving] = useState(false);
-  const [moveError, setMoveError] = useState("");
-  const inputRef = useRef(null);
-
-  const otherMonths = useMemo(
-    () => months.filter((m) => m !== currentMonth).sort(),
-    [months, currentMonth]
-  );
-
-  const handleMove = async () => {
-    if (!moveTarget || moving) return;
-    setMoving(true);
-    setMoveError("");
-    try {
-      await onMoveMonth(item, moveTarget);
-    } catch (err) {
-      setMoveError(err.message || "Falha ao mover o gasto.");
-      setMoving(false);
-    }
-  };
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    const onKey = (e) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  // O limite do cartão cai o valor cheio da compra de uma vez, não a parcela, então o
-  // total é o que a aba Cartões desconta. Em branco vale: cai em parcela × parcelas.
-  const showPurchaseTotal = hasCategory && isExpense && repeatMode === "installments";
-  const suggestedTotal =
-    !isNaN(parseFloat(value)) && Number.isInteger(installmentTotal) && installmentTotal >= 2
-      ? parseFloat(value) * installmentTotal
-      : NaN;
-  const totalFilled = purchaseTotal.trim() !== "";
-  const typedTotal = parseFloat(purchaseTotal);
-  const totalOk = !showPurchaseTotal || !totalFilled || (!isNaN(typedTotal) && typedTotal > 0);
-
-  const canSave =
-    desc.trim() !== "" &&
-    value !== "" &&
-    !isNaN(parseFloat(value)) &&
-    parseFloat(value) >= 0 &&
-    (!hasCategory || category.trim() !== "") &&
-    totalOk &&
-    (!hasCategory || repeatMode !== "installments" || (Number.isInteger(installmentTotal) && installmentTotal >= 2));
-
-  const submit = () => {
-    if (!canSave) return;
-    const data = hasCategory
-      ? {
-          description: desc.trim(),
-          category: category.trim(),
-          value: parseFloat(value),
-          note: note.trim(),
-          dueDate: dueDate || null,
-          recurrent: repeatMode === "recurrent",
-          installmentTotal: repeatMode === "installments" ? installmentTotal : null,
-          installmentNumber: repeatMode === "installments" ? item?.installmentNumber || 1 : null,
-          purchaseTotal: showPurchaseTotal && totalFilled ? typedTotal : null,
-          ...(isExpense ? { paidWithVoucher, paidWithCltPj, paymentMethod: paymentMethod.trim() || null } : {}),
-        }
-      : { source: desc.trim(), value: parseFloat(value), note: note.trim(), receiptDate: receiptDate || null, recurrent, voucherIncome, cltPjIncome };
-    onSave(mode, data, item?.id);
-  };
-
-  const title = isSerasa ? (item ? "Editar dívida" : "Nova dívida") : `${item ? "Editar" : "Novo"} ${isExpense ? "gasto" : "ganho"}`;
-
-  return (
-    <Overlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-base font-bold text-slate-800">{title}</h3>
-        <button onClick={onClose} className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300">
-          <X size={18} />
-        </button>
-      </div>
-
-      <div className="space-y-3.5">
-        <Field label={mode === "income" ? "Fonte de renda" : "Descrição"}>
-          <input
-            ref={inputRef}
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            placeholder={mode === "income" ? "Ex.: NeoGrid" : isSerasa ? "Ex.: Cartão Nubank" : "Ex.: Luz"}
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        {hasCategory && (
-          <Field label="Categoria">
-            {categoryMode === "select" ? (
-              <select
-                value={category}
-                onChange={(e) => {
-                  if (e.target.value === NEW_CATEGORY) {
-                    setCategoryMode("custom");
-                    setCategory("");
-                  } else {
-                    setCategory(e.target.value);
-                  }
-                }}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-              >
-                {categoryList.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-                <option value={NEW_CATEGORY}>+ Criar nova categoria</option>
-              </select>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  autoFocus
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  placeholder="Nome da nova categoria"
-                  className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCategoryMode("select");
-                    setCategory(categoryList.some((c) => c.name === category) ? category : categoryList[0].name);
-                  }}
-                  title="Cancelar"
-                  className="h-[42px] w-[42px] shrink-0 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-          </Field>
-        )}
-
-        {isExpense && (
-          <Field label="Forma de pagamento (opcional)">
-            {paymentMethodMode === "select" ? (
-              <select
-                value={paymentMethod}
-                onChange={(e) => {
-                  if (e.target.value === NEW_PAYMENT_METHOD) {
-                    setPaymentMethodMode("custom");
-                    setPaymentMethod("");
-                  } else {
-                    setPaymentMethod(e.target.value);
-                  }
-                }}
-                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-              >
-                <option value="">Nenhuma</option>
-                {paymentMethodList.map((p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ))}
-                <option value={NEW_PAYMENT_METHOD}>+ Adicionar forma de pagamento</option>
-              </select>
-            ) : (
-              <div className="flex gap-2">
-                <input
-                  autoFocus
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  placeholder="Nome da forma de pagamento"
-                  className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPaymentMethodMode("select");
-                    setPaymentMethod(paymentMethodList.includes(paymentMethod) ? paymentMethod : "");
-                  }}
-                  title="Cancelar"
-                  className="h-[42px] w-[42px] shrink-0 rounded-xl border border-slate-200 text-slate-400 hover:text-slate-700 hover:bg-slate-50 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-slate-300"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-            )}
-          </Field>
-        )}
-
-        <Field label="Valor (R$)">
-          <input
-            type="number"
-            inputMode="decimal"
-            min="0"
-            step="0.01"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
-            placeholder="0,00"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        {mode === "income" ? (
-          <Field label="Data prevista de recebimento (opcional)">
-            <input
-              type="date"
-              value={receiptDate}
-              onChange={(e) => setReceiptDate(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-            />
-          </Field>
-        ) : (
-          <Field label="Data de vencimento (opcional)">
-            <input
-              type="date"
-              value={dueDate}
-              onChange={(e) => setDueDate(e.target.value)}
-              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-            />
-          </Field>
-        )}
-
-        <Field label="Observação (opcional)">
-          <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Ex.: parcela 2/3"
-            className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-          />
-        </Field>
-
-        {hasCategory ? (
-          <div className="block">
-            <span className="text-xs font-medium text-slate-500 mb-1 block">Repetição</span>
-            <div className="flex flex-col gap-2">
-              {[
-                ["none", "Não se repete"],
-                ["recurrent", "Recorrente (repete todo mês)"],
-                ["installments", "Parcelado"],
-              ].map(([value, label]) => (
-                <label key={value} className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-                  <input
-                    type="radio"
-                    name="repeatMode"
-                    checked={repeatMode === value}
-                    onChange={() => setRepeatMode(value)}
-                    className="h-4 w-4 text-slate-700 focus:ring-slate-400"
-                  />
-                  {label}
-                </label>
-              ))}
-              {repeatMode === "installments" && (
-                <div className="flex items-center gap-2 pl-6">
-                  <span className="text-xs text-slate-500">Em quantas vezes?</span>
-                  <input
-                    type="number"
-                    min="2"
-                    step="1"
-                    value={installmentTotal}
-                    onChange={(e) => setInstallmentTotal(parseInt(e.target.value, 10) || 2)}
-                    className="w-16 px-2 py-1.5 rounded-lg border border-slate-200 text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-                  />
-                  {item?.installmentNumber && (
-                    <span className="text-xs text-slate-400">(esta é a parcela {item.installmentNumber})</span>
-                  )}
-                </div>
-              )}
-              {showPurchaseTotal && (
-                <div className="pl-6">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-500">Valor total da compra (R$)</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={purchaseTotal}
-                      onChange={(e) => setPurchaseTotal(e.target.value)}
-                      placeholder={isNaN(suggestedTotal) ? "0,00" : suggestedTotal.toFixed(2)}
-                      className={
-                        "w-28 px-2 py-1.5 rounded-lg border text-sm text-slate-800 tabular-nums focus:outline-none focus:ring-2 focus:ring-slate-400 " +
-                        (totalOk ? "border-slate-200 focus:border-slate-400" : "border-rose-400")
-                      }
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {totalOk
-                      ? "O limite do cartão cai o valor total de uma vez, não a parcela. Em branco, usamos a parcela vezes o número de parcelas."
-                      : "Informe um valor maior que zero ou deixe em branco."}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-              <input
-                type="checkbox"
-                checked={recurrent}
-                onChange={(e) => setRecurrent(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-              />
-              Recorrente (repete todo mês)
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-              <input
-                type="checkbox"
-                checked={voucherIncome}
-                onChange={(e) => setVoucherIncome(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-              />
-              Este valor é do vale alimentação
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-              <input
-                type="checkbox"
-                checked={cltPjIncome}
-                onChange={(e) => setCltPjIncome(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-              />
-              Este valor é CLT/PJ
-            </label>
-          </div>
-        )}
-
-        {isExpense && (
-          <div className="flex flex-col gap-2 pt-1">
-            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-              <input
-                type="checkbox"
-                checked={paidWithVoucher}
-                onChange={(e) => setPaidWithVoucher(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-              />
-              Pago com vale alimentação
-            </label>
-            <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
-              <input
-                type="checkbox"
-                checked={paidWithCltPj}
-                onChange={(e) => setPaidWithCltPj(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-slate-700 focus:ring-slate-400"
-              />
-              Pago com valor CLT/PJ
-            </label>
-          </div>
-        )}
-
-        {isExpense && item && otherMonths.length > 0 && (
-          <div className="rounded-xl border border-slate-200 p-3.5">
-            <span className="text-xs font-medium text-slate-500 mb-2 block">Mover para outro mês</span>
-            <div className="flex gap-2">
-              <select
-                value={moveTarget}
-                onChange={(e) => {
-                  setMoveTarget(e.target.value);
-                  setMoveError("");
-                }}
-                className="flex-1 min-w-0 px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:border-slate-400"
-              >
-                <option value="">Selecione o mês</option>
-                {otherMonths.map((m) => (
-                  <option key={m} value={m}>
-                    {monthLabel(m)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={handleMove}
-                disabled={!moveTarget || moving}
-                className="shrink-0 px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {moving ? "Movendo…" : "Mover"}
-              </button>
-            </div>
-            {moveError && <p className="text-xs text-rose-600 mt-2">{moveError}</p>}
-          </div>
-        )}
-      </div>
-
-      <div className="flex gap-2 mt-5">
-        <button
-          onClick={onClose}
-          className="flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={submit}
-          disabled={!canSave}
-          className="flex-1 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-400 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: mode === "income" ? "#059669" : "#16382c" }}
-        >
-          Salvar
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function ConfirmModal({ state, onCancel, onConfirm }) {
-  useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onCancel();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel]);
-  return (
-    <Overlay onClose={onCancel}>
-      <h3 className='text-base font-bold text-slate-800 mb-1'>Excluir lançamento?</h3>
-      <p className='text-sm text-slate-500 mb-5'>
-        “{state.payload.description || state.payload.source || state.payload.title || state.payload.cardName || state.payload.paymentMethod}” será removido. Não dá pra desfazer.
-      </p>
-      <div className='flex gap-2'>
-        <button
-          onClick={onCancel}
-          className='flex-1 py-2.5 rounded-xl border border-slate-200 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-300'
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={onConfirm}
-          className='flex-1 py-2.5 rounded-xl bg-rose-600 text-white text-sm font-semibold shadow-sm hover:bg-rose-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-rose-400'
-        >
-          Excluir
-        </button>
-      </div>
-    </Overlay>
-  );
-}
-
-function Overlay({ children, onClose }) {
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-slate-900/40"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-xl max-h-[90vh] overflow-y-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, children }) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-slate-500 mb-1 block">{label}</span>
-      {children}
-    </label>
   );
 }
