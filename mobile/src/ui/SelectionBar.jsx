@@ -1,129 +1,130 @@
 import { Text, View } from "react-native";
 import { Touchable } from "./Touchable";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowDownRight, ArrowUpRight, Calculator, Check, X } from "lucide-react-native";
 import { fmt } from "../core/format";
 import { selectionLabel } from "../core/selection";
-
-const NUM = { fontVariant: ["tabular-nums"] };
-const BRAND = "#16382c";
+import { NUM, useTheme } from "./theme";
+import { STROKE } from "./icons";
 
 /* Caixinha de seleção nas linhas. Prop opcional: quem não passa onToggle não
    renderiza nada, então as abas fora do modo seleção ficam intactas. */
-export function SelectCheckbox({ selected, onToggle }) {
+export function SelectCheckbox({ selected, onToggle, label = "Selecionar" }) {
+  const { colors } = useTheme();
   return (
     <Touchable
       variant="icon"
       onPress={onToggle}
       hitSlop={{ left: 10, top: 6, bottom: 6 }}
-      className="h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+      accessibilityRole="checkbox"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: !!selected }}
+      className="h-9 w-7 shrink-0 items-center justify-center"
     >
       <View
-        className="h-5 w-5 rounded-md border items-center justify-center"
-        style={
-          selected
-            ? { backgroundColor: BRAND, borderColor: "transparent" }
-            : { backgroundColor: "#ffffff", borderColor: "#cbd5e1" }
-        }
+        className="h-[22px] w-[22px] rounded-[6px] border items-center justify-center"
+        style={selected ? { backgroundColor: colors.forest2, borderColor: colors.forest2 } : { backgroundColor: colors.surface, borderColor: colors.line }}
       >
-        <Check size={13} color={selected ? "#ffffff" : "transparent"} strokeWidth={3} />
+        {selected ? <Check size={14} color="#ffffff" strokeWidth={3} /> : null}
       </View>
     </Touchable>
   );
 }
 
-export function SelectionFab({ onPress }) {
-  const insets = useSafeAreaInsets();
+/* Botao flutuante da calculadora, logo acima da barra de abas. */
+export function SelectionFab({ onPress, bottom }) {
   return (
-    /* Em celular com navegacao por gestos, bottom fixo deixaria o botao sob a
-       barra do sistema. O inset e 0 onde nao existe. */
-    <View className="absolute right-5" style={{ bottom: 24 + insets.bottom }}>
+    <View className="absolute right-4" style={{ bottom }}>
       <Touchable
         onDark
         onPress={onPress}
-        className="h-16 w-16 rounded-2xl items-center justify-center"
-        style={{ backgroundColor: BRAND, elevation: 6, shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }}
+        accessibilityLabel="Somar itens"
+        className="h-[56px] w-[56px] rounded-[18px] items-center justify-center bg-forest-2"
+        style={{ elevation: 6, shadowColor: "#0a3827", shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 6 } }}
       >
-        <Calculator size={26} color="#ffffff" />
+        <Calculator size={25} color="#ffffff" strokeWidth={STROKE} />
       </Touchable>
     </View>
   );
 }
 
-export function SelectionBar({ stats, onClear, onClose, onLayout }) {
+/* Pilula "Somar itens" + dica no topo da lista enquanto o modo esta ligado. */
+export function SelectionHint({ text = "Selecione os lançamentos que deseja somar" }) {
+  const { colors } = useTheme();
+  return (
+    <View className="flex-row items-center gap-3 mb-3">
+      <View className="flex-row items-center gap-1.5 rounded-full bg-forest-2 px-3 py-1.5">
+        <Calculator size={14} color="#ffffff" strokeWidth={STROKE} />
+        <Text className="font-brand-semibold text-[12px] text-white">Somar itens</Text>
+      </View>
+      <Text className="font-brand text-[12px] text-muted flex-1" numberOfLines={2}>
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/* Barra "N itens selecionados · Total somado" (somar-itens.jpg). */
+export function SelectionBar({ stats, onClear, onClose, onLayout, bottom }) {
   const { count, inflow, outflow, net, mixed } = stats;
-  const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
 
   /* O caso comum — só saídas — fica idêntico a uma soma simples, sem sinal nem
      ruído. Só quando entra e sai se misturam o número vira saldo. */
-  const cor = mixed
-    ? net >= 0
-      ? "text-emerald-600"
-      : "text-rose-600"
-    : inflow > 0
-    ? "text-emerald-600"
-    : "text-slate-800";
+  const cor = mixed ? (net >= 0 ? "text-positive" : "text-coral") : inflow > 0 ? "text-positive" : "text-heading";
 
   return (
-    <View
-      onLayout={onLayout}
-      className="absolute left-0 right-0 bottom-0 bg-white border-t border-slate-200 px-4 pt-3"
-      style={{
-        paddingBottom: 12 + insets.bottom,
-        elevation: 12,
-        shadowColor: "#000",
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: -4 },
-      }}
-    >
-      <View className="flex-row items-center gap-3">
-        <View className="flex-1 min-w-0">
-          <Text className="text-[11px] text-slate-500" numberOfLines={1}>
-            {count === 0 ? "Marque itens para somar" : selectionLabel(stats)}
-          </Text>
-          <View className="flex-row items-baseline gap-1.5">
-            <Text className="text-[11px] font-medium text-slate-500">{mixed ? "Saldo" : "Total"}</Text>
-            <Text className={"text-lg font-bold " + cor} style={NUM}>
-              {mixed
-                ? `${net >= 0 ? "+ " : "− "}${fmt(Math.abs(net))}`
-                : fmt(inflow > 0 ? inflow : outflow)}
+    <View onLayout={onLayout} className="absolute left-3 right-3" style={{ bottom }}>
+      <View
+        className="rounded-[16px] bg-surface border border-line px-4 py-3"
+        style={{ elevation: 12, shadowColor: "#10251b", shadowOpacity: 0.14, shadowRadius: 14, shadowOffset: { width: 0, height: 6 } }}
+      >
+        <View className="flex-row items-center gap-3">
+          <View className="flex-1 min-w-0">
+            <Text className="font-brand text-[12px] text-muted" numberOfLines={1}>
+              {count === 0 ? "Marque itens para somar" : count === 1 ? "1 item selecionado" : `${count} itens selecionados`}
             </Text>
+            <Text className="font-brand text-[11px] text-muted" numberOfLines={1}>
+              {count === 0 ? " " : (mixed ? "Saldo somado · " : "Total somado · ") + selectionLabel(stats)}
+            </Text>
+            <Text className={"font-display text-[20px] leading-[25px] " + cor} style={NUM}>
+              {mixed ? `${net >= 0 ? "+ " : "− "}${fmt(Math.abs(net))}` : fmt(inflow > 0 ? inflow : outflow)}
+            </Text>
+            {mixed ? (
+              <View className="flex-row items-center gap-3">
+                <View className="flex-row items-center gap-0.5">
+                  <ArrowUpRight size={12} color={colors.positive} />
+                  <Text className="font-brand text-[11px] text-muted" style={NUM}>
+                    entra {fmt(inflow)}
+                  </Text>
+                </View>
+                <View className="flex-row items-center gap-0.5">
+                  <ArrowDownRight size={12} color={colors.coral} />
+                  <Text className="font-brand text-[11px] text-muted" style={NUM}>
+                    sai {fmt(outflow)}
+                  </Text>
+                </View>
+              </View>
+            ) : null}
           </View>
-          {mixed ? (
-            <View className="flex-row items-center gap-3">
-              <View className="flex-row items-center gap-0.5">
-                <ArrowUpRight size={11} color="#059669" />
-                <Text className="text-[11px] text-slate-500" style={NUM}>
-                  entra {fmt(inflow)}
-                </Text>
-              </View>
-              <View className="flex-row items-center gap-0.5">
-                <ArrowDownRight size={11} color="#f43f5e" />
-                <Text className="text-[11px] text-slate-500" style={NUM}>
-                  sai {fmt(outflow)}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-        </View>
 
-        <Touchable
-          onPress={onClear}
-          disabled={count === 0}
-          hitSlop={{ top: 6, bottom: 6 }}
-          className="shrink-0 px-3 py-2.5 rounded-lg disabled:opacity-40"
-        >
-          <Text className="text-xs font-medium text-slate-500">Limpar</Text>
-        </Touchable>
-        <Touchable
-          variant="icon"
-          onPress={onClose}
-          hitSlop={{ top: 6, bottom: 6, right: 6 }}
-          className="shrink-0 h-9 w-9 rounded-xl bg-slate-100 items-center justify-center"
-        >
-          <X size={16} color="#64748b" />
-        </Touchable>
+          <Touchable
+            onPress={onClear}
+            disabled={count === 0}
+            hitSlop={{ top: 6, bottom: 6 }}
+            className="shrink-0 h-10 px-4 rounded-[11px] border border-champagne bg-tint-gold items-center justify-center disabled:opacity-40"
+          >
+            <Text className="font-brand-semibold text-[13px] text-gold">Limpar</Text>
+          </Touchable>
+          <Touchable
+            variant="icon"
+            onPress={onClose}
+            hitSlop={{ top: 6, bottom: 6, right: 6 }}
+            accessibilityLabel="Fechar calculadora"
+            className="shrink-0 h-10 w-10 rounded-[11px] border border-line items-center justify-center"
+          >
+            <X size={17} color={colors.muted} strokeWidth={STROKE} />
+          </Touchable>
+        </View>
       </View>
     </View>
   );

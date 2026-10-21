@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
 import Animated, { useSharedValue, useAnimatedStyle, runOnJS } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useTheme } from "./theme";
 
 /* Reordenacao por arraste DENTRO de um grupo (mesma semantica das setas: nunca
    atravessa categoria/forma de pagamento). Ao soltar, devolve a sequencia nova
@@ -53,6 +54,7 @@ function hoveredIndex(active, ty, hts) {
    proprios porque nem toda linha tem fundo (as de Gastos sao transparentes) e
    a copia flutua por cima das outras. */
 function DragOverlay({ top, dragY, children }) {
+  const { colors } = useTheme();
   const style = useAnimatedStyle(() => ({ transform: [{ translateY: dragY.value }] }));
   return (
     <Animated.View
@@ -65,7 +67,7 @@ function DragOverlay({ top, dragY, children }) {
           top,
           zIndex: 20,
           elevation: 8,
-          backgroundColor: "#ffffff",
+          backgroundColor: colors.surface,
           shadowColor: "#0f172a",
           shadowOpacity: 0.15,
           shadowRadius: 8,

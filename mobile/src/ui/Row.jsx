@@ -1,141 +1,91 @@
+import { memo } from "react";
 import { Text, View } from "react-native";
+import { MoreHorizontal, Repeat } from "lucide-react-native";
+import { fmt, formatDayMonth } from "../core/format";
 import { Touchable } from "./Touchable";
-import { Check, ChevronDown, ChevronUp, Pencil, Repeat, Trash2 } from "lucide-react-native";
-import { fmt, formatDateBR } from "../core/format";
+import { IconBubble, IconButton, StatusPill } from "./kit";
 import { SelectCheckbox } from "./SelectionBar";
+import { NUM, useTheme } from "./theme";
 
-const NUM = { fontVariant: ["tabular-nums"] };
+/* Linha de lancamento do kit (gastos.jpg): bolha, titulo serifado, "Categoria ·
+   Origem", "Vence 03 out", valor, selo Pago/Pendente e "•••".
 
-function Chip({ children, bg, color }) {
+   O "•••" so AVISA a tela (onMore): a folha de acoes e UMA por tela. Uma folha
+   por linha montaria um Modal por gasto — setembro (89 gastos) foi exatamente
+   o caso que travava o app quando cada linha carregava nos nativos proprios.
+   Tocar no selo marca/desmarca pago na hora. */
+export const Row = memo(function Row({
+  item,
+  title,
+  icon,
+  color,
+  tone = "coral",
+  lines = [],
+  accent,
+  showStatus,
+  onTogglePaid,
+  onMore,
+  selected,
+  onToggleSelect,
+  highlight,
+  prefix = "",
+}) {
+  const { colors } = useTheme();
+  const paid = !!item.paidAt;
+  const amountColor = accent || (showStatus && !paid ? colors.coral : colors.heading);
+
   return (
-    <View className="rounded px-1.5 py-0.5" style={{ backgroundColor: bg }}>
-      <Text className="text-[10px] font-semibold" style={{ color, ...NUM }}>
-        {children}
-      </Text>
-    </View>
-  );
-}
-
-/* Equivalente do Row da web (meu-caixa.jsx:2281). Sem hover, focus-ring nem
-   transition — nada disso existe em RN; o feedback vem do Touchable. */
-export function Row({ item, onEdit, onDelete, onTogglePaid, onMoveUp, onMoveDown, accent, selected, onToggleSelect }) {
-  const isPaid = !!item.paidAt;
-  const muted = !item.value;
-
-  return (
-    <View className="flex-row items-start gap-3 px-4 py-3">
+    <View className={"flex-row items-center gap-3 px-3.5 py-3 " + (highlight ? "bg-tint-green" : "")}>
       {onToggleSelect ? <SelectCheckbox selected={selected} onToggle={onToggleSelect} /> : null}
-      {/* Coluna de reordenar: so aparece quando os handlers vem. A web esconde
-          as setas enquanto ha filtro ativo — mover numa lista filtrada
-          reescreveria `order` com base numa ordem que nao e a real. */}
-      {onMoveUp || onMoveDown ? (
-        <View className="items-center shrink-0 pt-0.5 gap-1">
-          {/* Alvos de 36px com 4px de intervalo, e hitSlop crescendo SO para
-              fora: as regioes nunca se encontram, entao errar no vao nao faz
-              nada — melhor que mover a linha para o lado errado. */}
-          <Touchable
-            variant="icon"
-            onPress={onMoveUp}
-            disabled={!onMoveUp}
-            hitSlop={{ top: 8, left: 8, right: 8, bottom: 0 }}
-            className="h-9 w-9 items-center justify-center rounded disabled:opacity-25"
-          >
-            <ChevronUp size={16} color="#94a3b8" />
-          </Touchable>
-          <Touchable
-            variant="icon"
-            onPress={onMoveDown}
-            disabled={!onMoveDown}
-            hitSlop={{ top: 0, left: 8, right: 8, bottom: 8 }}
-            className="h-9 w-9 items-center justify-center rounded disabled:opacity-25"
-          >
-            <ChevronDown size={16} color="#94a3b8" />
-          </Touchable>
-        </View>
-      ) : null}
+      <IconBubble icon={icon} color={color} tone={tone} />
       <View className="flex-1 min-w-0">
-        <View className="flex-row flex-wrap items-center gap-x-1.5 gap-y-1">
+        <View className="flex-row items-center gap-1.5">
           <Text
-            className={"text-sm " + (muted ? "text-slate-400" : "text-slate-800")}
+            className={"font-display text-[15px] leading-[20px] " + (paid && highlight ? "text-muted" : "text-heading")}
             numberOfLines={2}
             style={{ flexShrink: 1 }}
           >
-            {item.description}
+            {title}
           </Text>
-          {item.recurrent ? <Repeat size={12} color="#94a3b8" /> : null}
-          {item.installmentTotal ? (
-            <Chip bg="#f1f5f9" color="#64748b">
-              {item.installmentNumber}/{item.installmentTotal}
-            </Chip>
-          ) : null}
-          {item.paidWithVoucher ? (
-            <Chip bg="#fef3c7" color="#b45309">
-              VA
-            </Chip>
-          ) : null}
-          {item.paidWithCltPj ? (
-            <Chip bg="#e0e7ff" color="#4338ca">
-              CLT/PJ
-            </Chip>
-          ) : null}
+          {item.recurrent ? <Repeat size={12} color={colors.muted} /> : null}
         </View>
-
-        {item.note ? (
-          <Text className="text-xs text-slate-400 mt-0.5" numberOfLines={1}>
-            {item.note}
+        {lines.filter(Boolean).map((l, i) => (
+          <Text key={i} className="font-brand text-[12px] text-muted mt-0.5" numberOfLines={1} style={NUM}>
+            {l}
           </Text>
-        ) : null}
-        {isPaid ? (
-          <Text className="text-xs text-emerald-600 mt-0.5">Pago em {formatDateBR(item.paidAt)}</Text>
-        ) : null}
-
-        <View className="flex-row items-center gap-2 mt-1.5">
-          <Text
-            className="text-sm font-semibold"
-            style={{ color: muted ? "#94a3b8" : accent || "#1e293b", ...NUM }}
-          >
-            {fmt(item.value)}
-          </Text>
-          {item.dueDate ? (
-            <Chip bg="#f1f5f9" color="#64748b">
-              {formatDateBR(item.dueDate)}
-            </Chip>
-          ) : null}
-        </View>
+        ))}
       </View>
-
-      <View className="flex-row items-center gap-1 shrink-0">
-        {/* Adjacencia horizontal: o slop cresce na vertical (sempre seguro) e
-            so para fora nas pontas. Manter 36 de largura — um trio de 44
-            esmagaria a descricao numa tela de 360dp. */}
-        {onTogglePaid ? (
-          <Touchable
-            variant="icon"
-            onPress={onTogglePaid}
-            hitSlop={{ top: 8, bottom: 8, left: 8 }}
-            className="h-9 w-9 rounded-lg items-center justify-center"
-            style={{ backgroundColor: isPaid ? "#d1fae5" : "transparent" }}
-          >
-            <Check size={16} color={isPaid ? "#059669" : "#94a3b8"} />
-          </Touchable>
+      <View className="items-end gap-1.5 shrink-0">
+        <Text
+          className="font-display text-[15px]"
+          style={{ color: amountColor, textDecorationLine: paid && highlight ? "line-through" : "none", ...NUM }}
+        >
+          {prefix}
+          {fmt(item.value)}
+        </Text>
+        {showStatus ? (
+          onTogglePaid ? (
+            <Touchable variant="icon" onPress={onTogglePaid} hitSlop={6} accessibilityLabel={paid ? "Desmarcar pago" : "Marcar como pago"}>
+              <StatusPill paid={paid} />
+            </Touchable>
+          ) : (
+            <StatusPill paid={paid} />
+          )
         ) : null}
-        <Touchable
-          variant="icon"
-          onPress={onEdit}
-          hitSlop={{ top: 8, bottom: 8 }}
-          className="h-9 w-9 rounded-lg items-center justify-center"
-        >
-          <Pencil size={16} color="#94a3b8" />
-        </Touchable>
-        <Touchable
-          variant="icon"
-          onPress={onDelete}
-          hitSlop={{ top: 8, bottom: 8, right: 8 }}
-          className="h-9 w-9 rounded-lg items-center justify-center"
-        >
-          <Trash2 size={16} color="#94a3b8" />
-        </Touchable>
       </View>
+      {onMore ? <IconButton icon={MoreHorizontal} onPress={onMore} label="Mais ações" size={34} /> : null}
     </View>
   );
-}
+});
+
+/* "Vence 03 out" / "Pago em 02 out" + "3/10". */
+export const dueLine = (it) =>
+  [
+    it.paidAt ? `Pago em ${formatDayMonth(it.paidAt)}` : it.dueDate ? `Vence ${formatDayMonth(it.dueDate)}` : null,
+    it.installmentTotal ? `${it.installmentNumber}/${it.installmentTotal}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+/* "Moradia · CLT/PJ" — de onde saiu o dinheiro do gasto. */
+export const originOf = (it) => [it.paidWithCltPj && "CLT/PJ", it.paidWithVoucher && "VA"].filter(Boolean).join(" + ");

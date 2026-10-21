@@ -1,92 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  AppState,
-  RefreshControl,
-  ScrollView,
-  Text,
-  View,
-} from "react-native";
+import { Alert, AppState, BackHandler, RefreshControl, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
-import { Touchable } from "../ui/Touchable";
-import { LinearGradient } from "expo-linear-gradient";
-import { AlertTriangle, ArrowDownRight, ArrowUpRight, LogOut, PiggyBank, Plus, WifiOff } from "lucide-react-native";
-import { addMonths, fmt, formatDateBR, monthKey, monthLabel } from "../core/format";
-import { nextExpenses, nextIncomes } from "../core/upcoming";
+import { StatusBar } from "expo-status-bar";
+import { CalendarCheck, CreditCard, Heart, Pill, ReceiptText, ShoppingCart, Wallet, WifiOff } from "lucide-react-native";
+import { addMonths, monthKey, monthLabel, setHideValues, todayISO } from "../core/format";
 import { totalOf } from "../core/group";
 import { CATS, PAYMENT_METHODS, SERASA_CATS } from "../core/catalog";
 import { buildCardsWithUsage, canAddCard, spentByPaymentMethod, unregisteredMethodSpend, upfrontByPaymentMethod } from "../core/cards";
 import { applyOrder, orderFromSequence, reorderWithin } from "../core/reorder";
 import { pruneMonthKeys, selectionStats, toggleKey } from "../core/selection";
-import { SelectionBar, SelectionFab } from "../ui/SelectionBar";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { uid } from "../core/uid";
 import { store } from "../api/store";
 import { monthKeyFor, readCache, writeCache } from "../api/cache";
+import { useDebouncedSave } from "../hooks/useDebouncedSave";
+import { useSaveStatus } from "../hooks/useSaveStatus";
+import { SelectionBar, SelectionFab } from "../ui/SelectionBar";
+import { AppHeader, TabBar, sectionOfTab } from "../ui/shell";
+import { Panel, Segmented, Skeleton, Toast } from "../ui/kit";
+import { useTheme } from "../ui/theme";
 import OverviewTab from "./OverviewTab";
 import GastosTab from "./GastosTab";
 import GanhosTab from "./GanhosTab";
 import SerasaTab from "./SerasaTab";
 import CartoesTab from "./CartoesTab";
 import FechamentoTab from "./FechamentoTab";
-import CardModal from "../modals/CardModal";
-import CardClosingModal from "../modals/CardClosingModal";
 import ChecklistTab from "./ChecklistTab";
+import SettingsTab from "./SettingsTab";
+import CardModal, { BalanceModal } from "../modals/CardModal";
+import CardClosingModal from "../modals/CardClosingModal";
 import ChecklistModal from "../modals/ChecklistModal";
 import EntryModal from "../modals/EntryModal";
 import ConfirmModal from "../modals/ConfirmModal";
-import { useDebouncedSave } from "../hooks/useDebouncedSave";
-import { VersionFooter } from "../ui/VersionFooter";
-import { useSaveStatus } from "../hooks/useSaveStatus";
-import { uid } from "../core/uid";
-import { todayISO } from "../core/format";
-
-const NUM = { fontVariant: ["tabular-nums"] };
-
-function HeroStat({ icon, label, value }) {
-  return (
-    <View className="flex-1 min-w-0">
-      <View className="flex-row items-center gap-1">
-        {icon}
-        <Text className="text-[11px] uppercase" style={{ color: "rgba(209,250,229,0.7)" }}>
-          {label}
-        </Text>
-      </View>
-      <Text className="text-sm font-semibold text-white mt-0.5" numberOfLines={1} style={NUM}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-/* Classes completas em literais, nunca montadas por interpolacao: o Tailwind
-   varre o codigo-fonte, entao "bg-" + cor nao geraria estilo nenhum. */
-const TONES = {
-  income: { box: "bg-emerald-50 border-emerald-200", text: "text-emerald-800", icon: "#047857" },
-  due: { box: "bg-amber-50 border-amber-200", text: "text-amber-800", icon: "#b45309" },
-  overdue: { box: "bg-rose-50 border-rose-200", text: "text-rose-700", icon: "#be123c" },
-};
-
-function Notice({ tone, icon, headline, date, items, label }) {
-  const t = TONES[tone];
-  return (
-    <View className={"rounded-2xl border px-4 py-3 mb-3 " + t.box}>
-      <View className="flex-row items-center gap-2">
-        {icon}
-        <Text className={"text-sm flex-1 " + t.text}>
-          {headline} <Text className="font-bold">{formatDateBR(date)}</Text>
-        </Text>
-      </View>
-      <View className="mt-1.5 pl-6 gap-0.5">
-        {items.map((it) => (
-          <Text key={it.id} className={"text-sm " + t.text} style={NUM} numberOfLines={2}>
-            <Text className="font-semibold">{fmt(it.value)}</Text> de {label(it)}
-          </Text>
-        ))}
-      </View>
-    </View>
-  );
-}
 
 export default function HomeScreen({ email, onSignOut }) {
   const [months, setMonths] = useState([]);
@@ -133,7 +77,6 @@ export default function HomeScreen({ email, onSignOut }) {
      "nao sincronizado" para a faixa nao piscar no segundo entre o cache e a rede. */
   const [offline, setOffline] = useState(false);
   const [creatingMonth, setCreatingMonth] = useState(false);
-  const insets = useSafeAreaInsets();
 
   /* O mes corrente vive tambem num ref porque o listener de AppState e o
      carregamento assincrono precisam saber qual mes esta na tela sem virarem
@@ -631,8 +574,10 @@ export default function HomeScreen({ email, onSignOut }) {
   /* Fechamento fica de fora do FAB de selecao: nao e item de fluxo de caixa e
      nao entra em SELECTION_SOURCES, igual a Cartoes. */
   const fabVisible =
-    !selecting && tab !== "overview" && tab !== "cartoes" && tab !== "fechamento";
-  const bottomGap = selecting ? barHeight : fabVisible ? 64 + 24 + insets.bottom : 0;
+    !selecting && tab !== "overview" && tab !== "cartoes" && tab !== "fechamento" && tab !== "config";
+  /* A barra de abas e irma do scroll (nao fica por cima), entao o espaco extra
+     e so o do FAB ou da barra de soma, que flutuam acima dela. */
+  const bottomGap = selecting ? barHeight + 10 : fabVisible ? 56 + 14 : 0;
 
   const selProps = (kind) => ({
     selecting,
@@ -652,362 +597,288 @@ export default function HomeScreen({ email, onSignOut }) {
   const vaUsado = useMemo(() => totalOf(expenses.filter((e) => e.paidWithVoucher)), [expenses]);
   const cltRecebido = useMemo(() => totalOf(incomes.filter((i) => i.cltPjIncome)), [incomes]);
   const cltGasto = useMemo(() => totalOf(expenses.filter((e) => e.paidWithCltPj)), [expenses]);
-  const vaRestante = vaRecebido - vaUsado;
-  const cltSobra = cltRecebido - cltGasto;
 
-  /* Olham so o mes em tela — `incomes`/`expenses` sao do mes selecionado, como
-     na web. No fim do mes o aviso pode ficar vazio, e tudo bem: trocar de mes
-     ja mostra o proximo. */
-  const proximoGanho = useMemo(() => nextIncomes(incomes), [incomes]);
-  const proximoGasto = useMemo(() => nextExpenses(expenses), [expenses]);
+
+
+  /* ---------- estrutura (kit mobile): 5 abas embaixo + sub-abas ---------- */
+  const section = sectionOfTab(tab).id;
+  /* Ultima sub-aba visitada em cada secao: voltar para "Mais" reabre Mercado,
+     se foi la que a pessoa estava. */
+  const lastTabBySection = useRef({});
+  useEffect(() => {
+    lastTabBySection.current[sectionOfTab(tab).id] = tab;
+  }, [tab]);
+  const goSection = (s) => setTab(lastTabBySection.current[s.id] || s.tabs[0]);
+
+  /* Voltar do Android: fora do Inicio, volta para ele em vez de fechar o app.
+     As folhas (Modal) tratam o proprio voltar com onRequestClose. */
+  useEffect(() => {
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (selecting) {
+        setSelecting(false);
+        setSelectedKeys(new Set());
+        return true;
+      }
+      if (tab !== "overview") {
+        setTab("overview");
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [tab, selecting]);
+
+  /* Preferencias do aparelho (ui/theme.js): olho e carteira da Sobra. O fmt le
+     a flag durante este render (ver setHideValues em core/format.js). */
+  const { prefs, setPref, colors, dark } = useTheme();
+  setHideValues(prefs.hideValues);
+  const wallets = {
+    cltPj: { recebido: cltRecebido, gasto: cltGasto },
+    va: { recebido: vaRecebido, gasto: vaUsado },
+  };
+
+  /* Aviso "Gasto marcado como pago · Desfazer" + destaque da linha por ~5s. */
+  const [toast, setToast] = useState(null); // {message, undo}
+  const [highlightId, setHighlightId] = useState(null);
+  const toastTimer = useRef(null);
+  const dismissToast = useCallback(() => {
+    clearTimeout(toastTimer.current);
+    setToast(null);
+    setHighlightId(null);
+  }, []);
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
+  useEffect(() => dismissToast(), [tab, month, dismissToast]);
+
+  const markPaid = (mode, item) => {
+    togglePaid(mode, item.id);
+    if (item.paidAt) return dismissToast(); // desmarcar nao precisa de aviso
+    clearTimeout(toastTimer.current);
+    setHighlightId(item.id);
+    setToast({
+      message: mode === "serasa" ? "Dívida marcada como paga" : "Gasto marcado como pago",
+      undo: () => setterFor(mode)((prev) => prev.map((e) => (e.id === item.id ? { ...e, paidAt: null } : e))),
+    });
+    toastTimer.current = setTimeout(() => {
+      setToast(null);
+      setHighlightId(null);
+    }, 5000);
+  };
+
+  const closingSuggestions = useMemo(
+    () => [...new Set([...cards.map((c) => c.paymentMethod), ...cardClosings.map((c) => c.cardName)].filter(Boolean))],
+    [cards, cardClosings]
+  );
+
+  const signOutNow = () => {
+    flushSave();
+    flushSerasa();
+    flushCards();
+    flushClosings();
+    flushWishlist();
+    flushShopping();
+    onSignOut();
+  };
+
+  const kindOf = (t) => (t === "desejos" ? "wish" : t);
+  const subTabs =
+    section === "lancamentos" ? (
+      <Segmented value={tab} onChange={setTab} options={[{ value: "gastos", label: "Gastos", icon: ReceiptText }, { value: "ganhos", label: "Ganhos", icon: Wallet }]} />
+    ) : section === "cartoes" ? (
+      <Segmented value={tab} onChange={setTab} options={[{ value: "cartoes", label: "Saldos", icon: CreditCard }, { value: "fechamento", label: "Fechamentos", icon: CalendarCheck }]} />
+    ) : section === "mais" && tab !== "config" ? (
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "desejos", label: "Desejos", icon: Heart },
+          { value: "mercado", label: "Mercado", icon: ShoppingCart },
+          { value: "farmacia", label: "Farmácia", icon: Pill },
+        ]}
+      />
+    ) : null;
+
+  const content = loading ? (
+    <LoadingSkeleton />
+  ) : tab === "overview" ? (
+    <OverviewTab
+      expenses={expenses}
+      incomes={incomes}
+      wallet={prefs.wallet}
+      onWalletChange={(w) => setPref("wallet", w)}
+      wallets={wallets}
+      onEditItem={guard((kind, item) => setModal({ mode: kind, item }))}
+      onGo={setTab}
+    />
+  ) : tab === "gastos" ? (
+    <GastosTab
+      {...selProps("expense")}
+      expenses={expenses}
+      total={totalOf(expenses)}
+      onAdd={guard(() => setModal({ mode: "expense", item: null }))}
+      onEdit={guard((e) => setModal({ mode: "expense", item: e }))}
+      onDelete={guard((e) => setConfirming({ mode: "expense", item: e }))}
+      onTogglePaid={guard((e) => markPaid("expense", e))}
+      onMove={editable ? moveExpense : undefined}
+      onReorder={editable ? reorderExpenses : undefined}
+      onDragChange={setDragging}
+      extraPaymentMethods={extraPaymentMethods}
+      highlightId={highlightId}
+    />
+  ) : tab === "ganhos" ? (
+    <GanhosTab
+      {...selProps("income")}
+      incomes={incomes}
+      onAdd={guard(() => setModal({ mode: "income", item: null }))}
+      onEdit={guard((i) => setModal({ mode: "income", item: i }))}
+      onDelete={guard((i) => setConfirming({ mode: "income", item: i }))}
+      onReorder={editable ? reorderIncomes : undefined}
+      onDragChange={setDragging}
+    />
+  ) : tab === "serasa" ? (
+    <SerasaTab
+      {...selProps("serasa")}
+      serasa={serasa}
+      onAdd={guard(() => setModal({ mode: "serasa", item: null }))}
+      onEdit={guard((x) => setModal({ mode: "serasa", item: x }))}
+      onDelete={guard((x) => setConfirming({ mode: "serasa", item: x }))}
+      onTogglePaid={guard((x) => markPaid("serasa", x))}
+      onReorder={editable ? reorderSerasa : undefined}
+      onDragChange={setDragging}
+      highlightId={highlightId}
+    />
+  ) : tab === "cartoes" ? (
+    <CartoesTab
+      cards={cardsWithUsage}
+      unregistered={unregistered}
+      month={month}
+      canAdd={canAddCard(cards, extraPaymentMethods)}
+      /* onAdd() sem argumento: a forma nua passaria o evento como presetMethod */
+      onAdd={guard((preset) => setCardModal({ item: null, presetMethod: typeof preset === "string" ? preset : undefined }))}
+      onEdit={guard((c) => setCardModal({ item: c }))}
+      onUpdateBalance={guard((c) => setCardModal({ item: c, balance: true }))}
+      onDelete={guard((c) => setConfirming({ mode: "card", item: c }))}
+    />
+  ) : tab === "fechamento" ? (
+    <FechamentoTab
+      items={cardClosings}
+      month={month}
+      onAdd={guard(() => setClosingModal({ item: null }))}
+      onEdit={guard((it) => setClosingModal({ item: it }))}
+      onDelete={guard((it) => setConfirming({ mode: "closing", item: it }))}
+      onReorder={editable ? reorderClosings : undefined}
+      onDragChange={setDragging}
+    />
+  ) : tab === "config" ? (
+    <SettingsTab email={email} onSignOut={signOutNow} onBeforeReload={flushAll} />
+  ) : (
+    <ChecklistTab
+      key={tab}
+      kind={kindOf(tab)}
+      {...selProps(kindOf(tab))}
+      items={listItems(kindOf(tab))}
+      onAdd={guard(() => setListModal({ kind: kindOf(tab), item: null }))}
+      onEdit={guard((i) => setListModal({ kind: kindOf(tab), item: i }))}
+      onDelete={guard((i) => setConfirming({ mode: kindOf(tab), item: i }))}
+      onToggleDone={guard((i) => toggleListDone(kindOf(tab), i.id))}
+      /* Só Mercado tem "Limpar", como na web — Farmácia não recebe o handler. */
+      onClearDone={tab === "mercado" ? guard(() => clearListDone("mercado")) : undefined}
+      onReorder={editable ? (ids) => reorderList(kindOf(tab), ids) : undefined}
+      onDragChange={setDragging}
+    />
+  );
+
+  const overlayBottom = 10;
 
   return (
-    <View className="flex-1">
-      {/* KeyboardAwareScrollView, nao ScrollView: rola sozinho ate o campo
-          focado (busca, "De/Ate" dos filtros de Gastos). No Android edge-to-
-          edge o adjustResize da janela nao encolhe nada, entao sem isto um
-          campo no meio da tela fica embaixo do teclado. style em vez de
-          className: componente de fora do RN, o NativeWind nao o registra. */}
-      <KeyboardAwareScrollView
-        style={{ flex: 1 }}
-        scrollEnabled={!dragging}
-        bottomOffset={16}
-      /* Sem isto, com o teclado da busca aberto o PRIMEIRO toque em qualquer
-         botao e consumido dispensando o teclado — o classico "tem que tocar
-         duas vezes". Vale para os tres ScrollViews: o RN resolve a dispensa no
-         scroll responder mais proximo. */
-      keyboardShouldPersistTaps="handled"
-      keyboardDismissMode="on-drag"
-      contentContainerStyle={{ padding: 16, paddingBottom: 16 + bottomGap }}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#16382c" />
-      }
-    >
-      <View className="flex-row items-center justify-between mb-4">
-        <View className="flex-1 min-w-0">
-          <Text className="text-lg font-bold text-slate-800">Meu financeiro</Text>
-          {saveStatus === "idle" ? (
-            <Text className="text-xs text-slate-500" numberOfLines={1}>
-              {email}
-            </Text>
-          ) : (
-            <Text
-              className={
-                "text-xs " +
-                (saveStatus === "error"
-                  ? "text-rose-600 font-medium"
-                  : saveStatus === "saved"
-                  ? "text-emerald-600"
-                  : "text-slate-400")
-              }
-              numberOfLines={1}
-            >
-              {saveStatus === "saving"
-                ? "Salvando…"
-                : saveStatus === "saved"
-                ? "Salvo"
-                : "Falha ao salvar — sem conexão?"}
-            </Text>
-          )}
-        </View>
-        <Touchable
-          hitSlop={{ top: 8, bottom: 8, right: 8 }}
-          onPress={() => {
-            flushSave();
-            flushSerasa();
-            flushCards();
-            flushClosings();
-            flushWishlist();
-            flushShopping();
-            onSignOut();
-          }}
-          className="h-9 w-9 rounded-xl bg-white border border-slate-200 items-center justify-center"
+    <View className="flex-1 bg-canvas">
+      <AppHeader
+        months={months}
+        month={month}
+        nextMonthKey={nextMonthKey}
+        onChangeMonth={switchMonth}
+        onAddNextMonth={guard(confirmCreateMonth)}
+        creatingMonth={creatingMonth}
+        monthDisabled={loading && months.length === 0}
+        hideValues={prefs.hideValues}
+        onToggleHide={() => setPref("hideValues", (v) => !v)}
+        email={email}
+        onOpenSettings={() => setTab("config")}
+        saveStatus={saveStatus}
+      />
+
+      <View className="flex-1">
+        {/* KeyboardAwareScrollView, nao ScrollView: rola sozinho ate o campo
+            focado (busca). No Android edge-to-edge o adjustResize da janela nao
+            encolhe nada, entao sem isto um campo no meio da tela fica embaixo do
+            teclado. style em vez de className: componente de fora do RN, o
+            NativeWind nao o registra. */}
+        <KeyboardAwareScrollView
+          style={{ flex: 1 }}
+          scrollEnabled={!dragging}
+          bottomOffset={16}
+          /* Sem isto, com o teclado da busca aberto o PRIMEIRO toque em qualquer
+             botao e consumido dispensando o teclado — o classico "tem que tocar
+             duas vezes". */
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 24 + bottomGap }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.positive} colors={[colors.forest2]} progressBackgroundColor={colors.surface} />}
         >
-          <LogOut size={16} color="#64748b" />
-        </Touchable>
+          {error ? <Text className="font-brand text-[14px] text-coral text-center py-8">{error}</Text> : null}
+
+          {offline && !loading && !error ? (
+            <View className="flex-row items-center gap-2.5 rounded-[14px] border border-champagne/50 bg-tint-gold px-4 py-3 mb-3">
+              <WifiOff size={17} color={colors.gold} />
+              <Text className="font-brand text-[12px] text-gold flex-1 leading-[17px]">
+                Sem conexão — mostrando os dados salvos no aparelho. Puxe a tela para baixo para atualizar.
+              </Text>
+            </View>
+          ) : null}
+
+          {subTabs}
+          {content}
+        </KeyboardAwareScrollView>
+
+        {/* Cartoes fica de fora: saldo de cartao nao e item de fluxo de caixa, e
+            SELECTION_SOURCES nao o registra — uma chave "card:" quebraria a soma. */}
+        {fabVisible ? <SelectionFab onPress={() => setSelecting(true)} bottom={overlayBottom + 4} /> : null}
+
+        {selecting ? (
+          <SelectionBar
+            onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
+            bottom={overlayBottom}
+            stats={stats}
+            onClear={() => setSelectedKeys(new Set())}
+            onClose={() => {
+              setSelecting(false);
+              setSelectedKeys(new Set());
+            }}
+          />
+        ) : null}
+
+        {toast ? (
+          <Toast
+            message={toast.message}
+            actionLabel="Desfazer"
+            onAction={() => {
+              toast.undo();
+              dismissToast();
+            }}
+            onClose={dismissToast}
+            bottom={overlayBottom + (selecting ? barHeight + 8 : fabVisible ? 70 : 0)}
+          />
+        ) : null}
       </View>
 
-      {proximoGanho ? (
-        <Notice
-          tone="income"
-          icon={<ArrowUpRight size={16} color={TONES.income.icon} />}
-          headline="Você vai receber no dia"
-          date={proximoGanho.date}
-          items={proximoGanho.items}
-          label={(i) => i.source}
-        />
-      ) : null}
-
-      {proximoGasto ? (
-        <Notice
-          tone={proximoGasto.overdue ? "overdue" : "due"}
-          icon={
-            proximoGasto.overdue ? (
-              <AlertTriangle size={16} color={TONES.overdue.icon} />
-            ) : (
-              <ArrowDownRight size={16} color={TONES.due.icon} />
-            )
-          }
-          headline={proximoGasto.overdue ? "Gasto vencido em" : "Você precisa pagar no dia"}
-          date={proximoGasto.date}
-          items={proximoGasto.items}
-          label={(e) => e.description}
-        />
-      ) : null}
-
-      <LinearGradient
-        colors={["#0f2e25", "#16382c", "#1e4a38"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{ borderRadius: 24, padding: 20, marginBottom: 16 }}
-      >
-        <Text className="text-xs uppercase mb-3" style={{ color: "rgba(209,250,229,0.8)" }}>
-          Vale Alimentacao
-        </Text>
-        <View className="flex-row items-center justify-between gap-3">
-          <HeroStat
-            icon={<ArrowUpRight size={15} color="#6ee7b7" />}
-            label="Recebido"
-            value={fmt(vaRecebido)}
-          />
-          <View className="h-8 w-px" style={{ backgroundColor: "rgba(255,255,255,0.15)" }} />
-          <HeroStat
-            icon={<ArrowDownRight size={15} color="#fda4af" />}
-            label="Usado"
-            value={fmt(vaUsado)}
-          />
-          <View className="h-8 w-px" style={{ backgroundColor: "rgba(255,255,255,0.15)" }} />
-          <HeroStat
-            icon={<PiggyBank size={15} color="#6ee7b7" />}
-            label="Restante"
-            value={fmt(vaRestante)}
-          />
-        </View>
-
-        <View className="h-px my-5" style={{ backgroundColor: "rgba(255,255,255,0.1)" }} />
-
-        <Text className="text-xs uppercase mb-3" style={{ color: "rgba(209,250,229,0.8)" }}>
-          CLT/PJ
-        </Text>
-        <View className="flex-row items-center justify-between gap-3">
-          <HeroStat
-            icon={<ArrowUpRight size={15} color="#6ee7b7" />}
-            label="Recebido"
-            value={fmt(cltRecebido)}
-          />
-          <View className="h-8 w-px" style={{ backgroundColor: "rgba(255,255,255,0.15)" }} />
-          <HeroStat
-            icon={<ArrowDownRight size={15} color="#fda4af" />}
-            label="Gasto"
-            value={fmt(cltGasto)}
-          />
-          <View className="h-8 w-px" style={{ backgroundColor: "rgba(255,255,255,0.15)" }} />
-          <HeroStat
-            icon={<PiggyBank size={15} color="#6ee7b7" />}
-            label="Sobra"
-            value={fmt(cltSobra)}
-          />
-        </View>
-      </LinearGradient>
-
-      {/* Sempre visivel (antes so com 2+ meses): e onde mora o "+ Proximo mes". */}
-      {months.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          className="mb-4"
-        >
-          <View className="flex-row gap-2">
-            {months.map((m) => {
-              const active = m === month;
-              return (
-                <Touchable
-                  key={m}
-                  onDark={active}
-                  onPress={() => switchMonth(m)}
-                  hitSlop={{ top: 6, bottom: 6 }}
-                  className={
-                    "px-4 py-2 rounded-full border " +
-                    (active ? "border-transparent" : "bg-white border-slate-200")
-                  }
-                  style={active ? { backgroundColor: "#16382c" } : undefined}
-                >
-                  <Text
-                    className={"text-sm font-medium " + (active ? "text-white" : "text-slate-500")}
-                  >
-                    {monthLabel(m)}
-                  </Text>
-                </Touchable>
-              );
-            })}
-            <Touchable
-              onPress={guard(confirmCreateMonth)}
-              disabled={creatingMonth}
-              hitSlop={{ top: 6, bottom: 6 }}
-              className="flex-row items-center gap-1.5 px-4 py-2 rounded-full border border-dashed border-slate-300 bg-white disabled:opacity-60"
-            >
-              {creatingMonth ? (
-                <ActivityIndicator size="small" color="#16382c" />
-              ) : (
-                <Plus size={14} color="#16382c" />
-              )}
-              <Text className="text-sm font-medium text-slate-600">{monthLabel(nextMonthKey)}</Text>
-            </Touchable>
-          </View>
-        </ScrollView>
-      )}
-
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        className="mb-4"
-      >
-        <View className="flex-row gap-1 bg-white rounded-full p-1 border border-slate-200">
-          {[
-            ["overview", "Visão geral"],
-            ["gastos", "Gastos"],
-            ["ganhos", "Ganhos"],
-            ["serasa", "Serasa"],
-            ["cartoes", "Cartões"],
-            ["fechamento", "Fechamento de cartão"],
-            ["desejos", "Desejos"],
-            ["mercado", "Mercado"],
-            ["farmacia", "Farmácia"],
-          ].map(([id, label]) => {
-            const active = tab === id;
-            return (
-              <Touchable
-                key={id}
-                onDark={active}
-                onPress={() => setTab(id)}
-                hitSlop={{ top: 6, bottom: 6 }}
-                className="px-4 py-2 rounded-full"
-                style={active ? { backgroundColor: "#16382c" } : undefined}
-              >
-                <Text className={"text-sm font-medium " + (active ? "text-white" : "text-slate-500")}>
-                  {label}
-                </Text>
-              </Touchable>
-            );
-          })}
-        </View>
-      </ScrollView>
-
-      {error ? <Text className="text-sm text-rose-600 text-center py-8">{error}</Text> : null}
-
-      {offline && !loading && !error ? (
-        <View className="flex-row items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 mb-4">
-          <WifiOff size={16} color="#b45309" />
-          <Text className="text-xs text-amber-800 flex-1">
-            Sem conexão — mostrando os dados salvos no aparelho. Puxe a tela para baixo para atualizar.
-          </Text>
-        </View>
-      ) : null}
-
-      {loading ? (
-        <View className="items-center py-10 gap-3">
-          <ActivityIndicator color="#16382c" />
-          <Text className="text-sm text-slate-500">Carregando...</Text>
-        </View>
-      ) : tab === "overview" ? (
-        <OverviewTab
-          expenses={expenses}
-          incomes={incomes}
-          onEditItem={guard((kind, item) => setModal({ mode: kind, item }))}
-        />
-      ) : tab === "gastos" ? (
-        <GastosTab
-          {...selProps("expense")}
-          expenses={expenses}
-          total={totalOf(expenses)}
-          onAdd={guard(() => setModal({ mode: "expense", item: null }))}
-          onEdit={guard((e) => setModal({ mode: "expense", item: e }))}
-          onDelete={guard((e) => setConfirming({ mode: "expense", item: e }))}
-          onTogglePaid={guard((e) => togglePaid("expense", e.id))}
-          onMove={editable ? moveExpense : undefined}
-          onReorder={editable ? reorderExpenses : undefined}
-          onDragChange={setDragging}
-          extraPaymentMethods={extraPaymentMethods}
-        />
-      ) : tab === "ganhos" ? (
-        <GanhosTab
-          {...selProps("income")}
-          incomes={incomes}
-          onAdd={guard(() => setModal({ mode: "income", item: null }))}
-          onEdit={guard((i) => setModal({ mode: "income", item: i }))}
-          onDelete={guard((i) => setConfirming({ mode: "income", item: i }))}
-          onReorder={editable ? reorderIncomes : undefined}
-          onDragChange={setDragging}
-        />
-      ) : tab === "serasa" ? (
-        <SerasaTab
-          {...selProps("serasa")}
-          serasa={serasa}
-          onAdd={guard(() => setModal({ mode: "serasa", item: null }))}
-          onEdit={guard((x) => setModal({ mode: "serasa", item: x }))}
-          onDelete={guard((x) => setConfirming({ mode: "serasa", item: x }))}
-          onTogglePaid={guard((x) => togglePaid("serasa", x.id))}
-          onReorder={editable ? reorderSerasa : undefined}
-          onDragChange={setDragging}
-        />
-      ) : tab === "cartoes" ? (
-        <CartoesTab
-          cards={cardsWithUsage}
-          unregistered={unregistered}
-          month={month}
-          canAdd={canAddCard(cards, extraPaymentMethods)}
-          /* onAdd() sem argumento: a forma nua passaria o evento como presetMethod */
-          onAdd={guard((preset) => setCardModal({ item: null, presetMethod: typeof preset === "string" ? preset : undefined }))}
-          onEdit={guard((c) => setCardModal({ item: c }))}
-          onDelete={guard((c) => setConfirming({ mode: "card", item: c }))}
-        />
-      ) : tab === "fechamento" ? (
-        <FechamentoTab
-          items={cardClosings}
-          onAdd={guard(() => setClosingModal({ item: null }))}
-          onEdit={guard((it) => setClosingModal({ item: it }))}
-          onDelete={guard((it) => setConfirming({ mode: "closing", item: it }))}
-          onReorder={editable ? reorderClosings : undefined}
-          onDragChange={setDragging}
-        />
-      ) : (
-        <ChecklistTab
-          {...selProps(tab === "desejos" ? "wish" : tab)}
-          items={listItems(tab === "desejos" ? "wish" : tab)}
-          totalLabel={tab === "desejos" ? "Total desejado" : "Total estimado"}
-          addLabel={tab === "desejos" ? "Novo desejo" : "Novo item"}
-          emptyText={tab === "desejos" ? "Nenhum desejo cadastrado." : "Nenhum item cadastrado."}
-          doneLabel={tab === "desejos" ? "Realizado" : "Comprado"}
-          onAdd={guard(() => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: null }))}
-          onEdit={guard((i) => setListModal({ kind: tab === "desejos" ? "wish" : tab, item: i }))}
-          onDelete={guard((i) => setConfirming({ mode: tab === "desejos" ? "wish" : tab, item: i }))}
-          onToggleDone={guard((i) => toggleListDone(tab === "desejos" ? "wish" : tab, i.id))}
-          /* Só Mercado tem "Limpar", como na web — Farmácia não recebe o handler. */
-          onClearDone={tab === "mercado" ? guard(() => clearListDone("mercado")) : undefined}
-          onReorder={editable ? (ids) => reorderList(tab === "desejos" ? "wish" : tab, ids) : undefined}
-          onDragChange={setDragging}
-        />
-      )}
-
-      <VersionFooter onBeforeReload={flushAll} />
+      <TabBar section={section} onSelect={goSection} />
 
       {listModal ? (
-        <ChecklistModal
-          visible
-          key={listModal.kind + (listModal.item?.id || "novo")}
-          item={listModal.item}
-          titleLabel={listModal.kind === "wish" ? "O que você deseja?" : "O que você precisa comprar?"}
-          placeholder={listModal.kind === "wish" ? "Ex.: Notebook novo" : "Ex.: Arroz 5kg"}
-          novo={listModal.kind === "wish" ? "Novo desejo" : "Novo item"}
-          editar={listModal.kind === "wish" ? "Editar desejo" : "Editar item"}
-          onClose={() => setListModal(null)}
-          onSave={saveListItem}
-        />
+        <ChecklistModal visible key={listModal.kind + (listModal.item?.id || "novo")} kind={listModal.kind} item={listModal.item} onClose={() => setListModal(null)} onSave={saveListItem} />
       ) : null}
 
-      {cardModal ? (
+      {cardModal && cardModal.balance ? (
+        <BalanceModal visible key={"saldo" + cardModal.item.id} card={cardModal.item} onClose={() => setCardModal(null)} onSave={saveCard} />
+      ) : cardModal ? (
         <CardModal
           visible
           key={cardModal.item?.id || cardModal.presetMethod || "novo"}
@@ -1021,13 +892,7 @@ export default function HomeScreen({ email, onSignOut }) {
       ) : null}
 
       {closingModal ? (
-        <CardClosingModal
-          visible
-          key={closingModal.item?.id || "novo"}
-          item={closingModal.item}
-          onClose={() => setClosingModal(null)}
-          onSave={saveClosing}
-        />
+        <CardClosingModal visible key={closingModal.item?.id || "novo"} item={closingModal.item} suggestions={closingSuggestions} onClose={() => setClosingModal(null)} onSave={saveClosing} />
       ) : null}
 
       {modal ? (
@@ -1048,29 +913,34 @@ export default function HomeScreen({ email, onSignOut }) {
         />
       ) : null}
 
-      <ConfirmModal
-        visible={!!confirming}
-        item={confirming?.item}
-        onCancel={() => setConfirming(null)}
-        onConfirm={removeEntry}
-      />
-      </KeyboardAwareScrollView>
+      <ConfirmModal visible={!!confirming} item={confirming?.item} onCancel={() => setConfirming(null)} onConfirm={removeEntry} />
 
-      {/* Cartoes fica de fora: saldo de cartao nao e item de fluxo de caixa, e
-          SELECTION_SOURCES nao o registra — uma chave "card:" quebraria a soma. */}
-      {fabVisible ? <SelectionFab onPress={() => setSelecting(true)} /> : null}
+      <StatusBar style={dark ? "light" : "dark"} />
+    </View>
+  );
+}
 
-      {selecting ? (
-        <SelectionBar
-          onLayout={(e) => setBarHeight(e.nativeEvent.layout.height)}
-          stats={stats}
-          onClear={() => setSelectedKeys(new Set())}
-          onClose={() => {
-            setSelecting(false);
-            setSelectedKeys(new Set());
-          }}
-        />
-      ) : null}
+/* Carregamento em esqueleto (home-carregamento.jpg): so na primeira abertura
+   sem cache; com cache o app abre direto nos dados guardados. */
+function LoadingSkeleton() {
+  return (
+    <View className="gap-3.5" accessibilityLabel="Carregando seus dados">
+      <Skeleton width={180} height={30} />
+      <Skeleton width={230} height={16} />
+      <View className="rounded-[20px] p-[18px] gap-3 bg-forest">
+        <Skeleton width={120} height={16} color="rgba(255,255,255,0.14)" />
+        <Skeleton width={200} height={34} color="rgba(255,255,255,0.14)" />
+        <Skeleton height={10} color="rgba(255,255,255,0.14)" />
+      </View>
+      {[0, 1].map((i) => (
+        <Panel key={i} className="gap-3">
+          <Skeleton width={150} height={18} />
+          <Skeleton height={12} />
+          <Skeleton width="80%" height={12} />
+          <Skeleton width="60%" height={12} />
+        </Panel>
+      ))}
+      <Text className="font-brand text-[13px] text-muted text-center">Carregando seus dados…</Text>
     </View>
   );
 }

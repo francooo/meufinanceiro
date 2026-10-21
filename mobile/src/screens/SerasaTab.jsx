@@ -1,136 +1,169 @@
+/* Dividas — Serasa (dividas-serasa.jpg). */
 import { useMemo, useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { Text, View } from "react-native";
+import { Check, ChevronDown, ChevronRight, CreditCard, Info, Pencil, Plus, Trash2 } from "lucide-react-native";
 import { Touchable } from "../ui/Touchable";
-import { Plus, Search, X } from "lucide-react-native";
 import { fmt } from "../core/format";
 import { serasaCatMeta } from "../core/catalog";
 import { buildGroupedBy } from "../core/gastos";
-import { iconFor } from "../ui/icons";
-import { Card } from "../ui/Card";
-import { Empty } from "../ui/Empty";
-import { Row } from "../ui/Row";
+import { topCreditors } from "../core/home";
+import { iconFor, STROKE } from "../ui/icons";
+import { ActionSheet, BigAmount, Button, EmptyState, IconBubble, Meter, PageHeader, Panel, SearchField, SectionTitle } from "../ui/kit";
+import { Row, dueLine } from "../ui/Row";
+import { SelectionHint } from "../ui/SelectionBar";
 import { DraggableList } from "../ui/DraggableList";
-
-const NUM = { fontVariant: ["tabular-nums"] };
+import { NUM, useTheme } from "../ui/theme";
 
 /* Mesma estrutura de Gastos — agrupado por categoria, com busca — mas com a
-   tabela de metadados do Serasa e sem sub-agrupamento por forma de pagamento,
-   que e exclusivo de "Cartoes / Financeiro". */
-export default function SerasaTab({ serasa, selecting, isSelected, onToggleSelect, onAdd, onEdit, onDelete, onTogglePaid, onReorder, onDragChange }) {
+   tabela de metadados do Serasa e sem sub-agrupamento por forma de pagamento. */
+export default function SerasaTab({ serasa, selecting, isSelected, onToggleSelect, onAdd, onEdit, onDelete, onTogglePaid, onReorder, onDragChange, highlightId }) {
+  const { colors } = useTheme();
   const [search, setSearch] = useState("");
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const [menu, setMenu] = useState(null);
   const query = search.trim().toLowerCase();
   /* Arraste desligado durante busca e selecao: reordenar uma lista filtrada
      gravaria `order` numa ordem que nao e a real (mesma regra de Gastos). */
   const canDrag = !!onReorder && !query && !selecting;
 
-  const rowFor = (s, idx) => (
-    <View key={s.id} className={"bg-white " + (idx > 0 ? "border-t border-slate-100" : "")}>
-      <Row
-        item={s}
-        selected={isSelected ? isSelected(s.id) : false}
-        onToggleSelect={selecting ? () => onToggleSelect(s.id) : undefined}
-        onEdit={() => onEdit(s)}
-        onDelete={() => onDelete(s)}
-        onTogglePaid={() => onTogglePaid(s)}
-      />
-    </View>
-  );
-
   const grouped = useMemo(() => buildGroupedBy(serasa, serasaCatMeta), [serasa]);
-
   const filtered = useMemo(() => {
     if (!query) return grouped;
     return grouped
       .map((g) => {
-        const items = g.items.filter((s) => (s.description || "").toLowerCase().includes(query));
+        const items = g.name.toLowerCase().includes(query) ? g.items : g.items.filter((s) => (s.description || "").toLowerCase().includes(query));
         return { ...g, items, subtotal: items.reduce((s, i) => s + (Number(i.value) || 0), 0) };
       })
       .filter((g) => g.items.length > 0);
   }, [grouped, query]);
-
-  const visibleTotal = useMemo(() => filtered.reduce((s, g) => s + g.subtotal, 0), [filtered]);
   const total = useMemo(() => grouped.reduce((s, g) => s + g.subtotal, 0), [grouped]);
+  const visibleTotal = useMemo(() => filtered.reduce((s, g) => s + g.subtotal, 0), [filtered]);
+  const creditors = useMemo(() => topCreditors(serasa), [serasa]);
+
+  const toggle = (name) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const rowFor = (s, idx, g) => (
+    <View key={s.id} className={"bg-surface " + (idx > 0 ? "border-t border-line" : "")}>
+      <Row
+        item={s}
+        title={s.description}
+        icon={iconFor(g.icon)}
+        color={g.color}
+        lines={[dueLine(s), s.note]}
+        showStatus
+        highlight={highlightId === s.id}
+        selected={isSelected ? isSelected(s.id) : false}
+        onToggleSelect={selecting ? () => onToggleSelect(s.id) : undefined}
+        onTogglePaid={() => onTogglePaid(s)}
+        onMore={selecting ? undefined : () => setMenu(s)}
+      />
+    </View>
+  );
 
   return (
-    <View className="gap-4 pb-8">
-      <View className="flex-row items-center justify-between">
-        <View>
-          <Text className="text-xs text-slate-500">
-            {query ? "Total encontrado" : "Total de dívidas"}
-          </Text>
-          <Text className="text-xl font-bold text-slate-800" style={NUM}>
-            {fmt(query ? visibleTotal : total)}
-          </Text>
-        </View>
-        <Touchable
-          onDark
-          onPress={onAdd}
-          className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl"
-          style={{ backgroundColor: "#16382c" }}
-        >
-          <Plus size={16} color="#ffffff" />
-          <Text className="text-white text-sm font-medium">Nova dívida</Text>
-        </Touchable>
-      </View>
+    <View className="gap-3.5">
+      <PageHeader title="Dívidas" subtitle="Visualize e organize seus compromissos" />
 
-      <View className="relative justify-center">
-        {/* pointerEvents: sem isto o icone engole o toque na esquerda do campo */}
-        <View pointerEvents="none" className="absolute left-3.5 z-10">
-          <Search size={15} color="#94a3b8" />
-        </View>
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Buscar dívida por descrição…"
-          placeholderTextColor="#94a3b8"
-          className="rounded-xl border border-slate-200 bg-white pl-10 pr-12 py-3 text-sm text-slate-800"
-        />
-        {search ? (
-          <Touchable
-            onPress={() => setSearch("")}
-            variant="icon"
-            className="absolute right-1 h-11 w-11 items-center justify-center"
-          >
-            <X size={14} color="#94a3b8" />
-          </Touchable>
-        ) : null}
-      </View>
-
-      {filtered.length === 0 ? (
-        <Empty text={query ? "Nenhuma dívida encontrada." : "Nenhuma dívida cadastrada."} />
-      ) : null}
-
-      {filtered.map((g) => {
-        const Icon = iconFor(g.icon);
-        return (
-          <Card key={g.name} className="overflow-hidden">
-            <View className="flex-row items-center gap-2.5 px-4 py-3 border-b border-slate-100">
-              <View
-                className="h-7 w-7 rounded-lg items-center justify-center"
-                style={{ backgroundColor: g.color + "1F" }}
-              >
-                <Icon size={15} color={g.color} />
-              </View>
-              <Text className="text-sm font-semibold text-slate-700 flex-1" numberOfLines={1}>
-                {g.name}
-              </Text>
-              <Text className="text-sm font-semibold text-slate-800" style={NUM}>
-                {fmt(g.subtotal)}
-              </Text>
+      {selecting ? (
+        <SelectionHint text="Selecione as dívidas que deseja somar" />
+      ) : (
+        <Panel className="flex-row items-center gap-4">
+          <IconBubble icon={CreditCard} tone="coral" size="lg" />
+          <View className="flex-1 min-w-0">
+            <View className="flex-row items-center gap-1.5">
+              <Text className="font-display-regular text-[15px] text-ink">{query ? "Total encontrado" : "Total de dívidas"}</Text>
+              <Info size={15} color={colors.gold} />
             </View>
-            {canDrag && g.items.length > 1 ? (
-              <DraggableList
-                items={g.items}
-                onReorder={onReorder}
-                onDragChange={onDragChange}
-                renderItem={(s, idx) => rowFor(s, idx)}
-              />
-            ) : (
-              g.items.map((s, idx) => rowFor(s, idx))
-            )}
-          </Card>
-        );
-      })}
+            <BigAmount tone="coral">{fmt(query ? visibleTotal : total)}</BigAmount>
+            <Text className="font-display-regular text-[14px] text-muted">
+              {serasa.length} {serasa.length === 1 ? "registro" : "registros"}
+            </Text>
+          </View>
+        </Panel>
+      )}
+
+      <Button label="Nova dívida" icon={Plus} size="lg" onPress={onAdd} />
+
+      {serasa.length === 0 ? (
+        <Panel>
+          <EmptyState icon={CreditCard} title="Nenhuma dívida cadastrada" text="Registre seus compromissos para acompanhar o que falta quitar." />
+        </Panel>
+      ) : (
+        <>
+          <SearchField value={search} onChangeText={setSearch} placeholder="Buscar dívida..." />
+          <Panel padded={false} className="overflow-hidden">
+            <View className="px-4 pt-4">
+              <SectionTitle>Dívidas por tipo</SectionTitle>
+            </View>
+            {filtered.length === 0 ? <Text className="font-brand text-[14px] text-muted text-center pb-6">Nenhuma dívida encontrada.</Text> : null}
+            {filtered.map((g) => {
+              const isCollapsed = collapsed.has(g.name);
+              return (
+                <View key={g.name} className="border-t border-line">
+                  <Touchable variant="row" onPress={() => toggle(g.name)} accessibilityState={{ expanded: !isCollapsed }} className="flex-row items-center gap-3 px-3.5 py-3">
+                    <IconBubble icon={iconFor(g.icon)} color={g.color} />
+                    <Text className="font-display text-[17px] text-heading flex-1" numberOfLines={1}>
+                      {g.name}
+                    </Text>
+                    <Text className="font-display text-[16px] text-coral" style={NUM}>
+                      {fmt(g.subtotal)}
+                    </Text>
+                    {isCollapsed ? <ChevronRight size={18} color={colors.muted} strokeWidth={STROKE} /> : <ChevronDown size={18} color={colors.muted} strokeWidth={STROKE} />}
+                  </Touchable>
+                  {isCollapsed ? null : canDrag && g.items.length > 1 ? (
+                    <DraggableList items={g.items} onReorder={onReorder} onDragChange={onDragChange} renderItem={(s, idx) => rowFor(s, idx, g)} />
+                  ) : (
+                    g.items.map((s, idx) => rowFor(s, idx, g))
+                  )}
+                </View>
+              );
+            })}
+          </Panel>
+
+          <Panel>
+            <SectionTitle>Maiores credores</SectionTitle>
+            {creditors.map((c, i) => (
+              <View key={c.name} className={"flex-row items-center gap-3 py-3 " + (i > 0 ? "border-t border-line" : "")}>
+                <View className="h-9 w-9 rounded-full bg-tint-gold items-center justify-center">
+                  <Text className="font-display text-[15px] text-gold">{i + 1}</Text>
+                </View>
+                <View className="flex-1 min-w-0 gap-1.5">
+                  <View className="flex-row items-baseline justify-between gap-2">
+                    <Text className="font-brand text-[14px] text-ink flex-1" numberOfLines={1}>
+                      {c.name}
+                    </Text>
+                    <Text className="font-display text-[15px] text-coral" style={NUM}>
+                      {fmt(c.value)}
+                    </Text>
+                  </View>
+                  <Meter value={c.value} max={creditors[0]?.value || 0} color={colors.coral} />
+                </View>
+              </View>
+            ))}
+          </Panel>
+        </>
+      )}
+
+      <ActionSheet
+        visible={!!menu}
+        title={menu?.description}
+        onClose={() => setMenu(null)}
+        actions={
+          menu
+            ? [
+                { label: menu.paidAt ? "Desmarcar quitação" : "Marcar como paga", icon: Check, onPress: () => onTogglePaid(menu) },
+                { label: "Editar", icon: Pencil, onPress: () => onEdit(menu) },
+                { label: "Excluir", icon: Trash2, danger: true, onPress: () => onDelete(menu) },
+              ]
+            : []
+        }
+      />
     </View>
   );
 }

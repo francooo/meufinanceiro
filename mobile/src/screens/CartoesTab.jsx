@@ -1,191 +1,165 @@
+/* Cartoes › Saldos (cartoes-saldos.jpg). */
+import { useState } from "react";
 import { Text, View } from "react-native";
-import { Touchable } from "../ui/Touchable";
-import { AlertTriangle, CreditCard, Pencil, Plus, Trash2 } from "lucide-react-native";
-import { fmt, formatDateBR, monthLabel } from "../core/format";
-import { Card } from "../ui/Card";
-import { Empty } from "../ui/Empty";
+import { LinearGradient } from "expo-linear-gradient";
+import { CreditCard, Info, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2, Wallet } from "lucide-react-native";
+import { fmt, formatDateBR, formatDayMonth, monthLabel } from "../core/format";
+import { ActionSheet, BigAmount, Button, EmptyState, IconBubble, IconButton, PageHeader, Panel, SectionTitle } from "../ui/kit";
+import { NUM, useTheme } from "../ui/theme";
 
-const NUM = { fontVariant: ["tabular-nums"] };
-const BRAND = "#16382c";
+const CARD_STYLES = [
+  ["#0c654a", "#082f26"],
+  ["#303d3a", "#141b19"],
+];
 
-export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, onEdit, onDelete }) {
+/* Cartao "fisico" do kit: nome, final e o chip dourado. */
+function BankCard({ name, lastDigits, styleIndex }) {
+  return (
+    <LinearGradient colors={CARD_STYLES[styleIndex % CARD_STYLES.length]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ borderRadius: 17, padding: 18, minHeight: 128, overflow: "hidden" }}>
+      <View pointerEvents="none" style={{ position: "absolute", right: -40, top: 18, width: 170, height: 170, borderRadius: 85, borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" }} />
+      <LinearGradient colors={["#d9ca9a", "#a89b72"]} style={{ position: "absolute", right: 18, top: 18, width: 34, height: 26, borderRadius: 6 }} />
+      <Text className="font-display text-[20px] text-white pr-14" numberOfLines={1}>
+        {name}
+      </Text>
+      <Text className="font-display mt-5 text-white" style={{ fontSize: lastDigits ? 18 : 14, letterSpacing: lastDigits ? 2.5 : 0, opacity: lastDigits ? 1 : 0.5, ...NUM }}>
+        {lastDigits ? `•••• ${lastDigits}` : "Final não informado"}
+      </Text>
+      <View className="absolute right-5 bottom-4">
+        <CreditCard size={18} color="rgba(255,255,255,0.8)" />
+      </View>
+    </LinearGradient>
+  );
+}
+
+function CardStat({ label, value, sub, tone }) {
+  const color = tone === "coral" ? "text-coral" : tone === "green" ? "text-positive" : "text-heading";
+  return (
+    <View className="flex-1 min-w-0">
+      <Text className="font-brand text-[11px] text-muted" numberOfLines={1}>
+        {label}
+      </Text>
+      <Text className={"font-display text-[16px] mt-0.5 " + color} style={NUM} numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </Text>
+      {sub ? <Text className="font-brand text-[10px] text-muted mt-0.5">{sub}</Text> : null}
+    </View>
+  );
+}
+
+export default function CartoesTab({ cards, unregistered, month, canAdd, onAdd, onEdit, onUpdateBalance, onDelete }) {
+  const { colors } = useTheme();
+  const [menu, setMenu] = useState(null);
   const totalRestante = cards.reduce((s, c) => s + c.remaining, 0);
 
   return (
-    <View className="gap-4 pb-8">
-      <View className="flex-row items-center justify-between">
-        <View className="flex-1 min-w-0 pr-3">
-          <Text className="text-xs text-slate-500">Sobra somada em {monthLabel(month)}</Text>
-          <Text
-            className={"text-xl font-bold " + (totalRestante >= 0 ? "text-slate-800" : "text-rose-600")}
-            style={NUM}
-          >
-            {fmt(totalRestante)}
-          </Text>
-        </View>
-        <Touchable
-          onDark
-          onPress={() => onAdd()}
-          disabled={!canAdd}
-          className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl shrink-0 disabled:opacity-40"
-          style={{ backgroundColor: BRAND }}
-        >
-          <Plus size={16} color="#ffffff" />
-          <Text className="text-white text-sm font-medium">Novo cartão</Text>
-        </Touchable>
-      </View>
+    <View className="gap-3.5">
+      <PageHeader title="Cartões" subtitle="Acompanhe saldos e gastos por cartão" action={<Button label="Novo cartão" icon={Plus} onPress={() => onAdd()} disabled={!canAdd} />} />
 
       {cards.length > 0 ? (
-        <View className="flex-row items-start gap-2 rounded-2xl px-4 py-3 bg-amber-50 border border-amber-200">
-          <AlertTriangle size={14} color="#b45309" />
-          <Text className="text-xs text-amber-800 flex-1">
-            Cada cartão mostra o saldo que você registrou menos os gastos lançados em{" "}
-            <Text className="font-bold">{monthLabel(month)}</Text>, contando compras parceladas pelo
-            valor total. Gastos de outros meses não entram nesta conta.
-          </Text>
-        </View>
-      ) : null}
+        <Panel>
+          <View className="flex-row items-center gap-1.5">
+            <Text className="font-display-regular text-[15px] text-ink">Sobra somada em {monthLabel(month)}</Text>
+            <Info size={15} color={colors.muted} />
+          </View>
+          <BigAmount tone={totalRestante < 0 ? "coral" : "ink"}>{fmt(totalRestante)}</BigAmount>
+          <Text className="font-brand text-[12px] text-muted leading-[17px] mt-1">Sobra = saldo registrado − gastos do mês. Compras parceladas contam pelo valor total.</Text>
+        </Panel>
+      ) : (
+        <Panel>
+          <EmptyState
+            icon={Wallet}
+            title="Nenhum cartão cadastrado"
+            text="Registre o saldo disponível de um cartão para acompanhar quanto sobra no mês."
+            action={<Button label="Novo cartão" icon={Plus} onPress={() => onAdd()} disabled={!canAdd} />}
+          />
+        </Panel>
+      )}
 
-      {cards.length === 0 ? (
-        <Empty text="Nenhum cartão cadastrado. Registre o saldo disponível de um cartão para acompanhar quanto sobra." />
-      ) : null}
-
-      {cards.map((c) => {
+      {cards.map((c, idx) => {
         const skipped = c.scope === "before";
         return (
-          <Card key={c.id} className="overflow-hidden">
-            <View className="flex-row items-center gap-2.5 px-4 py-3 border-b border-slate-100">
-              <View
-                className="h-7 w-7 rounded-lg items-center justify-center"
-                style={{ backgroundColor: "#64748B1F" }}
-              >
-                <CreditCard size={15} color="#64748B" />
-              </View>
-              <View className="flex-1 min-w-0">
-                <Text className="text-sm font-semibold text-slate-700" numberOfLines={1}>
-                  {c.paymentMethod}
-                </Text>
-                {c.note ? (
-                  <Text className="text-xs text-slate-400 mt-0.5" numberOfLines={1}>
-                    {c.note}
-                  </Text>
-                ) : null}
-              </View>
-              <Touchable variant="icon" onPress={() => onEdit(c)} hitSlop={{ top: 8, bottom: 8 }} className="h-9 w-9 rounded-lg items-center justify-center">
-                <Pencil size={16} color="#94a3b8" />
-              </Touchable>
-              <Touchable variant="icon" onPress={() => onDelete(c)} hitSlop={{ top: 8, bottom: 8, right: 8 }} className="h-9 w-9 rounded-lg items-center justify-center">
-                <Trash2 size={16} color="#94a3b8" />
-              </Touchable>
+          <Panel key={c.id} className="gap-4">
+            <BankCard name={c.paymentMethod} lastDigits={c.lastDigits} styleIndex={idx} />
+            <View className="flex-row gap-3">
+              <CardStat label="Saldo registrado" value={fmt(c.balance)} sub={`Registrado em ${formatDayMonth(c.referenceDate)}`} />
+              <View className="w-px bg-line" />
+              <CardStat label="Gastos do mês" value={skipped ? "—" : fmt(c.spent)} />
+              <View className="w-px bg-line" />
+              <CardStat label="Sobra" value={(c.remaining < 0 ? "− " : "") + fmt(Math.abs(c.remaining))} tone={c.remaining < 0 ? "coral" : "green"} />
             </View>
 
-            <View className="px-4 py-3 gap-1.5">
-              <View className="flex-row items-center justify-between gap-3">
-                <Text className="text-xs text-slate-500 flex-1">
-                  Saldo registrado em {formatDateBR(c.referenceDate)}
-                </Text>
-                <Text className="text-xs text-slate-700" style={NUM}>
-                  {fmt(c.balance)}
-                </Text>
-              </View>
-              {!skipped ? (
-                <View className="flex-row items-center justify-between gap-3">
-                  <Text className="text-xs text-slate-500 flex-1">Gastos de {monthLabel(month)}</Text>
-                  <Text className="text-xs text-rose-600" style={NUM}>
-                    − {fmt(c.spent)}
-                  </Text>
-                </View>
-              ) : null}
+            {/* avisos de escopo do saldo (os mesmos da versao anterior) */}
+            <View className="gap-1.5">
+              {c.note ? <Text className="font-brand text-[12px] text-muted">{c.note}</Text> : null}
               {!skipped && c.upfrontExtra > 0 ? (
-                <Text className="text-[11px] text-slate-400">
-                  Inclui o valor total de {c.upfrontCount}{" "}
-                  {c.upfrontCount === 1 ? "compra parcelada" : "compras parceladas"} — o limite do
-                  cartão cai de uma vez, não parcela a parcela.
+                <Text className="font-brand text-[12px] text-muted leading-[17px]">
+                  Inclui o valor total de {c.upfrontCount} {c.upfrontCount === 1 ? "compra parcelada" : "compras parceladas"} — o limite do cartão cai de uma vez, não parcela a parcela.
+                </Text>
+              ) : null}
+              {skipped ? (
+                <Text className="font-brand text-[12px] text-gold leading-[17px]">
+                  Saldo registrado em {formatDateBR(c.referenceDate)}, depois de {monthLabel(month)} — os gastos deste mês já estavam descontados quando você anotou o saldo.
+                </Text>
+              ) : null}
+              {c.scope === "same" ? (
+                <Text className="font-brand text-[12px] text-gold leading-[17px]">
+                  Parte dos gastos de {monthLabel(month)} pode ser anterior a {formatDateBR(c.referenceDate)} e já estar descontada do saldo.
+                </Text>
+              ) : null}
+              {/* O saldo e um retrato de uma data: em meses posteriores ele nao
+                  conhece os gastos do meio do caminho. */}
+              {c.scope === "after" ? (
+                <Text className="font-brand text-[12px] text-gold leading-[17px]">
+                  Saldo anotado em {formatDateBR(c.referenceDate)}, antes de {monthLabel(month)}. Os gastos dos meses entre uma coisa e outra não estão descontados deste número.
                 </Text>
               ) : null}
             </View>
 
-            {skipped ? (
-              <Text className="px-4 py-3 border-t border-slate-100 bg-slate-50 text-xs text-slate-500">
-                Saldo registrado em {formatDateBR(c.referenceDate)}, depois de {monthLabel(month)} — os
-                gastos deste mês já estavam descontados quando você anotou o saldo.
-              </Text>
-            ) : (
-              <View className="px-4 py-3 border-t border-slate-100 bg-slate-50">
-                <View className="flex-row items-end justify-between gap-3">
-                  <Text className="text-xs font-medium text-slate-600 flex-1">
-                    Sobra em {monthLabel(month)}
-                  </Text>
-                  <Text
-                    className={"text-lg font-bold " + (c.remaining >= 0 ? "text-slate-800" : "text-rose-600")}
-                    style={NUM}
-                  >
-                    {fmt(c.remaining)}
-                  </Text>
-                </View>
-                {c.scope === "same" ? (
-                  <Text className="text-[11px] text-amber-600 mt-1">
-                    Parte dos gastos de {monthLabel(month)} pode ser anterior a{" "}
-                    {formatDateBR(c.referenceDate)} e já estar descontada do saldo.
-                  </Text>
-                ) : null}
-                {/* O saldo e um retrato de uma data: em meses posteriores ele nao
-                    conhece os gastos do meio do caminho, e so quem tem o numero
-                    novo e o app do cartao. Avisar e oferecer a edicao. */}
-                {c.scope === "after" ? (
-                  <View className="flex-row items-center gap-2 mt-1">
-                    <Text className="text-[11px] text-amber-600 flex-1">
-                      Saldo anotado em {formatDateBR(c.referenceDate)}, antes de {monthLabel(month)}. Os
-                      gastos dos meses entre uma coisa e outra não estão descontados deste número.
-                    </Text>
-                    <Touchable
-                      onPress={() => onEdit(c)}
-                      hitSlop={{ top: 6, bottom: 6 }}
-                      className="px-2.5 py-1.5 rounded-lg bg-amber-100 shrink-0"
-                    >
-                      <Text className="text-[11px] font-medium text-amber-800">Atualizar saldo</Text>
-                    </Touchable>
-                  </View>
-                ) : null}
+            <View className="flex-row items-center gap-2">
+              <View className="flex-1">
+                <Button label="Atualizar saldo" icon={RefreshCw} variant="secondary" size="lg" onPress={() => onUpdateBalance(c)} />
               </View>
-            )}
-          </Card>
+              <IconButton icon={MoreHorizontal} label={`Ações de ${c.paymentMethod}`} onPress={() => setMenu(c)} size={44} boxed />
+            </View>
+          </Panel>
         );
       })}
 
       {unregistered.length > 0 ? (
-        <Card className="overflow-hidden">
-          <View className="px-4 py-3 border-b border-slate-100">
-            <Text className="text-sm font-semibold text-slate-700">Sem saldo cadastrado</Text>
-            <Text className="text-xs text-slate-400 mt-0.5">
-              Estas formas de pagamento tiveram gastos em {monthLabel(month)} e não entram na conta
-              acima.
-            </Text>
-          </View>
+        <Panel>
+          <SectionTitle>Sem saldo cadastrado</SectionTitle>
+          <Text className="font-brand text-[12px] text-muted -mt-1.5 mb-2 leading-[17px]">
+            Estas formas de pagamento tiveram gastos em {monthLabel(month)} e não entram na conta acima.
+          </Text>
           {unregistered.map((u, idx) => (
-            <View
-              key={u.name}
-              className={"flex-row items-center gap-2.5 px-4 py-2.5 " + (idx > 0 ? "border-t border-slate-100" : "")}
-            >
-              <View
-                className="h-7 w-7 rounded-lg items-center justify-center"
-                style={{ backgroundColor: "#64748B1F" }}
-              >
-                <CreditCard size={15} color="#64748B" />
-              </View>
-              <Text className="text-sm text-slate-700 flex-1" numberOfLines={1}>
+            <View key={u.name} className={"flex-row items-center gap-3 py-2.5 " + (idx > 0 ? "border-t border-line" : "")}>
+              <IconBubble icon={CreditCard} tone="neutral" size="sm" />
+              <Text className="font-brand text-[14px] text-ink flex-1" numberOfLines={1}>
                 {u.name}
               </Text>
-              <Text className="text-sm text-slate-500" style={NUM}>
+              <Text className="font-display text-[14px] text-muted" style={NUM}>
                 {fmt(u.value)}
               </Text>
-              <Touchable onPress={() => onAdd(u.name)} hitSlop={{ top: 6, bottom: 6 }} className="px-3 py-2.5 rounded-lg">
-                <Text className="text-xs font-medium text-slate-500">Cadastrar</Text>
-              </Touchable>
+              <Button label="Cadastrar" variant="secondary" size="sm" onPress={() => onAdd(u.name)} />
             </View>
           ))}
-        </Card>
+        </Panel>
       ) : null}
+
+      <ActionSheet
+        visible={!!menu}
+        title={menu?.paymentMethod}
+        onClose={() => setMenu(null)}
+        actions={
+          menu
+            ? [
+                { label: "Atualizar saldo", icon: RefreshCw, onPress: () => onUpdateBalance(menu) },
+                { label: "Editar cartão", icon: Pencil, onPress: () => onEdit(menu) },
+                { label: "Excluir", icon: Trash2, danger: true, onPress: () => onDelete(menu) },
+              ]
+            : []
+        }
+      />
     </View>
   );
 }
