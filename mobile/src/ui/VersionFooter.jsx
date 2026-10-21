@@ -4,6 +4,7 @@ import * as Updates from "expo-updates";
 import Constants from "expo-constants";
 import { RefreshCw } from "lucide-react-native";
 import { Touchable } from "./Touchable";
+import { useTheme } from "./theme";
 
 /* Mostra qual versao esta rodando — APK embutido ou qual update OTA — para dar
    para conferir no proprio celular se uma atualizacao chegou, sem depender das
@@ -26,6 +27,7 @@ const MESSAGES = {
 export function VersionFooter({ onBeforeReload }) {
   const [status, setStatus] = useState("idle"); // idle | checking | downloading | latest | error
   const busy = status === "checking" || status === "downloading";
+  const { colors } = useTheme();
 
   const version = Constants.expoConfig?.version || Updates.runtimeVersion || "?";
   const embedded = Updates.isEmbeddedLaunch || !Updates.updateId;
@@ -55,8 +57,8 @@ export function VersionFooter({ onBeforeReload }) {
   };
 
   return (
-    <View className="items-center gap-2 pt-6 pb-2">
-      <Text className="text-[11px] text-slate-400" style={{ fontVariant: ["tabular-nums"] }}>
+    <View className="items-center gap-2 py-1">
+      <Text className="font-brand text-[12px] text-muted" style={{ fontVariant: ["tabular-nums"] }}>
         v{version} · {source}
       </Text>
       {/* Em desenvolvimento o expo-updates fica desligado: sem botao. */}
@@ -65,13 +67,13 @@ export function VersionFooter({ onBeforeReload }) {
           onPress={check}
           disabled={busy}
           hitSlop={{ top: 6, bottom: 6 }}
-          className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 bg-white disabled:opacity-60"
+          className="flex-row items-center gap-1.5 px-4 h-10 rounded-[11px] border border-line bg-surface disabled:opacity-60"
         >
-          {busy ? <ActivityIndicator size="small" color="#64748b" /> : <RefreshCw size={13} color="#64748b" />}
-          <Text className="text-xs font-medium text-slate-600">Buscar atualização</Text>
+          {busy ? <ActivityIndicator size="small" color={colors.muted} /> : <RefreshCw size={15} color={colors.ink} />}
+          <Text className="font-brand-medium text-[13px] text-ink">Buscar atualização</Text>
         </Touchable>
       ) : null}
-      {MESSAGES[status] ? <Text className="text-[11px] text-slate-500">{MESSAGES[status]}</Text> : null}
+      {MESSAGES[status] ? <Text className="font-brand text-[12px] text-muted">{MESSAGES[status]}</Text> : null}
     </View>
   );
 }

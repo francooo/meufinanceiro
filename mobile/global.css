@@ -1,3 +1,46 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Tokens do kit mobile (assets/meu-financeiro-mobile-ui-kit/assets/styles/mobile.css)
+   em trios RGB, para o Tailwind aceitar opacidade (`bg-forest/10`). O modo escuro
+   so troca os valores sob `.dark` (colorScheme.set do NativeWind, ver ui/theme.js).
+   Espelho em hex para o que nao aceita className: PALETTES em src/ui/theme.js —
+   mudou aqui, muda la. */
+:root {
+  --canvas: 243 245 242;
+  --surface: 255 255 255;
+  --surface-2: 247 248 246;
+  --line: 231 235 231;
+  --ink: 24 37 31;
+  --heading: 16 38 30;
+  --muted: 117 128 121;
+  --forest: 15 46 37;
+  --forest-2: 22 56 44;
+  --mint: 126 214 167;
+  --champagne: 200 169 106;
+  --coral: 191 112 90;
+  --positive: 24 116 84;
+  --gold: 152 115 44;
+  --tint-green: 234 244 238;
+  --tint-coral: 249 236 231;
+  --tint-gold: 248 242 228;
+}
+
+.dark:root {
+  --canvas: 11 20 17;
+  --surface: 17 30 25;
+  --surface-2: 23 39 32;
+  --line: 37 54 46;
+  --ink: 230 238 233;
+  --heading: 234 241 236;
+  --muted: 154 171 162;
+  --forest: 10 33 26;
+  --forest-2: 31 92 69;
+  --coral: 224 138 114;
+  --positive: 95 199 154;
+  --gold: 212 168 75;
+  --tint-green: 22 51 42;
+  --tint-coral: 58 37 32;
+  --tint-gold: 58 50 32;
+}

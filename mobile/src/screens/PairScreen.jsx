@@ -3,7 +3,7 @@ import { ActivityIndicator, ScrollView, Text, TextInput, View } from "react-nati
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { Touchable } from "../ui/Touchable";
 import { LinearGradient } from "expo-linear-gradient";
-import { Wallet } from "lucide-react-native";
+import { BrandMark } from "../ui/shell";
 import { redeemPairingCode } from "../api/client";
 
 /* Espelha normalizePairingCode do servidor: o gerador nunca emite I, L, O ou U,
@@ -45,67 +45,52 @@ export default function PairScreen({ onPaired }) {
      nas duas plataformas. Antes o Android ficava sem behavior apostando no
      adjustResize da janela, que no edge-to-edge obrigatorio nao encolhe nada
      — num aparelho baixo o botao Conectar sumia atras do teclado. style em
-     vez de className: componente de fora do RN, o NativeWind nao o registra. */
+     vez de className: componente de fora do RN, o NativeWind nao o registra.
+
+     Visual do login da web (fundo verde-escuro, cartao claro); o kit mobile
+     nao tem essa tela, e o cartao fica claro tambem no modo escuro. */
   return (
-    <KeyboardAvoidingView behavior="padding" style={{ flex: 1, backgroundColor: "#F1F4F2" }}>
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 24 }}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View className="items-center gap-2">
-          <LinearGradient
-            colors={["#0f2e25", "#16382c", "#1e4a38"]}
-            className="h-16 w-16 rounded-2xl items-center justify-center"
-            style={{ borderRadius: 16 }}
-          >
-            <Wallet size={30} color="#ffffff" />
-          </LinearGradient>
-          <Text className="text-xl font-bold text-slate-800 mt-3">Meu financeiro</Text>
-          <Text className="text-sm text-slate-500 text-center px-4">
-            Abra o site no computador, toque no ícone de celular e digite aqui o código.
-          </Text>
-        </View>
+    <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+      <LinearGradient colors={["#0b3125", "#0a2a20", "#082219"]} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "center", padding: 22 }} keyboardShouldPersistTaps="handled">
+          <View className="flex-row items-center gap-3 self-center mb-7">
+            <BrandMark size={44} />
+            <Text className="font-brand-bold text-[20px] text-white">Meu financeiro</Text>
+          </View>
 
-        <View className="mt-8 gap-3">
-          <TextInput
-            value={display(code)}
-            onChangeText={(t) => {
-              setCode(normalize(t));
-              if (error) setError("");
-            }}
-            placeholder="XXXX-XXXX"
-            placeholderTextColor="#94a3b8"
-            autoCapitalize="characters"
-            autoCorrect={false}
-            autoComplete="off"
-            editable={!busy}
-            onSubmitEditing={submit}
-            returnKeyType="go"
-            className="rounded-2xl border bg-white px-4 py-5 text-center text-2xl font-bold text-slate-800"
-            style={{ letterSpacing: 6, borderColor: error ? "#e11d48" : "#e2e8f0" }}
-          />
+          <View className="rounded-[23px] bg-white p-6 gap-3.5" style={{ elevation: 10, shadowColor: "#031b15", shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 14 } }}>
+            <Text className="font-display text-[28px] leading-[32px] text-[#10261e]">Conectar celular</Text>
+            <Text className="font-brand text-[14px] leading-5 text-[#5f6b65]">
+              Abra o site no computador, vá em Configurações › Parear celular e digite aqui o código.
+            </Text>
+            <TextInput
+              value={display(code)}
+              onChangeText={(t) => {
+                setCode(normalize(t));
+                if (error) setError("");
+              }}
+              placeholder="XXXX-XXXX"
+              placeholderTextColor="#9aa59f"
+              autoCapitalize="characters"
+              autoCorrect={false}
+              autoComplete="off"
+              editable={!busy}
+              onSubmitEditing={submit}
+              returnKeyType="go"
+              className="rounded-[14px] border bg-[#f7f8f6] px-4 py-5 mt-1 text-center font-display text-[26px] text-[#10261e]"
+              style={{ letterSpacing: 6, borderColor: error ? "#bf705a" : "#c8a96a" }}
+            />
 
-          {error ? <Text className="text-sm text-rose-600 text-center">{error}</Text> : null}
+            {error ? <Text className="font-brand text-[13px] text-[#bf705a] text-center">{error}</Text> : null}
 
-          <Touchable
-            onPress={submit}
-            disabled={!ready}
-            onDark
-            className="rounded-2xl py-4 items-center justify-center disabled:opacity-40"
-            style={{ backgroundColor: "#16382c" }}
-          >
-            {busy ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text className="text-white text-base font-semibold">Conectar</Text>
-            )}
-          </Touchable>
+            <Touchable onPress={submit} disabled={!ready} onDark className="h-[52px] rounded-[13px] items-center justify-center bg-[#16382c] disabled:opacity-40">
+              {busy ? <ActivityIndicator color="#ffffff" /> : <Text className="font-brand-semibold text-[15px] text-white">Conectar</Text>}
+            </Touchable>
 
-          <Text className="text-xs text-slate-400 text-center mt-1">
-            O código vale uma única vez e expira em 5 minutos.
-          </Text>
-        </View>
-      </ScrollView>
+            <Text className="font-brand text-[12px] text-[#758079] text-center">O código vale uma única vez e expira em 5 minutos.</Text>
+          </View>
+        </ScrollView>
+      </LinearGradient>
     </KeyboardAvoidingView>
   );
 }

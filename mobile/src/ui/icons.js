@@ -11,3 +11,7 @@ const ICONS = {
 };
 
 export const iconFor = (name) => ICONS[name] || Tag;
+
+/* Traco dos SVG do kit (assets/icons/*.svg: stroke-width 1.7, pontas redondas).
+   Os do lucide ja sao redondos; so o peso muda. */
+export const STROKE = 1.7;

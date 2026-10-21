@@ -1,5 +1,14 @@
 import "./global.css";
 import { useCallback, useEffect, useState } from "react";
+import * as SplashScreen from "expo-splash-screen";
+import { useFonts } from "expo-font";
+/* Um import por peso: o indice do pacote puxaria os 18 pesos (~10 MB) para o app. */
+import { Inter_400Regular } from "@expo-google-fonts/inter/400Regular";
+import { Inter_500Medium } from "@expo-google-fonts/inter/500Medium";
+import { Inter_600SemiBold } from "@expo-google-fonts/inter/600SemiBold";
+import { Inter_700Bold } from "@expo-google-fonts/inter/700Bold";
+import { SourceSerif4_400Regular } from "@expo-google-fonts/source-serif-4/400Regular";
+import { SourceSerif4_600SemiBold } from "@expo-google-fonts/source-serif-4/600SemiBold";
 import { ActivityIndicator, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -10,8 +19,36 @@ import { clearToken, loadToken, saveToken } from "./src/api/session";
 import { clearCache, readCache, writeCache } from "./src/api/cache";
 import PairScreen from "./src/screens/PairScreen";
 import HomeScreen from "./src/screens/HomeScreen";
+import { ThemeProvider, useTheme } from "./src/ui/theme";
+
+/* A splash nativa segura ate as fontes e as preferencias (tema) carregarem:
+   sem isto o app piscaria com a fonte do sistema e no tema errado. */
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <Root />
+    </ThemeProvider>
+  );
+}
+
+function Root() {
+  const { colors, dark, ready } = useTheme();
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    SourceSerif4_400Regular,
+    SourceSerif4_600SemiBold,
+  });
+  /* Fonte que falhou nao trava o app: segue com a do sistema. */
+  const booted = ready && (fontsLoaded || !!fontError);
+  useEffect(() => {
+    if (booted) SplashScreen.hideAsync().catch(() => {});
+  }, [booted]);
+
   const [status, setStatus] = useState("checking"); // checking | pairing | ready
   const [email, setEmail] = useState("");
 
@@ -86,19 +123,22 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
     <SafeAreaProvider>
       <KeyboardProvider>
-        <SafeAreaView className="flex-1" style={{ backgroundColor: "#F1F4F2" }}>
-          {status === "checking" && (
+        {/* Topo pelo SafeAreaView; o rodape e da barra de abas (TabBar), que
+            pinta a area da barra de gestos com a propria cor. */}
+        <SafeAreaView edges={["top", "left", "right"]} className="flex-1" style={{ backgroundColor: status === "pairing" ? "#0b3125" : colors.canvas }}>
+          {(status === "checking" || !booted) && (
             <View className="flex-1 items-center justify-center gap-3">
-              <ActivityIndicator color="#16382c" />
-              <Text className="text-sm text-slate-500">Verificando sessão…</Text>
+              <ActivityIndicator color={colors.positive} />
+              <Text className="text-sm text-muted">Verificando sessão…</Text>
             </View>
           )}
 
-          {status === "pairing" && <PairScreen onPaired={activate} />}
+          {booted && status === "pairing" && <PairScreen onPaired={activate} />}
 
-          {status === "ready" && <HomeScreen email={email} onSignOut={signOut} />}
+          {booted && status === "ready" && <HomeScreen email={email} onSignOut={signOut} />}
 
-          <StatusBar style="dark" />
+          {/* HomeScreen tem o proprio StatusBar; aqui vale para as outras telas. */}
+          {status !== "ready" ? <StatusBar style={status === "pairing" || dark ? "light" : "dark"} /> : null}
         </SafeAreaView>
       </KeyboardProvider>
     </SafeAreaProvider>

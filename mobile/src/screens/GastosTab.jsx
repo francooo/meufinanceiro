@@ -1,20 +1,40 @@
+/* Lancamentos › Gastos (gastos.jpg, gastos-estado-vazio.jpg, feedback-gasto-pago.jpg). */
 import { useMemo, useState } from "react";
-import { Text, TextInput, View } from "react-native";
+import { ScrollView, Text, View } from "react-native";
+import { ArrowDown, ArrowUp, ArrowUpDown, CalendarDays, Check, ChevronDown, ChevronRight, CreditCard, Pencil, Plus, ReceiptText, Tag, Trash2, X } from "lucide-react-native";
 import { Touchable } from "../ui/Touchable";
-import { Check, Plus, Search, X } from "lucide-react-native";
 import { fmt } from "../core/format";
 import { CARTOES_CATEGORY, PAYMENT_METHOD_FALLBACK, allPaymentMethods } from "../core/catalog";
-import { DateField, SelectField } from "../ui/fields";
-import { isDateInputValid, brToIso } from "../core/dateinput";
+import { DateField } from "../ui/fields";
+import { brToIso, isDateInputValid } from "../core/dateinput";
 import { applyGastosFilters, buildGastosGrouped, groupByPaymentMethod } from "../core/gastos";
-import { iconFor } from "../ui/icons";
-import { Card } from "../ui/Card";
-import { Empty } from "../ui/Empty";
-import { Row } from "../ui/Row";
+import { iconFor, STROKE } from "../ui/icons";
+import { ActionSheet, BigAmount, Button, EmptyState, FilterChip, IconBubble, Meter, OptionSheet, PageHeader, Panel, SearchField, ToggleChip } from "../ui/kit";
+import { Row, dueLine, originOf } from "../ui/Row";
+import { SelectionHint } from "../ui/SelectionBar";
 import { DraggableList } from "../ui/DraggableList";
+import { NUM, useTheme } from "../ui/theme";
 
-const NUM = { fontVariant: ["tabular-nums"] };
-const BRAND = "#16382c";
+const SORTS = [
+  { value: "none", label: "Ordem padrão" },
+  { value: "desc", label: "Maior valor" },
+  { value: "asc", label: "Menor valor" },
+];
+
+/* Mini-barras do resumo: as maiores categorias, em proporcao. */
+function MiniBars({ groups }) {
+  const { colors } = useTheme();
+  const top = groups.slice(0, 6);
+  const max = Math.max(1, ...top.map((g) => g.subtotal));
+  const tones = [colors.positive, colors.champagne, colors.forest2, colors.mint, colors.tintGreen, colors.line];
+  return (
+    <View className="flex-row items-end gap-1.5 h-14" accessibilityElementsHidden>
+      {[...top].reverse().map((g, i) => (
+        <View key={g.name} className="w-2.5 rounded-full" style={{ height: Math.max(8, (g.subtotal / max) * 56), backgroundColor: tones[top.length - 1 - i] }} />
+      ))}
+    </View>
+  );
+}
 
 export default function GastosTab({
   expenses,
@@ -30,7 +50,9 @@ export default function GastosTab({
   onMove,
   onReorder,
   onDragChange,
+  highlightId,
 }) {
+  const { colors } = useTheme();
   const [search, setSearch] = useState("");
   const [hidePaid, setHidePaid] = useState(false);
   const [valueSort, setValueSort] = useState("none");
@@ -38,32 +60,22 @@ export default function GastosTab({
   const [paymentMethod, setPaymentMethod] = useState("");
   const [dueFrom, setDueFrom] = useState("");
   const [dueTo, setDueTo] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-
-  const TODAS = "Todas as formas";
-  const TODAS_CATS = "Todas as categorias";
-  const methodOptions = useMemo(
-    () => [TODAS, ...allPaymentMethods(extraPaymentMethods), PAYMENT_METHOD_FALLBACK],
-    [extraPaymentMethods]
-  );
-  const datesOk = isDateInputValid(dueFrom) && isDateInputValid(dueTo);
+  const [picker, setPicker] = useState(null); // "forma" | "categoria" | "vencimento" | "ordenar"
+  const [menu, setMenu] = useState(null); // { item, list, idx }
+  const [collapsed, setCollapsed] = useState(() => new Set());
 
   const grouped = useMemo(() => buildGastosGrouped(expenses), [expenses]);
+  const pendentes = useMemo(() => expenses.filter((e) => !e.paidAt).length, [expenses]);
+  const datesOk = isDateInputValid(dueFrom) && isDateInputValid(dueTo);
 
-  /* Opcoes vindas de `grouped`, nao de CATS: assim a lista traz as categorias
-     personalizadas do usuario e nao oferece categoria sem gasto no mes. */
-  const categoryOptions = useMemo(
-    () => [TODAS_CATS, ...grouped.map((g) => g.name)],
-    [grouped]
-  );
   const { grouped: filtered, visibleTotal, otherFiltersActive } = useMemo(
     () =>
       applyGastosFilters(grouped, {
         search,
         hidePaid,
         valueSort,
-        category: category === TODAS_CATS ? "" : category,
-        paymentMethod: paymentMethod === TODAS ? "" : paymentMethod,
+        category,
+        paymentMethod,
         /* Só filtra com data completa: parcial viraria null e filtraria tudo. */
         dueFrom: brToIso(dueFrom) || "",
         dueTo: brToIso(dueTo) || "",
@@ -72,230 +84,186 @@ export default function GastosTab({
   );
 
   const filtersActive = otherFiltersActive || hidePaid;
-  /* Setas escondidas com filtro ativo: reordenar uma lista filtrada gravaria
-     `order` com base numa ordem que nao e a real (a web faz igual). */
-  /* Em modo selecao as setas somem, como na web: caixinha + setas + tres
-     acoes competiriam demais por ~360dp. */
+  /* Reordenar so sem filtro e fora da selecao: mover numa lista filtrada
+     gravaria `order` numa ordem que nao e a real (a web faz igual). */
   const canReorder = !filtersActive && !selecting && !!onMove;
-  /* Arraste exige, alem do que as setas exigem, o handler de reordenar por
-     sequencia. Setas e arraste convivem: as setas continuam para quem prefere. */
   const canDrag = canReorder && !!onReorder;
 
-  /* Uma linha so, reusada pelo caminho normal e pelo arraste: `listItems` e o
-     grupo visivel (categoria ou, em Cartoes, a forma de pagamento) — a ordem
-     dele e o que vira `order`, igual ao que as setas ja faziam. */
-  const renderList = (listItems) => {
+  const clearFilters = () => {
+    setSearch("");
+    setHidePaid(false);
+    setValueSort("none");
+    setCategory("");
+    setPaymentMethod("");
+    setDueFrom("");
+    setDueTo("");
+  };
+
+  /* `listItems` e o grupo visivel (categoria ou, em Cartoes, a forma de
+     pagamento) — a ordem dele e o que vira `order`, para setas e arraste. */
+  const renderList = (listItems, meta) => {
     const rowFor = (e, idx) => (
-      <View key={e.id} className={idx > 0 ? "border-t border-slate-100" : ""}>
+      <View key={e.id} className={idx > 0 ? "border-t border-line" : ""}>
         <Row
           item={e}
+          title={e.description}
+          icon={iconFor(meta.icon)}
+          color={meta.color}
+          lines={[[e.category, originOf(e)].filter(Boolean).join(" · "), dueLine(e)]}
+          showStatus
+          highlight={highlightId === e.id}
           selected={isSelected ? isSelected(e.id) : false}
           onToggleSelect={selecting ? () => onToggleSelect(e.id) : undefined}
-          onEdit={() => onEdit(e)}
-          onDelete={() => onDelete(e)}
           onTogglePaid={() => onTogglePaid(e)}
-          onMoveUp={canReorder && idx > 0 ? () => onMove(listItems, e.id, "up") : undefined}
-          onMoveDown={
-            canReorder && idx < listItems.length - 1 ? () => onMove(listItems, e.id, "down") : undefined
-          }
+          onMore={selecting ? undefined : () => setMenu({ item: e, list: listItems, idx })}
         />
       </View>
     );
     if (!canDrag) return listItems.map((e, idx) => rowFor(e, idx));
-    return (
-      <DraggableList
-        items={listItems}
-        onReorder={onReorder}
-        onDragChange={onDragChange}
-        renderItem={(e, idx) => rowFor(e, idx)}
-      />
-    );
+    return <DraggableList items={listItems} onReorder={onReorder} onDragChange={onDragChange} renderItem={(e, idx) => rowFor(e, idx)} />;
   };
-  /* Acende o chip "Mais filtros" quando algo do painel recolhido esta ativo —
-     senao o filtro ficaria escondido e sem pista de que esta ligado. */
-  const panelActive = !!(category || paymentMethod || dueFrom || dueTo);
-  const sortLabel = { none: "Ordem padrão", desc: "Maior valor", asc: "Menor valor" }[valueSort];
-  const cycleSort = () =>
-    setValueSort((v) => (v === "none" ? "desc" : v === "desc" ? "asc" : "none"));
+
+  const toggleGroup = (name) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const methodOptions = useMemo(
+    () => [{ value: "", label: "Todas as formas" }, ...[...allPaymentMethods(extraPaymentMethods), PAYMENT_METHOD_FALLBACK].map((p) => ({ value: p, label: p }))],
+    [extraPaymentMethods]
+  );
+  /* Opcoes vindas de `grouped`, nao de CATS: traz as categorias personalizadas
+     e nao oferece categoria sem gasto no mes. */
+  const categoryOptions = useMemo(() => [{ value: "", label: "Todas as categorias" }, ...grouped.map((g) => ({ value: g.name, label: g.name }))], [grouped]);
+
+  const m = menu;
+  const menuActions = m
+    ? [
+        { label: m.item.paidAt ? "Desmarcar pago" : "Marcar como pago", icon: Check, onPress: () => onTogglePaid(m.item) },
+        { label: "Editar", icon: Pencil, onPress: () => onEdit(m.item) },
+        canReorder && { label: "Mover para cima", icon: ArrowUp, disabled: m.idx === 0, onPress: () => onMove(m.list, m.item.id, "up") },
+        canReorder && { label: "Mover para baixo", icon: ArrowDown, disabled: m.idx === m.list.length - 1, onPress: () => onMove(m.list, m.item.id, "down") },
+        { label: "Excluir", icon: Trash2, danger: true, onPress: () => onDelete(m.item) },
+      ]
+    : [];
 
   return (
-    <View className="gap-4 pb-8">
-      <View className="flex-row items-center justify-between">
-        <View>
-          <Text className="text-xs text-slate-500">
-            {otherFiltersActive ? "Total encontrado" : "Total de gastos"}
-          </Text>
-          <Text className="text-xl font-bold text-slate-800" style={NUM}>
-            {fmt(otherFiltersActive ? visibleTotal : total)}
-          </Text>
-        </View>
-        <Touchable
-          onDark
-          onPress={onAdd}
-          className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl"
-          style={{ backgroundColor: BRAND }}
-        >
-          <Plus size={16} color="#ffffff" />
-          <Text className="text-white text-sm font-medium">Novo gasto</Text>
-        </Touchable>
-      </View>
+    <View className="gap-3.5">
+      <PageHeader title="Gastos" subtitle="Acompanhe e organize suas despesas do mês" />
 
-      <View className="relative justify-center">
-        {/* pointerEvents: sem isto o icone engole o toque na esquerda do campo */}
-        <View pointerEvents="none" className="absolute left-3.5 z-10">
-          <Search size={15} color="#94a3b8" />
-        </View>
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder="Buscar por título ou categoria…"
-          placeholderTextColor="#94a3b8"
-          className="rounded-xl border border-slate-200 bg-white pl-10 pr-12 py-3 text-sm text-slate-800"
-        />
-        {search ? (
-          <Touchable onPress={() => setSearch("")} variant="icon"
-            className="absolute right-1 h-11 w-11 items-center justify-center">
-            <X size={14} color="#94a3b8" />
-          </Touchable>
-        ) : null}
-      </View>
-
-      <View className="flex-row flex-wrap items-center gap-2">
-        <Touchable
-          onPress={() => setHidePaid((v) => !v)}
-          className={
-            "flex-row items-center gap-1.5 px-3 py-2 rounded-xl border " +
-            (hidePaid ? "border-transparent" : "bg-white border-slate-200")
-          }
-          style={hidePaid ? { backgroundColor: BRAND } : undefined}
-        >
-          <Check size={13} color={hidePaid ? "#ffffff" : "#334155"} />
-          <Text className={"text-xs font-medium " + (hidePaid ? "text-white" : "text-slate-700")}>
-            {hidePaid ? "Mostrar pagos" : "Ocultar pagos"}
-          </Text>
-        </Touchable>
-
-        <Touchable
-          onPress={cycleSort}
-          className={
-            "px-3 py-2 rounded-xl border " +
-            (valueSort !== "none" ? "border-transparent" : "bg-white border-slate-200")
-          }
-          style={valueSort !== "none" ? { backgroundColor: BRAND } : undefined}
-        >
-          <Text className={"text-xs font-medium " + (valueSort !== "none" ? "text-white" : "text-slate-700")}>
-            {sortLabel}
-          </Text>
-        </Touchable>
-
-        <Touchable
-          onPress={() => setShowFilters((v) => !v)}
-          className={
-            "px-3 py-2 rounded-xl border " +
-            (panelActive ? "border-transparent" : "bg-white border-slate-200")
-          }
-          style={panelActive ? { backgroundColor: BRAND } : undefined}
-        >
-          <Text className={"text-xs font-medium " + (panelActive ? "text-white" : "text-slate-700")}>
-            {showFilters ? "Menos filtros" : "Mais filtros"}
-          </Text>
-        </Touchable>
-
-        {filtersActive ? (
-          <Touchable
-            onPress={() => {
-              setSearch("");
-              setHidePaid(false);
-              setValueSort("none");
-              setCategory("");
-              setPaymentMethod("");
-              setDueFrom("");
-              setDueTo("");
-            }}
-            className="flex-row items-center gap-1 px-2 py-1"
-          >
-            <X size={12} color="#64748b" />
-            <Text className="text-xs font-medium text-slate-500">Limpar filtros</Text>
-          </Touchable>
-        ) : null}
-      </View>
-
-      {showFilters ? (
-        <View className="gap-3 rounded-2xl border border-slate-200 bg-white p-3">
-          <View>
-            <Text className="text-xs font-medium text-slate-500 mb-1">Categoria</Text>
-            <SelectField
-              value={category || TODAS_CATS}
-              options={categoryOptions}
-              onSelect={(v) => setCategory(v === TODAS_CATS ? "" : v)}
-              title="Categoria"
-            />
+      {selecting ? (
+        <SelectionHint />
+      ) : (
+        <Panel className="flex-row items-center gap-4">
+          <View className="flex-1 min-w-0">
+            <Text className="font-display-regular text-[15px] text-ink">{otherFiltersActive ? "Total encontrado" : "Total de gastos"}</Text>
+            <BigAmount>{fmt(otherFiltersActive ? visibleTotal : total)}</BigAmount>
+            <Text className="font-display-regular text-[14px] text-muted" style={NUM}>
+              {expenses.length} {expenses.length === 1 ? "lançamento" : "lançamentos"} · {pendentes} {pendentes === 1 ? "pendente" : "pendentes"}
+            </Text>
           </View>
-          <View>
-            <Text className="text-xs font-medium text-slate-500 mb-1">Forma de pagamento</Text>
-            <SelectField
-              value={paymentMethod || TODAS}
-              options={methodOptions}
-              onSelect={(v) => setPaymentMethod(v === TODAS ? "" : v)}
-              title="Forma de pagamento"
-            />
-          </View>
-          <View className="flex-row gap-2">
-            <View className="flex-1">
-              <Text className="text-xs font-medium text-slate-500 mb-1">Vencimento de</Text>
-              <DateField value={dueFrom} onChangeText={setDueFrom} invalid={!isDateInputValid(dueFrom)} />
-            </View>
-            <View className="flex-1">
-              <Text className="text-xs font-medium text-slate-500 mb-1">até</Text>
-              <DateField value={dueTo} onChangeText={setDueTo} invalid={!isDateInputValid(dueTo)} />
-            </View>
-          </View>
-          {!datesOk ? <Text className="text-[11px] text-rose-600">Data inválida.</Text> : null}
-        </View>
+          {grouped.length > 0 ? <MiniBars groups={grouped} /> : null}
+        </Panel>
+      )}
+
+      <Button label="Novo gasto" icon={Plus} size="lg" onPress={onAdd} />
+
+      {expenses.length > 0 ? (
+        <>
+          <SearchField value={search} onChangeText={setSearch} placeholder="Buscar gasto..." />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerStyle={{ gap: 8 }}>
+            <ToggleChip label="Ocultar pagos" value={hidePaid} onChange={setHidePaid} />
+            <FilterChip icon={CreditCard} label={paymentMethod || "Forma"} active={!!paymentMethod} onPress={() => setPicker("forma")} />
+            <FilterChip icon={CalendarDays} label="Vencimento" active={!!(dueFrom || dueTo)} onPress={() => setPicker("vencimento")} />
+            <FilterChip icon={Tag} label={category || "Categoria"} active={!!category} onPress={() => setPicker("categoria")} />
+            <FilterChip icon={ArrowUpDown} label={valueSort === "none" ? "Ordenar" : SORTS.find((s) => s.value === valueSort).label} active={valueSort !== "none"} onPress={() => setPicker("ordenar")} />
+          </ScrollView>
+          {filtersActive ? (
+            <Touchable variant="icon" onPress={clearFilters} className="flex-row items-center gap-1 self-start py-1">
+              <X size={14} color={colors.muted} strokeWidth={STROKE} />
+              <Text className="font-brand-medium text-[13px] text-muted">Limpar filtros</Text>
+            </Touchable>
+          ) : null}
+        </>
       ) : null}
 
-      {filtered.length === 0 ? (
-        <Empty text={filtersActive ? "Nenhum gasto encontrado." : "Nenhum gasto cadastrado."} />
+      {expenses.length === 0 ? (
+        <Panel>
+          <EmptyState
+            icon={ReceiptText}
+            title="Nenhum gasto neste mês"
+            text="Adicione seu primeiro lançamento para acompanhar suas despesas."
+            action={<Button label="Novo gasto" icon={Plus} onPress={onAdd} />}
+          />
+        </Panel>
+      ) : filtered.length === 0 ? (
+        <Panel>
+          <Text className="font-brand text-[14px] text-muted text-center py-6">Nenhum gasto encontrado.</Text>
+        </Panel>
       ) : null}
 
       {filtered.map((g) => {
-        const Icon = iconFor(g.icon);
+        const isCollapsed = collapsed.has(g.name);
         return (
-          <Card key={g.name} className="overflow-hidden">
-            <View className="flex-row items-center gap-2.5 px-4 py-3 border-b border-slate-100">
-              <View
-                className="h-7 w-7 rounded-lg items-center justify-center"
-                style={{ backgroundColor: g.color + "1F" }}
-              >
-                <Icon size={15} color={g.color} />
+          <Panel key={g.name} padded={false} className="overflow-hidden">
+            <Touchable variant="row" onPress={() => toggleGroup(g.name)} accessibilityState={{ expanded: !isCollapsed }} className="flex-row items-center gap-3 px-3.5 pt-3.5 pb-3">
+              <IconBubble icon={iconFor(g.icon)} color={g.color} />
+              <View className="flex-1 min-w-0">
+                <Text className="font-display text-[17px] text-heading" numberOfLines={1}>
+                  {g.name}
+                </Text>
+                <View className="mt-1.5 w-24">
+                  <Meter value={g.subtotal} max={total} color={g.color} height={5} />
+                </View>
               </View>
-              <Text className="text-sm font-semibold text-slate-700 flex-1" numberOfLines={1}>
-                {g.name}
-              </Text>
-              <Text className="text-sm font-semibold text-slate-800" style={NUM}>
+              <Text className="font-display text-[16px] text-heading" style={NUM}>
                 {fmt(g.subtotal)}
               </Text>
-            </View>
+              {isCollapsed ? <ChevronRight size={18} color={colors.muted} strokeWidth={STROKE} /> : <ChevronDown size={18} color={colors.muted} strokeWidth={STROKE} />}
+            </Touchable>
 
-            {/* Só "Cartões / Financeiro" sub-agrupa por forma de pagamento, igual à web */}
-            {g.name === CARTOES_CATEGORY
-              ? groupByPaymentMethod(g.items, valueSort).map((pm) => (
-                  <View key={pm.name}>
-                    <View className="flex-row items-center gap-2 px-4 py-2 bg-slate-50">
-                      <Text className="text-xs font-medium text-slate-500 flex-1" numberOfLines={1}>
-                        {pm.name}
-                      </Text>
-                      <Text className="text-xs font-semibold text-slate-600" style={NUM}>
-                        {fmt(pm.subtotal)}
-                      </Text>
-                    </View>
-                    {renderList(pm.items)}
+            {isCollapsed ? null : g.name === CARTOES_CATEGORY ? (
+              /* Só "Cartões / Financeiro" sub-agrupa por forma de pagamento, igual à web */
+              groupByPaymentMethod(g.items, valueSort).map((pm) => (
+                <View key={pm.name}>
+                  <View className="flex-row items-center gap-2 mx-3 px-3 py-2 rounded-[10px] bg-surface-2">
+                    <CreditCard size={14} color={colors.muted} strokeWidth={STROKE} />
+                    <Text className="font-brand-medium text-[12px] text-ink flex-1" numberOfLines={1}>
+                      {pm.name} <Text className="text-muted">· subtotal {fmt(pm.subtotal)}</Text>
+                    </Text>
                   </View>
-                ))
-              : renderList(g.items)}
-          </Card>
+                  {renderList(pm.items, g)}
+                </View>
+              ))
+            ) : (
+              <View className="border-t border-line">{renderList(g.items, g)}</View>
+            )}
+          </Panel>
         );
       })}
+
+      <ActionSheet visible={!!menu} title={menu?.item.description} actions={menuActions} onClose={() => setMenu(null)} />
+
+      <OptionSheet visible={picker === "forma"} title="Forma de pagamento" options={methodOptions} value={paymentMethod} onSelect={setPaymentMethod} onClose={() => setPicker(null)} />
+      <OptionSheet visible={picker === "categoria"} title="Categoria" options={categoryOptions} value={category} onSelect={setCategory} onClose={() => setPicker(null)} />
+      <OptionSheet visible={picker === "ordenar"} title="Ordenar" options={SORTS} value={valueSort} onSelect={setValueSort} onClose={() => setPicker(null)} />
+      <OptionSheet visible={picker === "vencimento"} title="Vencimento" onClose={() => setPicker(null)}>
+        <View className="flex-row gap-2">
+          <View className="flex-1">
+            <Text className="font-brand-semibold text-[13px] text-ink mb-1.5">De</Text>
+            <DateField value={dueFrom} onChangeText={setDueFrom} invalid={!isDateInputValid(dueFrom)} />
+          </View>
+          <View className="flex-1">
+            <Text className="font-brand-semibold text-[13px] text-ink mb-1.5">Até</Text>
+            <DateField value={dueTo} onChangeText={setDueTo} invalid={!isDateInputValid(dueTo)} />
+          </View>
+        </View>
+        {!datesOk ? <Text className="font-brand text-[12px] text-coral">Data inválida.</Text> : null}
+        <Button label="Aplicar" onPress={() => setPicker(null)} />
+      </OptionSheet>
     </View>
   );
 }

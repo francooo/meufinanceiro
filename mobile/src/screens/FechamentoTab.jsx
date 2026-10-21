@@ -1,20 +1,18 @@
-import { useMemo } from "react";
+/* Cartoes › Fechamentos (cartoes-fechamentos.jpg). */
+import { useMemo, useState } from "react";
 import { Text, View } from "react-native";
-import { CreditCard, Pencil, Plus, Trash2 } from "lucide-react-native";
-import { Touchable } from "../ui/Touchable";
-import { fmt } from "../core/format";
+import { CreditCard, Info, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react-native";
+import { fmt, monthLabel, monthName } from "../core/format";
 import { totalOf } from "../core/group";
-import { Card } from "../ui/Card";
-import { Empty } from "../ui/Empty";
+import { ActionSheet, BigAmount, Button, EmptyState, IconBubble, IconButton, InfoNote, PageHeader, Panel, SectionTitle } from "../ui/kit";
 import { DraggableList } from "../ui/DraggableList";
-
-const NUM = { fontVariant: ["tabular-nums"] };
-const BRAND = "#16382c";
+import { NUM } from "../ui/theme";
 
 /* Fechamento de cartao do mes: lista de {nome, valor} presa ao mes acessado.
    A ordem e o campo `order` (reordenavel por arraste), com fallback alfabetico
    — igual ao que o backend ja devolve em getCardClosings. */
-export default function FechamentoTab({ items, onAdd, onEdit, onDelete, onReorder, onDragChange }) {
+export default function FechamentoTab({ items, month, onAdd, onEdit, onDelete, onReorder, onDragChange }) {
+  const [menu, setMenu] = useState(null);
   const total = useMemo(() => totalOf(items), [items]);
   /* Ordena localmente para o arraste refletir na hora: ao soltar, so o campo
      `order` muda, entao e a ordenacao que reposiciona a linha. */
@@ -31,77 +29,68 @@ export default function FechamentoTab({ items, onAdd, onEdit, onDelete, onReorde
   const canDrag = !!onReorder && sorted.length > 1;
 
   const rowFor = (it, idx) => (
-    <View
-      key={it.id}
-      className={"flex-row items-center gap-3 px-4 py-3 bg-white " + (idx > 0 ? "border-t border-slate-100" : "")}
-    >
-      <View
-        className="h-7 w-7 rounded-lg items-center justify-center"
-        style={{ backgroundColor: "#D6493B1F" }}
-      >
-        <CreditCard size={15} color="#D6493B" />
+    <View key={it.id} className={"flex-row items-center gap-3 px-3.5 py-3 bg-surface " + (idx > 0 ? "border-t border-line" : "")}>
+      <IconBubble icon={CreditCard} />
+      <View className="flex-1 min-w-0">
+        <Text className="font-display text-[15px] text-heading" numberOfLines={1}>
+          {it.cardName}
+        </Text>
+        <Text className="font-brand text-[12px] text-muted">Fechamento de {monthName(month)}</Text>
       </View>
-      <Text className="text-sm text-slate-800 flex-1" numberOfLines={1}>
-        {it.cardName}
-      </Text>
-      <Text className="text-sm font-semibold text-slate-800" style={NUM}>
+      <Text className="font-display text-[16px] text-heading" style={NUM}>
         {fmt(it.value)}
       </Text>
-      <View className="flex-row items-center gap-1 shrink-0">
-        <Touchable
-          variant="icon"
-          onPress={() => onEdit(it)}
-          hitSlop={{ top: 8, bottom: 8 }}
-          className="h-9 w-9 rounded-lg items-center justify-center"
-        >
-          <Pencil size={16} color="#94a3b8" />
-        </Touchable>
-        <Touchable
-          variant="icon"
-          onPress={() => onDelete(it)}
-          hitSlop={{ top: 8, bottom: 8, right: 8 }}
-          className="h-9 w-9 rounded-lg items-center justify-center"
-        >
-          <Trash2 size={16} color="#94a3b8" />
-        </Touchable>
-      </View>
+      <IconButton icon={MoreHorizontal} label="Mais ações" onPress={() => setMenu(it)} size={34} />
     </View>
   );
 
   return (
-    <View className="gap-4 pb-8">
-      <View className="flex-row items-center justify-between">
-        <View>
-          <Text className="text-xs text-slate-500">Total do mês</Text>
-          <Text className="text-xl font-bold text-slate-800" style={NUM}>
-            {fmt(total)}
-          </Text>
-        </View>
-        <Touchable
-          onDark
-          onPress={onAdd}
-          className="flex-row items-center gap-1.5 px-4 py-2.5 rounded-xl"
-          style={{ backgroundColor: BRAND }}
-        >
-          <Plus size={16} color="#ffffff" />
-          <Text className="text-white text-sm font-medium">Novo fechamento</Text>
-        </Touchable>
-      </View>
+    <View className="gap-3.5">
+      <PageHeader title="Fechamentos de cartão" subtitle="Planeje os valores a pagar em cada cartão" />
 
-      {sorted.length === 0 ? (
-        <Empty text="Nenhum fechamento de cartão neste mês." />
-      ) : (
-        <Card className="overflow-hidden">
-          {canDrag
-            ? <DraggableList
-                items={sorted}
-                onReorder={onReorder}
-                onDragChange={onDragChange}
-                renderItem={(it, idx) => rowFor(it, idx)}
-              />
-            : sorted.map((it, idx) => rowFor(it, idx))}
-        </Card>
-      )}
+      <Panel className="flex-row items-center gap-4">
+        <IconBubble icon={CreditCard} size="lg" />
+        <View className="flex-1 min-w-0">
+          <Text className="font-brand text-[14px] text-positive">Total a pagar em {monthLabel(month)}</Text>
+          <BigAmount>{fmt(total)}</BigAmount>
+        </View>
+      </Panel>
+
+      <Button label="Novo fechamento" icon={Plus} size="lg" onPress={onAdd} />
+
+      <Panel padded={false} className="overflow-hidden">
+        <View className="px-4 pt-4">
+          <SectionTitle>Fechamentos do mês</SectionTitle>
+        </View>
+        {sorted.length === 0 ? (
+          <EmptyState icon={CreditCard} title="Nenhum fechamento neste mês" text="Registre o valor total a pagar de cada cartão." />
+        ) : (
+          <View className="border-t border-line">
+            {canDrag ? (
+              <DraggableList items={sorted} onReorder={onReorder} onDragChange={onDragChange} renderItem={(it, idx) => rowFor(it, idx)} />
+            ) : (
+              sorted.map((it, idx) => rowFor(it, idx))
+            )}
+          </View>
+        )}
+        <View className="px-4 py-3.5 border-t border-line">
+          <InfoNote icon={Info}>Registre aqui o valor total a pagar de cada cartão neste mês.</InfoNote>
+        </View>
+      </Panel>
+
+      <ActionSheet
+        visible={!!menu}
+        title={menu?.cardName}
+        onClose={() => setMenu(null)}
+        actions={
+          menu
+            ? [
+                { label: "Editar", icon: Pencil, onPress: () => onEdit(menu) },
+                { label: "Excluir", icon: Trash2, danger: true, onPress: () => onDelete(menu) },
+              ]
+            : []
+        }
+      />
     </View>
   );
 }

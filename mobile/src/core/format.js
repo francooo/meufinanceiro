@@ -2,7 +2,38 @@
    Intl funciona no Hermes (delega para android.icu / Foundation) e nada aqui usa
    notation/compactDisplay/signDisplay, que sao as lacunas documentadas. */
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-export const fmt = (n) => brl.format(Number(n) || 0);
+
+/* Modo "ocultar valores" (olho do topo). Variavel de modulo e nao contexto, como
+   na web: a HomeScreen a atualiza no inicio de cada render e toda tela le valor
+   so pelo fmt, re-renderizando a partir dela. Porcentagens continuam visiveis. */
+let HIDE_VALUES = false;
+export const setHideValues = (v) => {
+  HIDE_VALUES = !!v;
+};
+export const fmt = (n) => (HIDE_VALUES ? "R$ ••••" : brl.format(Number(n) || 0));
+
+/* 1234.5 -> "1234,50": reabre um valor salvo num campo de texto. Com ponto
+   ("1234.50") o parseAmount leria "1.234" como milhar. */
+export const amountToInput = (n) =>
+  n == null || n === "" || Number.isNaN(Number(n)) ? "" : Number(n).toFixed(2).replace(".", ",");
+
+export const SHORT_MONTHS = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const LONG_MONTHS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+/* "2026-10-05" -> "05 out" (linha do tempo de Proximos 7 dias, "Vence 03 out"). */
+export const formatDayMonth = (iso) => {
+  const [, m, d] = String(iso || "").split("-");
+  return m && d ? `${d} ${SHORT_MONTHS[Number(m) - 1]}` : "";
+};
+
+/* "2026-10" ou "2026-10-05" -> "outubro" (selo "Para novembro" dos desejos). */
+export const monthName = (key) => LONG_MONTHS[Number(String(key || "").split("-")[1]) - 1] || "";
+
+export const addDaysISO = (iso, n) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+};
 
 export const todayISO = () => {
   const d = new Date();

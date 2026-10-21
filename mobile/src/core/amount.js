@@ -7,6 +7,8 @@ export function parseAmount(raw) {
   if (!s) return NaN;
   const normalized = s.includes(",")
     ? s.replace(/\./g, "").replace(",", ".") // "1.234,56" -> "1234.56"
+    : /^\d{1,3}(\.\d{3})+$/.test(s)
+    ? s.replace(/\./g, "")                   // "7.000" -> "7000": milhar, nao 7
     : s;                                      // "1234.56" ja esta pronto
   const n = Number(normalized);
   return Number.isFinite(n) ? n : NaN;
