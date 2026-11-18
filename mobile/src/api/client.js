@@ -20,8 +20,8 @@ export async function request(path, { method = "GET", body, auth = true } = {}) 
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  /* getSessionEmail devolve null tanto para token expirado quanto para
-     ALLOWED_EMAIL trocado — os dois chegam como 401 e significam a mesma coisa
+  /* getSessionEmail devolve null para token expirado, conta excluida ou conta
+     fora da lista (quando ha lista) — tudo chega como 401 e significa a mesma coisa
      para o app: a sessão morreu, volte ao pareamento. Tratar só localmente
      deixaria cada tela mostrando "lista vazia" sem explicação. */
   if (auth && res.status === 401) {

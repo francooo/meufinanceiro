@@ -61,7 +61,7 @@ export default function PairScreen({ onPaired }) {
           <View className="rounded-[23px] bg-white p-6 gap-3.5" style={{ elevation: 10, shadowColor: "#031b15", shadowOpacity: 0.35, shadowRadius: 24, shadowOffset: { width: 0, height: 14 } }}>
             <Text className="font-display text-[28px] leading-[32px] text-[#10261e]">Conectar celular</Text>
             <Text className="font-brand text-[14px] leading-5 text-[#5f6b65]">
-              Abra o site no computador, vá em Configurações › Parear celular e digite aqui o código.
+              No computador, entre no site com a sua conta Google, vá em Configurações › Parear celular e digite aqui o código.
             </Text>
             <TextInput
               value={display(code)}

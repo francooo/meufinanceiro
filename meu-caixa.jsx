@@ -4,7 +4,7 @@ import {
   ArrowUpRight, ArrowDownRight, Landmark, HandCoins, Smartphone,
   DollarSign, LogOut, Calculator, Home, FileText, CreditCard,
   Eye, EyeOff, ChevronLeft, ChevronRight, Menu, Settings, BarChart3, CheckSquare, CheckCircle2,
-  Moon, Sun, User,
+  Moon, Sun, User, ShieldAlert, Wallet, ReceiptText, Sparkles,
 } from "lucide-react";
 import {
   CATS, catMeta, PAYMENT_METHODS, PAYMENT_METHOD_FALLBACK, allPaymentMethods,
@@ -15,7 +15,7 @@ import {
   formatRelativeTime, monthKey, monthLabel, addMonths, uid,
 } from "./src/web/lib/format.js";
 import { Button, Panel, PageHeader, Skeleton, Toast } from "./src/web/ui/core.jsx";
-import { ConfirmDialog } from "./src/web/ui/form.jsx";
+import { ConfirmDialog, Field, Modal, TextInput } from "./src/web/ui/form.jsx";
 import Gastos from "./src/web/screens/Gastos.jsx";
 import Ganhos from "./src/web/screens/Ganhos.jsx";
 import Dividas from "./src/web/screens/Dividas.jsx";
@@ -65,10 +65,19 @@ const initialTheme = () => {
 };
 
 
+/* Toda chamada de dados passa por aqui. Um 401 no meio da sessão (token vencido,
+   conta excluída em outro aparelho) avisa o App, que volta ao login — antes o
+   store engolia o erro e seguia com listas vazias, que o autosave regravaria. */
+const apiFetch = async (url, opts) => {
+  const res = await fetch(url, opts);
+  if (res.status === 401) window.dispatchEvent(new Event("mf:unauthorized"));
+  return res;
+};
+
 const store = {
   async loadMonths() {
     try {
-      const res = await fetch("/api/months");
+      const res = await apiFetch("/api/months");
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.months) ? data.months : [];
@@ -78,7 +87,7 @@ const store = {
   },
   async load(month) {
     try {
-      const res = await fetch(`/api/data?month=${encodeURIComponent(month)}`);
+      const res = await apiFetch(`/api/data?month=${encodeURIComponent(month)}`);
       if (!res.ok) return null;
       const data = await res.json();
       return data && Array.isArray(data.expenses) ? data : null;
@@ -88,7 +97,7 @@ const store = {
   },
   async save(month, data) {
     try {
-      await fetch("/api/data", {
+      await apiFetch("/api/data", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ month, ...data }),
@@ -98,7 +107,7 @@ const store = {
     }
   },
   async createMonth(month) {
-    const res = await fetch("/api/months", {
+    const res = await apiFetch("/api/months", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month }),
@@ -111,7 +120,7 @@ const store = {
   },
   async loadPaymentMethods() {
     try {
-      const res = await fetch("/api/payment-methods");
+      const res = await apiFetch("/api/payment-methods");
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.methods) ? data.methods : [];
@@ -123,7 +132,7 @@ const store = {
   // seletor no primeiro mês que não tiver gasto nela
   async loadCategories() {
     try {
-      const res = await fetch("/api/categories");
+      const res = await apiFetch("/api/categories");
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.categories) ? data.categories : [];
@@ -133,7 +142,7 @@ const store = {
   },
   async loadWishlist() {
     try {
-      const res = await fetch("/api/wishlist");
+      const res = await apiFetch("/api/wishlist");
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.items) ? data.items : [];
@@ -143,7 +152,7 @@ const store = {
   },
   async saveWishlist(items) {
     try {
-      await fetch("/api/wishlist", {
+      await apiFetch("/api/wishlist", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
@@ -154,7 +163,7 @@ const store = {
   },
   async loadShoppingList(listType) {
     try {
-      const res = await fetch(`/api/shopping?list=${listType}`);
+      const res = await apiFetch(`/api/shopping?list=${listType}`);
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.items) ? data.items : [];
@@ -164,7 +173,7 @@ const store = {
   },
   async saveShoppingList(listType, items) {
     try {
-      await fetch(`/api/shopping?list=${listType}`, {
+      await apiFetch(`/api/shopping?list=${listType}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
@@ -175,7 +184,7 @@ const store = {
   },
   async loadSerasa() {
     try {
-      const res = await fetch("/api/serasa");
+      const res = await apiFetch("/api/serasa");
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.items) ? data.items : [];
@@ -185,7 +194,7 @@ const store = {
   },
   async saveSerasa(items) {
     try {
-      await fetch("/api/serasa", {
+      await apiFetch("/api/serasa", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
@@ -196,7 +205,7 @@ const store = {
   },
   async loadCards() {
     try {
-      const res = await fetch("/api/cards");
+      const res = await apiFetch("/api/cards");
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.items) ? data.items : [];
@@ -206,7 +215,7 @@ const store = {
   },
   async saveCards(items) {
     try {
-      await fetch("/api/cards", {
+      await apiFetch("/api/cards", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
@@ -218,7 +227,7 @@ const store = {
   /* Fechamento de cartão é preso ao mês (como /api/data), então o mês vai na query. */
   async loadCardClosings(month) {
     try {
-      const res = await fetch(`/api/card-closings?month=${encodeURIComponent(month)}`);
+      const res = await apiFetch(`/api/card-closings?month=${encodeURIComponent(month)}`);
       if (!res.ok) return [];
       const data = await res.json();
       return Array.isArray(data.items) ? data.items : [];
@@ -228,7 +237,7 @@ const store = {
   },
   async saveCardClosings(month, items) {
     try {
-      await fetch(`/api/card-closings?month=${encodeURIComponent(month)}`, {
+      await apiFetch(`/api/card-closings?month=${encodeURIComponent(month)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
@@ -325,6 +334,43 @@ export default function App() {
     setLoaded(false);
     setEmail("");
     exitSelection();
+  };
+
+  /* Sessão perdida no meio do uso (apiFetch avisou um 401): volta ao login e
+     descarta o que está na tela, para nada disso ser regravado nem aparecer
+     para a próxima conta que entrar neste navegador. */
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setAuthed(false);
+      setLoaded(false);
+      setEmail("");
+      setExpenses([]);
+      setIncomes([]);
+      setWishlist([]);
+      setShoppingLists({ mercado: [], farmacia: [] });
+      setSerasa([]);
+      setCards([]);
+      setCardClosings([]);
+      setModal(null);
+      setSelecting(false);
+    };
+    window.addEventListener("mf:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("mf:unauthorized", onUnauthorized);
+  }, []);
+
+  /* "Excluir minha conta": o servidor apaga tudo da pessoa e o cookie; aqui só
+     resta limpar a tela e voltar ao login. */
+  const deleteAccount = async (confirm) => {
+    const res = await fetch("/api/account", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "Não foi possível excluir a conta.");
+    }
+    window.dispatchEvent(new Event("mf:unauthorized"));
   };
 
   useEffect(() => {
@@ -1039,6 +1085,11 @@ export default function App() {
                   onWalletChange={setWallet}
                   wallets={wallets}
                   onGo={setTab}
+                  /* conta começando: nenhum lançamento e um mês só */
+                  welcome={expenses.length === 0 && incomes.length === 0 && months.length <= 1}
+                  onNewIncome={() => setModal({ mode: "income", item: null })}
+                  onNewExpense={() => setModal({ mode: "expense", item: null })}
+                  onPair={() => setModal({ mode: "pair" })}
                 />
               </>
             )}
@@ -1145,7 +1196,7 @@ export default function App() {
             {tab === "config" && (
               <>
                 <PageHeader title="Configurações" subtitle="Sua conta e o app do celular" />
-                <SettingsSection email={email} onPair={() => setModal({ mode: "pair" })} onLogout={handleLogout} />
+                <SettingsSection email={email} onPair={() => setModal({ mode: "pair" })} onLogout={handleLogout} onDeleteAccount={deleteAccount} />
               </>
             )}
           </main>
@@ -1406,7 +1457,7 @@ function LoginScreen({ onLogin }) {
         </div>
         {error && <p className="text-xs text-rose-600 mt-3">{error}</p>}
 
-        <p className="mt-7 text-[13px] text-slate-400">Acesso restrito à conta autorizada.</p>
+        <p className="mt-7 text-[13px] text-slate-400">Entre com sua conta Google. Cada conta vê só as próprias finanças.</p>
       </main>
     </div>
   );
@@ -1743,7 +1794,53 @@ function LoadingScreen() {
   );
 }
 
-function SettingsSection({ email, onPair, onLogout }) {
+/* Exclusão da conta: digitar o próprio e-mail é a confirmação (o servidor
+   confere de novo). Some tudo: meses, lançamentos, listas, cartões e o celular. */
+function DeleteAccountDialog({ email, onClose, onConfirm }) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const matches = typed.trim().toLowerCase() === String(email || "").toLowerCase();
+  const submit = async () => {
+    if (!matches || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onConfirm(typed.trim());
+    } catch (err) {
+      setError(err.message || "Não foi possível excluir a conta.");
+      setBusy(false);
+    }
+  };
+  return (
+    <Modal
+      title="Excluir minha conta"
+      subtitle="Apaga para sempre todas as suas finanças deste app."
+      onClose={busy ? () => {} : onClose}
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancelar
+          </Button>
+          <Button variant="danger" onClick={submit} disabled={!matches || busy}>
+            {busy ? "Excluindo…" : "Excluir para sempre"}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[15px] text-muted">
+        Meses, gastos, ganhos, cartões, dívidas e listas desta conta serão apagados, e o celular pareado sai da conta. Não dá para desfazer.
+      </p>
+      <Field label="Digite seu e-mail para confirmar" error={error || undefined}>
+        <TextInput autoFocus value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={email} autoComplete="off" />
+      </Field>
+    </Modal>
+  );
+}
+
+function SettingsSection({ email, onPair, onLogout, onDeleteAccount }) {
+  const [deleting, setDeleting] = useState(false);
   return (
     <div className="grid gap-4 max-w-3xl">
       <Panel>
@@ -1766,10 +1863,18 @@ function SettingsSection({ email, onPair, onLogout }) {
         </Button>
       </Panel>
       <Panel>
-        <Button variant="danger" icon={LogOut} onClick={onLogout}>
+        <Button variant="secondary" icon={LogOut} onClick={onLogout}>
           Sair da conta
         </Button>
       </Panel>
+      <Panel>
+        <h2 className="font-display font-semibold text-[22px] mb-1 text-heading">Excluir minha conta</h2>
+        <p className="text-sm text-muted mb-4">Apaga todas as suas finanças deste app. Cada conta só vê os próprios dados, e os seus deixam de existir.</p>
+        <Button variant="danger" icon={ShieldAlert} onClick={() => setDeleting(true)}>
+          Excluir minha conta
+        </Button>
+      </Panel>
+      {deleting && <DeleteAccountDialog email={email} onClose={() => setDeleting(false)} onConfirm={onDeleteAccount} />}
     </div>
   );
 }
@@ -2183,9 +2288,49 @@ function RecentCard({ expenses, incomes, onEditItem, onDeleteItem, onGo }) {
   );
 }
 
-function Overview({ byCat, totalGastos, expenses, incomes, onEditItem, onDeleteItem, wallet, onWalletChange, wallets, onGo }) {
+/* Boas-vindas de conta nova: três passos para o app deixar de estar vazio. Some
+   sozinho no primeiro lançamento. */
+function WelcomeCard({ onNewIncome, onNewExpense, onPair }) {
+  const steps = [
+    { icon: Wallet, title: "Comece pelos seus ganhos", text: "Salário, renda extra e vale-alimentação: é deles que sai a sobra do mês.", action: "Novo ganho", onClick: onNewIncome },
+    { icon: ReceiptText, title: "Depois, registre os gastos", text: "Com categoria e vencimento, eles aparecem em Próximos 7 dias.", action: "Novo gasto", onClick: onNewExpense },
+    { icon: Smartphone, title: "Use também no celular", text: "Pareie o app com um código e veja as mesmas finanças.", action: "Parear celular", onClick: onPair },
+  ];
+  return (
+    <HomeCard className="xl:col-span-2">
+      <div className="flex items-center gap-3 mb-1">
+        <span className="h-10 w-10 rounded-full bg-tint-gold text-gold flex items-center justify-center">
+          <Sparkles size={20} />
+        </span>
+        <h2 className="font-display font-semibold text-[22px] sm:text-[24px] text-heading">Boas-vindas ao Meu financeiro</h2>
+      </div>
+      <p className="text-[15px] text-muted mb-5">Sua conta está pronta e só você vê estes dados. Três passos para começar:</p>
+      <ol className="grid gap-3 md:grid-cols-3">
+        {steps.map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <li key={s.title} className="rounded-2xl border border-line bg-surface-2 p-4 flex flex-col">
+              <div className="flex items-center gap-3">
+                <span className="h-9 w-9 shrink-0 rounded-full bg-tint-green text-positive flex items-center justify-center font-display text-[15px]">{i + 1}</span>
+                <Icon size={20} className="text-positive" />
+              </div>
+              <p className="mt-3 font-display text-[17px] text-heading">{s.title}</p>
+              <p className="mt-1 text-[13px] text-muted flex-1">{s.text}</p>
+              <Button variant={i === 0 ? "primary" : "secondary"} size="sm" className="mt-4 self-start" onClick={s.onClick}>
+                {s.action}
+              </Button>
+            </li>
+          );
+        })}
+      </ol>
+    </HomeCard>
+  );
+}
+
+function Overview({ byCat, totalGastos, expenses, incomes, onEditItem, onDeleteItem, wallet, onWalletChange, wallets, onGo, welcome, onNewIncome, onNewExpense, onPair }) {
   return (
     <div className="grid grid-cols-1 gap-5 lg:gap-6 xl:grid-cols-[minmax(0,1.32fr)_minmax(0,1fr)] [&>*]:min-w-0">
+      {welcome && <WelcomeCard onNewIncome={onNewIncome} onNewExpense={onNewExpense} onPair={onPair} />}
       <SobraCard wallet={wallet} onWalletChange={onWalletChange} wallets={wallets} />
       <UpcomingCard expenses={expenses} incomes={incomes} onGo={onGo} />
       <SpendingCard byCat={byCat} totalGastos={totalGastos} onGo={onGo} />

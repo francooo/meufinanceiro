@@ -26,6 +26,9 @@ export const store = {
   },
   save: (month, data) =>
     request("/api/data", { method: "PUT", body: { month, ...data } }),
+  /* "Excluir minha conta": o e-mail digitado vai como confirmacao; o servidor so
+     apaga a conta da propria sessao. */
+  deleteAccount: (confirm) => request("/api/account", { method: "DELETE", body: { confirm } }),
   loadPaymentMethods: async () => {
     const d = await request("/api/payment-methods");
     return keep("paymentMethods")(Array.isArray(d.methods) ? d.methods : []);

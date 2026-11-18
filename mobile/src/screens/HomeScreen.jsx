@@ -708,6 +708,10 @@ export default function HomeScreen({ email, onSignOut }) {
       wallets={wallets}
       onEditItem={guard((kind, item) => setModal({ mode: kind, item }))}
       onGo={setTab}
+      /* conta comecando: nenhum lancamento e um mes so */
+      welcome={!offline && expenses.length === 0 && incomes.length === 0 && months.length <= 1}
+      onNewIncome={guard(() => setModal({ mode: "income", item: null }))}
+      onNewExpense={guard(() => setModal({ mode: "expense", item: null }))}
     />
   ) : tab === "gastos" ? (
     <GastosTab
@@ -769,7 +773,7 @@ export default function HomeScreen({ email, onSignOut }) {
       onDragChange={setDragging}
     />
   ) : tab === "config" ? (
-    <SettingsTab email={email} onSignOut={signOutNow} onBeforeReload={flushAll} />
+    <SettingsTab email={email} onSignOut={signOutNow} onAccountDeleted={onSignOut} onBeforeReload={flushAll} />
   ) : (
     <ChecklistTab
       key={tab}
