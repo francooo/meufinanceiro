@@ -1,0 +1,170 @@
+[
+  {
+    "id": "inicio",
+    "title": "Início — Visão geral",
+    "reference": "references/inicio.jpg",
+    "kind": "home",
+    "source": "mobile-inicio-visao-geral.png"
+  },
+  {
+    "id": "gastos",
+    "title": "Lançamentos — Gastos",
+    "reference": "references/gastos.jpg",
+    "kind": "expenses",
+    "source": "mobile-lancamentos-gastos.png"
+  },
+  {
+    "id": "ganhos",
+    "title": "Lançamentos — Ganhos",
+    "reference": "references/ganhos.jpg",
+    "kind": "income",
+    "source": "mobile-lancamentos-ganhos.png"
+  },
+  {
+    "id": "cartoes-saldos",
+    "title": "Cartões — Saldos",
+    "reference": "references/cartoes-saldos.jpg",
+    "kind": "cards",
+    "source": "mobile-cartoes-saldos.png"
+  },
+  {
+    "id": "cartoes-fechamentos",
+    "title": "Cartões — Fechamentos",
+    "reference": "references/cartoes-fechamentos.jpg",
+    "kind": "closings",
+    "source": "mobile-cartoes-fechamentos.png"
+  },
+  {
+    "id": "dividas-serasa",
+    "title": "Dívidas — Serasa",
+    "reference": "references/dividas-serasa.jpg",
+    "kind": "debts",
+    "source": "mobile-dividas-serasa.png"
+  },
+  {
+    "id": "listas-desejos",
+    "title": "Listas — Desejos",
+    "reference": "references/listas-desejos.jpg",
+    "kind": "wishes",
+    "source": "mobile-listas-desejos.png"
+  },
+  {
+    "id": "home-modo-escuro",
+    "title": "Início — Modo escuro",
+    "reference": "references/home-modo-escuro.jpg",
+    "kind": "home-dark",
+    "source": "mobile-home-modo-escuro.png"
+  },
+  {
+    "id": "feedback-gasto-pago",
+    "title": "Feedback — Gasto pago",
+    "reference": "references/feedback-gasto-pago.jpg",
+    "kind": "paid",
+    "source": "mobile-feedback-gasto-pago.png"
+  },
+  {
+    "id": "modal-novo-fechamento",
+    "title": "Modal — Novo fechamento",
+    "reference": "references/modal-novo-fechamento.jpg",
+    "kind": "form-closing",
+    "source": "mobile-modal-novo-fechamento.png"
+  },
+  {
+    "id": "modal-nova-divida",
+    "title": "Modal — Nova dívida",
+    "reference": "references/modal-nova-divida.jpg",
+    "kind": "form-debt",
+    "source": "mobile-modal-nova-divida.png"
+  },
+  {
+    "id": "modal-novo-desejo",
+    "title": "Modal — Novo desejo",
+    "reference": "references/modal-novo-desejo.jpg",
+    "kind": "form-wish",
+    "source": "mobile-modal-novo-desejo.png"
+  },
+  {
+    "id": "modal-novo-item-mercado",
+    "title": "Modal — Novo item de Mercado",
+    "reference": "references/modal-novo-item-mercado.jpg",
+    "kind": "form-market",
+    "source": "mobile-modal-novo-item-mercado.png"
+  },
+  {
+    "id": "modal-novo-item-farmacia",
+    "title": "Modal — Novo item de Farmácia",
+    "reference": "references/modal-novo-item-farmacia.jpg",
+    "kind": "form-pharmacy",
+    "source": "mobile-modal-novo-item-farmacia.png"
+  },
+  {
+    "id": "modal-novo-cartao",
+    "title": "Modal — Novo cartão",
+    "reference": "references/modal-novo-cartao.jpg",
+    "kind": "form-card",
+    "source": "mobile-modal-novo-cartao.png"
+  },
+  {
+    "id": "home-valores-ocultos",
+    "title": "Início — Valores ocultos",
+    "reference": "references/home-valores-ocultos.jpg",
+    "kind": "home-hidden",
+    "source": "mobile-home-valores-ocultos.png"
+  },
+  {
+    "id": "listas-mercado",
+    "title": "Listas — Mercado",
+    "reference": "references/listas-mercado.jpg",
+    "kind": "market",
+    "source": "mobile-listas-mercado.png"
+  },
+  {
+    "id": "home-loading",
+    "title": "Início — Carregamento",
+    "reference": "references/home-loading.jpg",
+    "kind": "loading",
+    "source": "mobile-home-loading.png"
+  },
+  {
+    "id": "modal-novo-ganho",
+    "title": "Modal — Novo ganho",
+    "reference": "references/modal-novo-ganho.jpg",
+    "kind": "form-income",
+    "source": "modal-novo-ganho-mobile.png"
+  },
+  {
+    "id": "modal-editar-gasto",
+    "title": "Modal — Editar gasto",
+    "reference": "references/modal-editar-gasto.jpg",
+    "kind": "form-edit-expense",
+    "source": "modal-editar-gasto-mobile.png"
+  },
+  {
+    "id": "modal-atualizar-saldo",
+    "title": "Modal — Atualizar saldo do cartão",
+    "reference": "references/modal-atualizar-saldo.jpg",
+    "kind": "form-balance",
+    "source": "modal-atualizar-saldo-mobile.png"
+  },
+  {
+    "id": "somar-itens",
+    "title": "Modo — Somar itens",
+    "reference": "references/somar-itens.jpg",
+    "kind": "sum",
+    "source": "somar-itens-mobile.png"
+  },
+  {
+    "id": "listas-farmacia",
+    "title": "Listas — Farmácia",
+    "reference": "references/listas-farmacia.jpg",
+    "kind": "pharmacy",
+    "source": "mobile-listas-farmacia.png"
+  },
+  {
+    "id": "gastos-estado-vazio",
+    "title": "Gastos — Estado vazio",
+    "reference": "references/gastos-estado-vazio.jpg",
+    "kind": "empty",
+    "source": "mobile-gastos-estado-vazio.png"
+  }
+]
