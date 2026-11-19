@@ -201,6 +201,13 @@
   }
   .mf-win--tall { height: 100%; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
   #privacidade .facts-list { margin-top: var(--s-2); }
+  /* the closing footer on a short window: it grows with its content instead of squeezing the button under the links */
+  @media (min-width: 1280px) and (max-height: 860px) {
+    main > section:not(.hero) { height: auto; min-height: calc(var(--h, 1) * 100svh); }
+    footer.closing { height: auto; min-height: 100vh; min-height: 100svh; }
+    footer.closing > .wrap { grid-template-rows: auto auto; align-content: space-between; }
+    footer.closing .closing__cta > * { flex-shrink: 0; }
+  }
   .facts-list { display: grid; gap: var(--s-4); margin: 0; padding: 0; list-style: none; }
   .facts-list li { display: flex; align-items: center; gap: var(--s-3); }
   .facts-list li > svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
