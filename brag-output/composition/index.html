@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="pt-BR" data-resolution="portrait">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1080, height=1920" />
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Serif4"; src: url("assets/fonts/SourceSerif4_600SemiBold.ttf"); font-weight: 600; }
+      @font-face { font-family: "Serif4"; src: url("assets/fonts/SourceSerif4_400Regular.ttf"); font-weight: 400; }
+      @font-face { font-family: "InterL"; src: url("assets/fonts/Inter_400Regular.ttf"); font-weight: 400; }
+      @font-face { font-family: "InterL"; src: url("assets/fonts/Inter_500Medium.ttf"); font-weight: 500; }
+      @font-face { font-family: "InterL"; src: url("assets/fonts/Inter_600SemiBold.ttf"); font-weight: 600; }
+      @font-face { font-family: "InterL"; src: url("assets/fonts/Inter_700Bold.ttf"); font-weight: 700; }
+
+      /* Paleta do proprio app (mobile/global.css, card "Sobra do mes"). */
+      :root {
+        --forest: #0f2e25;
+        --forest-2: #0a3b2d;
+        --glow: #1a5b45;
+        --ink: #ffffff;
+        --soft: rgba(236, 253, 245, 0.84);
+        --champagne: #c8a96a;
+        --gold-light: #f3dfae;
+        --mint: #7ed6a7;
+        --serif: "Serif4", Georgia, serif;
+        --sans: "InterL", system-ui, sans-serif;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1080px; height: 1920px; overflow: hidden; background: var(--forest); }
+      #root { position: relative; width: 1080px; height: 1920px; overflow: hidden; font-family: var(--sans); color: var(--ink); }
+
+      .bg {
+        position: absolute; inset: 0;
+        background:
+          radial-gradient(ellipse 900px 700px at 85% 8%, rgba(64, 150, 108, 0.32) 0%, transparent 60%),
+          radial-gradient(ellipse 800px 900px at 10% 95%, rgba(26, 91, 69, 0.45) 0%, transparent 65%),
+          linear-gradient(160deg, #0f2e25 0%, #0c3427 50%, #0a2a20 100%);
+      }
+      .bg-line { position: absolute; right: -40px; top: 120px; width: 900px; height: 420px; opacity: 0.35; }
+
+      .clip { position: absolute; inset: 0; }
+
+      /* bloco de texto do topo (area segura do Reels) */
+      .copy { position: absolute; left: 80px; right: 80px; top: 230px; text-align: center; }
+      .eyebrow { font: 600 30px/1 var(--sans); letter-spacing: 0.2em; text-transform: uppercase; color: var(--champagne); }
+      .h { font: 600 76px/1.06 var(--serif); color: var(--ink); margin-top: 20px; letter-spacing: -0.01em; }
+      .sub { font: 400 36px/1.32 var(--sans); color: var(--soft); margin-top: 20px; }
+      .sub b { font-weight: 600; color: var(--gold-light); }
+
+      /* aparelhos */
+      .phone { position: absolute; padding: 14px; border-radius: 66px; background: #08120f;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08), 0 40px 90px -20px rgba(0, 0, 0, 0.65); }
+      .phone img { display: block; width: 100%; border-radius: 52px; }
+      .phone .screen { position: relative; overflow: hidden; border-radius: 52px; }
+      .laptop { position: absolute; }
+      .laptop .lid { padding: 16px; border-radius: 26px; background: #0b1512; box-shadow: 0 0 0 2px rgba(255,255,255,0.08), 0 40px 90px -24px rgba(0,0,0,0.6); }
+      .laptop .lid img { display: block; width: 100%; border-radius: 10px; }
+      .laptop .base { height: 22px; margin: 0 -48px; border-radius: 0 0 22px 22px; background: linear-gradient(#1c2b26, #111c18); }
+      .stack { position: relative; }
+      .stack img + img { position: absolute; left: 0; top: 0; width: 100%; }
+
+      /* destaque dourado sobre uma regiao da tela */
+      .focus { position: absolute; border: 4px solid var(--champagne); border-radius: 30px;
+        box-shadow: 0 0 0 9999px rgba(6, 20, 16, 0.38), 0 0 40px rgba(200, 169, 106, 0.55); }
+      .tap { position: absolute; width: 96px; height: 96px; margin: -48px 0 0 -48px; border-radius: 50%;
+        background: rgba(255, 255, 255, 0.35); border: 3px solid rgba(255, 255, 255, 0.9); }
+
+      /* hook: o card "Sobra do mes" do app, refeito em HTML para o valor contar */
+      .sobra { position: absolute; left: 90px; right: 90px; top: 820px; padding: 52px 54px; border-radius: 40px;
+        background: radial-gradient(ellipse at 85% 0%, #1a5b45 0%, transparent 45%), linear-gradient(135deg, #0f2e25, #0d3a2b 55%, #0a3b2d);
+        box-shadow: 0 0 0 2px rgba(255,255,255,0.07), 0 40px 90px -30px rgba(0,0,0,0.7); }
+      .sobra .t { font: 600 40px/1 var(--serif); }
+      .sobra .pill { position: absolute; right: 54px; top: 44px; display: flex; gap: 6px; padding: 6px; border-radius: 18px; border: 2px solid rgba(255,255,255,0.15); font: 500 28px/1 var(--sans); }
+      .sobra .pill span { padding: 12px 16px; border-radius: 12px; color: var(--soft); }
+      .sobra .pill .on { color: var(--gold-light); box-shadow: inset 0 0 0 3px #d4a84b; font-weight: 600; }
+      .sobra .v { font: 600 112px/1.1 var(--serif); margin-top: 44px; font-variant-numeric: tabular-nums; }
+      .sobra .d { font: 400 32px/1.3 var(--sans); color: var(--soft); margin-top: 6px; }
+      .sobra .bar { height: 18px; border-radius: 99px; background: rgba(255,255,255,0.12); margin-top: 44px; overflow: hidden; }
+      .sobra .bar i { display: block; height: 100%; width: 55%; border-radius: 99px; background: linear-gradient(90deg, #69cb98, #b4ebc5); transform-origin: left; }
+
+      .brand { display: flex; align-items: center; justify-content: center; gap: 22px; }
+      .mark { width: 92px; height: 92px; border-radius: 28px; background: linear-gradient(145deg, #258b66, #16382c 60%, #0b3026);
+        display: flex; align-items: center; justify-content: center; box-shadow: 0 14px 30px -10px rgba(0,0,0,0.6); }
+      .mark svg { width: 52px; height: 52px; }
+      .brand .name { font: 700 64px/1 var(--sans); letter-spacing: -0.02em; }
+      .chips { display: flex; justify-content: center; gap: 18px; margin-top: 34px; }
+      .chip { display: flex; align-items: center; gap: 12px; padding: 16px 26px; border-radius: 99px;
+        background: rgba(126, 214, 167, 0.12); border: 2px solid rgba(126, 214, 167, 0.35); font: 600 32px/1 var(--sans); color: #d8f5e5; }
+      .chip svg { width: 32px; height: 32px; }
+
+      .outro .brand .mark { width: 150px; height: 150px; border-radius: 44px; }
+      .outro .brand .mark svg { width: 86px; height: 86px; }
+      .outro .name { font: 600 104px/1.05 var(--serif); text-align: center; margin-top: 46px; }
+      .outro .tag { font: 400 46px/1.3 var(--sans); color: var(--soft); text-align: center; margin-top: 22px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="62" data-width="1080" data-height="1920">
+      <div class="bg"></div>
+      <svg class="bg-line" viewBox="0 0 900 420" preserveAspectRatio="none" aria-hidden="true">
+        <path d="M0,400 C150,370 250,300 380,280 S600,190 680,170 S820,60 900,20" fill="none" stroke="rgba(110,200,150,0.55)" stroke-width="3" />
+        <circle cx="380" cy="280" r="9" fill="rgba(110,200,150,0.7)" />
+        <circle cx="680" cy="170" r="9" fill="rgba(110,200,150,0.7)" />
+      </svg>
+
+      <!-- 1. Hook -->
+      <section id="s1" class="clip" data-start="0" data-duration="4.6" data-track-index="0">
+        <div class="copy" style="top: 300px">
+          <div class="h" id="s1-q" style="font-size: 88px">Quanto sobra do seu dinheiro este mês?</div>
+        </div>
+        <div class="sobra" id="s1-card">
+          <div class="t">Sobra do mês</div>
+          <div class="pill"><span class="on">CLT/PJ</span><span>Vale alimentação</span></div>
+          <div class="v" id="s1-val">R$ 0,00</div>
+          <div class="d">Disponível para seus planos</div>
+          <div class="bar"><i id="s1-bar"></i></div>
+        </div>
+      </section>
+
+      <!-- 2. Reveal -->
+      <section id="s2" class="clip" data-start="4.6" data-duration="5.6" data-track-index="0">
+        <div class="copy" style="top: 260px">
+          <div class="brand" id="s2-brand">
+            <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 2v20M17 6.5c-.8-1.6-2.6-2.5-5-2.5-3 0-5 1.5-5 3.8 0 5.2 10 2.7 10 8.4 0 2.3-2.2 3.8-5 3.8-2.7 0-4.6-1.1-5.4-3"/></svg></div>
+            <div class="name">Meu financeiro</div>
+          </div>
+          <div class="sub" id="s2-sub" style="margin-top: 30px">Suas finanças organizadas</div>
+        </div>
+        <div class="laptop" id="s2-laptop" style="left: 60px; top: 720px; width: 760px">
+          <div class="lid"><img src="assets/screens/w-inicio.png" alt="Meu financeiro na web" /></div>
+          <div class="base"></div>
+        </div>
+        <div class="phone" id="s2-phone" style="left: 690px; top: 760px; width: 330px">
+          <img src="assets/screens/m-inicio.png" alt="Meu financeiro no celular" />
+        </div>
+        <div class="chips" id="s2-chips" style="position: absolute; left: 0; right: 0; top: 1470px">
+          <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#7ed6a7" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Web</div>
+          <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#7ed6a7" stroke-width="2" stroke-linecap="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Celular</div>
+        </div>
+      </section>
+
+      <!-- 3. Visao geral -->
+      <section id="s3" class="clip" data-start="10.2" data-duration="8.3" data-track-index="0">
+        <div class="copy" id="s3-a">
+          <div class="eyebrow">Início</div>
+          <div class="h">Sobra do mês</div>
+          <div class="sub"><b>CLT/PJ</b> e <b>vale-alimentação</b>, separados</div>
+        </div>
+        <div class="copy" id="s3-b">
+          <div class="eyebrow">Início</div>
+          <div class="h">Próximos 7 dias</div>
+          <div class="sub">O que você recebe e o que <b>vence</b></div>
+        </div>
+        <div class="phone" id="s3-phone" style="left: 323px; top: 640px; width: 434px">
+          <div class="screen">
+            <img src="assets/screens/m-inicio.png" alt="Tela Início" />
+            <div class="focus" id="s3-f1" style="left: 14px; top: 150px; width: 378px; height: 289px"></div>
+            <div class="focus" id="s3-f2" style="left: 14px; top: 451px; width: 378px; height: 349px"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4. Gastos -->
+      <section id="s4" class="clip" data-start="18.5" data-duration="7.5" data-track-index="0">
+        <div class="copy" id="s4-a">
+          <div class="eyebrow">Lançamentos</div>
+          <div class="h">Gastos sob controle</div>
+          <div class="sub">Categoria · vencimento · <b>pago ou pendente</b></div>
+        </div>
+        <div class="copy" id="s4-b">
+          <div class="eyebrow">Lançamentos</div>
+          <div class="h">Pagou? Um toque.</div>
+          <div class="sub">Errou? É só <b>Desfazer</b></div>
+        </div>
+        <div class="phone" id="s4-phone" style="left: 323px; top: 640px; width: 434px">
+          <div class="stack">
+            <img src="assets/screens/m-gastos.png" alt="Tela Gastos" />
+            <img src="assets/screens/m-toast.png" alt="Gasto marcado como pago" id="s4-toast" />
+          </div>
+          <div class="tap" id="s4-tap" style="left: 309px; top: 684px"></div>
+        </div>
+      </section>
+
+      <!-- 5. Cartoes -->
+      <section id="s5" class="clip" data-start="26" data-duration="5.7" data-track-index="0">
+        <div class="copy">
+          <div class="eyebrow" id="s5-e">Cartões</div>
+          <div class="h" id="s5-h">Quanto ainda sobra no cartão</div>
+          <div class="sub" id="s5-s">Sobra = saldo registrado − gastos do mês</div>
+        </div>
+        <div class="phone" id="s5-phone" style="left: 323px; top: 700px; width: 434px">
+          <img src="assets/screens/m-saldos.png" alt="Tela Cartões" />
+        </div>
+      </section>
+
+      <!-- 6. Dividas e listas -->
+      <section id="s6" class="clip" data-start="31.7" data-duration="7.6" data-track-index="0">
+        <div class="copy">
+          <div class="eyebrow" id="s6-e">Dívidas e listas</div>
+          <div class="h" id="s6-h">Tudo à mão</div>
+          <div class="sub" id="s6-s"><b>Maiores credores</b> · Desejos · Mercado · Farmácia</div>
+        </div>
+        <div class="phone" id="s6-p1" style="left: 120px; top: 700px; width: 400px; transform: rotate(-3deg)">
+          <img src="assets/screens/m-dividas.png" alt="Tela Dívidas" />
+        </div>
+        <div class="phone" id="s6-p2" style="left: 560px; top: 740px; width: 400px; transform: rotate(3deg)">
+          <img src="assets/screens/m-mercado.png" alt="Lista de Mercado" />
+        </div>
+      </section>
+
+      <!-- 7. Web e celular -->
+      <section id="s7" class="clip" data-start="39.3" data-duration="10.2" data-track-index="0">
+        <div class="copy" id="s7-a">
+          <div class="eyebrow">No computador</div>
+          <div class="h">Na web</div>
+          <div class="sub">Telas amplas, até no <b>modo escuro</b></div>
+        </div>
+        <div class="copy" id="s7-b">
+          <div class="eyebrow">No celular</div>
+          <div class="h">Abre na hora</div>
+          <div class="sub">Com seus dados salvos, <b>mesmo sem internet</b></div>
+        </div>
+        <div class="laptop" id="s7-laptop" style="left: 70px; top: 700px; width: 940px">
+          <div class="lid">
+            <div class="stack">
+              <img src="assets/screens/w-inicio.png" alt="Versão web" />
+              <img src="assets/screens/w-inicio-dark.png" alt="Versão web no modo escuro" id="s7-dark" />
+            </div>
+          </div>
+          <div class="base"></div>
+        </div>
+        <div class="phone" id="s7-phone" style="left: 650px; top: 900px; width: 330px">
+          <img src="assets/screens/m-inicio-dark.png" alt="App no celular" />
+        </div>
+      </section>
+
+      <!-- 8. Extras -->
+      <section id="s8" class="clip" data-start="49.5" data-duration="7" data-track-index="0">
+        <div class="copy">
+          <div class="eyebrow" id="s8-e">Detalhes que ajudam</div>
+          <div class="h" id="s8-h">Somar itens · Ocultar valores</div>
+        </div>
+        <div class="phone" id="s8-p1" style="left: 120px; top: 700px; width: 400px; transform: rotate(-3deg)">
+          <img src="assets/screens/m-somar.png" alt="Somar itens" />
+        </div>
+        <div class="phone" id="s8-p2" style="left: 560px; top: 740px; width: 400px; transform: rotate(3deg)">
+          <img src="assets/screens/m-hide.png" alt="Valores ocultos" />
+        </div>
+      </section>
+
+      <!-- 9. Outro -->
+      <section id="s9" class="clip outro" data-start="56.5" data-duration="5.5" data-track-index="0">
+        <div style="position: absolute; left: 0; right: 0; top: 700px">
+          <div class="brand" id="s9-mark">
+            <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M12 2v20M17 6.5c-.8-1.6-2.6-2.5-5-2.5-3 0-5 1.5-5 3.8 0 5.2 10 2.7 10 8.4 0 2.3-2.2 3.8-5 3.8-2.7 0-4.6-1.1-5.4-3"/></svg></div>
+          </div>
+          <div class="name" id="s9-name">Meu financeiro</div>
+          <div class="tag" id="s9-tag">Seu dinheiro, organizado.</div>
+          <div class="chips" id="s9-chips" style="margin-top: 56px">
+            <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#7ed6a7" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>Web</div>
+            <div class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="#7ed6a7" stroke-width="2" stroke-linecap="round"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg>Celular</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Narracao (Kokoro pf_dora, pt-BR): uma fala por cena -->
+      <audio id="vo1" data-start="0.6" data-duration="3.2" data-track-index="3" data-volume="0.9" src="assets/vo/vo1.wav"></audio>
+      <audio id="vo2" data-start="5.0" data-duration="4.87" data-track-index="3" data-volume="0.9" src="assets/vo/vo2.wav"></audio>
+      <audio id="vo3" data-start="10.5" data-duration="7.47" data-track-index="3" data-volume="0.9" src="assets/vo/vo3.wav"></audio>
+      <audio id="vo4" data-start="18.8" data-duration="6.55" data-track-index="3" data-volume="0.9" src="assets/vo/vo4.wav"></audio>
+      <audio id="vo5" data-start="26.3" data-duration="4.85" data-track-index="3" data-volume="0.9" src="assets/vo/vo5.wav"></audio>
+      <audio id="vo6" data-start="32.0" data-duration="6.75" data-track-index="3" data-volume="0.9" src="assets/vo/vo6.wav"></audio>
+      <audio id="vo7" data-start="39.6" data-duration="9.35" data-track-index="3" data-volume="0.9" src="assets/vo/vo7.wav"></audio>
+      <audio id="vo8" data-start="49.8" data-duration="6.19" data-track-index="3" data-volume="0.9" src="assets/vo/vo8.wav"></audio>
+      <audio id="vo9" data-start="56.9" data-duration="3.74" data-track-index="3" data-volume="0.9" src="assets/vo/vo9.wav"></audio>
+
+      <!-- Musica: baixa sob a voz; o trecho final (sem voz) sobe no outro -->
+      <audio id="music" data-start="0" data-duration="60.6" data-track-index="10" data-volume="0.13" data-fade-in="1" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+      <audio id="music-end" data-start="60.6" data-duration="1.4" data-media-start="60.6" data-track-index="10" data-volume="0.3" data-fade-out="1.4" src="assets/music/happy-beats-business-moves-vol-12-by-ende-dot-app.mp3"></audio>
+
+      <!-- SFX (sutis) -->
+      <audio id="sfx-brand" data-start="4.86" data-duration="0.11" data-track-index="11" data-volume="0.4" src="assets/sfx/drop_001.ogg"></audio>
+      <audio id="sfx-tap" data-start="22.25" data-duration="0.06" data-track-index="12" data-volume="0.45" src="assets/sfx/mouseclick1.ogg"></audio>
+      <audio id="sfx-cards6" data-start="32.25" data-duration="0.6" data-track-index="13" data-volume="0.35" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx-cards8" data-start="49.95" data-duration="0.6" data-track-index="14" data-volume="0.35" src="assets/sfx/card-slide-1.ogg"></audio>
+      <audio id="sfx-logo" data-start="56.75" data-duration="1.48" data-track-index="15" data-volume="0.45" src="assets/sfx/impactBell_heavy_000.ogg"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const E = "power3.out";
+      // entra subindo + fade; sai com fade. Tempos absolutos do filme.
+      const inn = (sel, t, d = 0.6, y = 40) => tl.fromTo(sel, { opacity: 0, y }, { opacity: 1, y: 0, duration: d, ease: E }, t);
+      const out = (sel, t, d = 0.45) => tl.to(sel, { opacity: 0, duration: d, ease: "power2.in" }, t);
+      const brl = (v) => "R$ " + Math.floor(v).toLocaleString("pt-BR") + "," + String(Math.round((v % 1) * 100)).padStart(2, "0");
+
+      // 1. Hook
+      inn("#s1-q", 0.15, 0.7, 30);
+      inn("#s1-card", 0.9, 0.8, 80);
+      const counter = { v: 0 };
+      tl.to(counter, { v: 5987.6, duration: 1.8, ease: "power2.out", onUpdate: () => { document.getElementById("s1-val").textContent = brl(counter.v); } }, 1.2);
+      tl.fromTo("#s1-bar", { scaleX: 0 }, { scaleX: 1, duration: 1.6, ease: E }, 1.4);
+      out("#s1-q, #s1-card", 4.15);
+
+      // 2. Reveal — beat-grid: marca na batida de 4.91s (110 BPM)
+      inn("#s2-brand", 4.91, 0.6, 30);
+      inn("#s2-sub", 5.4);
+      tl.fromTo("#s2-laptop", { opacity: 0, x: -80 }, { opacity: 1, x: 0, duration: 0.8, ease: E }, 5.6);
+      tl.fromTo("#s2-phone", { opacity: 0, x: 80 }, { opacity: 1, x: 0, duration: 0.8, ease: E }, 6.2);
+      inn("#s2-chips", 7.0);
+      out("#s2-brand, #s2-sub, #s2-laptop, #s2-phone, #s2-chips", 9.7);
+
+      // 3. Visao geral
+      inn("#s3-a", 10.45);
+      tl.fromTo("#s3-phone", { opacity: 0, y: 90 }, { opacity: 1, y: 0, duration: 0.8, ease: E }, 10.35);
+      tl.fromTo("#s3-f1", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 11.3);
+      out("#s3-a", 14.3, 0.35);
+      tl.to("#s3-f1", { opacity: 0, duration: 0.35 }, 14.3);
+      inn("#s3-b", 14.7);
+      tl.fromTo("#s3-f2", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 14.75);
+      out("#s3-b, #s3-phone", 18.0);
+
+      // 4. Gastos — toque no selo "Pendente" e o aviso com Desfazer
+      inn("#s4-a", 18.75);
+      tl.fromTo("#s4-phone", { opacity: 0, y: 90 }, { opacity: 1, y: 0, duration: 0.8, ease: E }, 18.65);
+      tl.set("#s4-toast", { opacity: 0 }, 18.5);
+      tl.fromTo("#s4-tap", { opacity: 0, scale: 0.5 }, { opacity: 1, scale: 1, duration: 0.25, ease: E }, 22.0);
+      tl.to("#s4-tap", { opacity: 0, scale: 1.6, duration: 0.45 }, 22.3);
+      tl.to("#s4-toast", { opacity: 1, duration: 0.3 }, 22.35);
+      out("#s4-a", 22.0, 0.35);
+      inn("#s4-b", 22.45);
+      out("#s4-b, #s4-phone", 25.5);
+
+      // 5. Cartoes
+      inn("#s5-e", 26.2);
+      inn("#s5-h", 26.35);
+      inn("#s5-s", 26.6);
+      tl.fromTo("#s5-phone", { opacity: 0, y: 90, scale: 0.97 }, { opacity: 1, y: 0, scale: 1, duration: 0.9, ease: E }, 26.3);
+      out("#s5-e, #s5-h, #s5-s, #s5-phone", 31.2);
+
+      // 6. Dividas e listas — segundo celular entra depois
+      inn("#s6-e", 31.9);
+      inn("#s6-h", 32.05);
+      inn("#s6-s", 32.3);
+      tl.fromTo("#s6-p1", { opacity: 0, y: 120 }, { opacity: 1, y: 0, duration: 0.8, ease: E }, 32.2);
+      tl.fromTo("#s6-p2", { opacity: 0, y: 120 }, { opacity: 1, y: 0, duration: 0.8, ease: E }, 34.6);
+      out("#s6-e, #s6-h, #s6-s, #s6-p1, #s6-p2", 38.8);
+
+      // 7. Web (claro -> escuro) e celular
+      inn("#s7-a", 39.55);
+      tl.fromTo("#s7-laptop", { opacity: 0, y: 80 }, { opacity: 1, y: 0, duration: 0.8, ease: E }, 39.5);
+      tl.set("#s7-dark", { opacity: 0 }, 39.3);
+      tl.to("#s7-dark", { opacity: 1, duration: 0.8, ease: "power1.inOut" }, 42.9);
+      out("#s7-a", 44.3, 0.35);
+      inn("#s7-b", 44.75);
+      tl.fromTo("#s7-phone", { opacity: 0, x: 120 }, { opacity: 1, x: 0, duration: 0.8, ease: E }, 44.65);
+      tl.to("#s7-laptop", { opacity: 0.55, duration: 0.6 }, 44.65);
+      out("#s7-b, #s7-laptop, #s7-phone", 49.0);
+
+      // 8. Extras
+      inn("#s8-e", 49.7);
+      inn("#s8-h", 49.85);
+      tl.fromTo("#s8-p1", { opacity: 0, y: 120 }, { opacity: 1, y: 0, duration: 0.8, ease: E }, 49.95);
+      tl.fromTo("#s8-p2", { opacity: 0, y: 120 }, { opacity: 1, y: 0, duration: 0.8, ease: E }, 52.6);
+      out("#s8-e, #s8-h, #s8-p1, #s8-p2", 56.0);
+
+      // 9. Outro
+      tl.fromTo("#s9-mark", { opacity: 0, scale: 0.8 }, { opacity: 1, scale: 1, duration: 0.7, ease: "back.out(1.6)" }, 56.75);
+      inn("#s9-name", 57.1);
+      inn("#s9-tag", 57.5);
+      inn("#s9-chips", 58.0);
+
+      // deriva lenta durante as falas (sem trechos parados > 3s)
+      const drift = (sel, t, d, y = -26, sc = 1.025) => tl.to(sel, { y, scale: sc, duration: d, ease: "none" }, t);
+      drift("#s2-laptop, #s2-phone", 6.9, 2.8, -14, 1.015);
+      drift("#s3-phone", 11.2, 6.8, -18, 1.02);
+      drift("#s4-phone", 19.5, 6.0, -18, 1.02);
+      drift("#s5-phone", 27.2, 4.0);
+      drift("#s6-p1", 33.0, 5.8, -30, 1.02);
+      drift("#s6-p2", 35.4, 3.4, -30, 1.02);
+      drift("#s7-laptop", 40.3, 4.3, -16, 1.015);
+      drift("#s7-phone", 45.45, 3.55);
+      drift("#s8-p1", 50.75, 5.25, -30, 1.02);
+      drift("#s8-p2", 53.4, 2.6, -24, 1.02);
+      drift("#s9-mark", 57.45, 4.5, -10, 1.04);
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
