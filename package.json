@@ -10,7 +10,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "mobile": "npm --prefix mobile run start",
-    "mobile:install": "npm --prefix mobile install"
+    "mobile:install": "npm --prefix mobile install",
+    "test:server": "node --test --test-concurrency=1 server/test/isolation.test.mjs"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",

@@ -52,8 +52,8 @@ function Root() {
   const [status, setStatus] = useState("checking"); // checking | pairing | ready
   const [email, setEmail] = useState("");
 
-  /* Volta ao pareamento por qualquer 401: token expirado e ALLOWED_EMAIL
-     trocado chegam iguais e significam a mesma coisa. */
+  /* Volta ao pareamento por qualquer 401: token expirado e conta excluida (aqui
+     ou na web) chegam iguais e significam a mesma coisa. */
   const signOut = useCallback(async () => {
     await clearToken();
     clearCache();

@@ -3,14 +3,14 @@ import { useMemo } from "react";
 import { Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import Svg, { Circle, Path } from "react-native-svg";
-import { ArrowDown, ArrowUp, HandCoins, Landmark, PieChart, History } from "lucide-react-native";
+import { ArrowDown, ArrowUp, HandCoins, Landmark, PieChart, History, ReceiptText, Sparkles, Wallet } from "lucide-react-native";
 import { Touchable } from "../ui/Touchable";
 import { fmt, formatDayMonth, formatRelativeTime } from "../core/format";
 import { buildByCat, buildRecentItems, totalOf } from "../core/group";
 import { buildDonut, buildUpcoming, sobraSummary } from "../core/home";
 import { catMeta } from "../core/catalog";
 import { iconFor } from "../ui/icons";
-import { EmptyState, IconBubble, LinkAction, PageHeader, Panel, SectionTitle } from "../ui/kit";
+import { Button, EmptyState, IconBubble, LinkAction, PageHeader, Panel, SectionTitle } from "../ui/kit";
 import { NUM, useTheme } from "../ui/theme";
 
 const BAR = { ok: ["#69cb98", "#b4ebc5"], warn: ["#D4A84B", "#e6c47a"], over: ["#C9785A", "#d99a80"] };
@@ -262,11 +262,40 @@ function RecentCard({ expenses, incomes, onEditItem, onGo }) {
   );
 }
 
-export default function OverviewTab({ expenses, incomes, wallet, onWalletChange, wallets, onEditItem, onGo }) {
+/* Boas-vindas de conta nova: dois passos para o app deixar de estar vazio. Some
+   sozinho no primeiro lancamento. */
+function WelcomeCard({ onNewIncome, onNewExpense }) {
+  const steps = [
+    { icon: Wallet, title: "Comece pelos seus ganhos", text: "Salário, renda extra e vale-alimentação: é deles que sai a sobra do mês.", action: "Novo ganho", onPress: onNewIncome },
+    { icon: ReceiptText, title: "Depois, registre os gastos", text: "Com categoria e vencimento, eles aparecem em Próximos 7 dias.", action: "Novo gasto", onPress: onNewExpense },
+  ];
+  return (
+    <Panel className="gap-3">
+      <View className="flex-row items-center gap-3">
+        <IconBubble icon={Sparkles} tone="gold" />
+        <Text className="font-display text-[19px] text-heading flex-1">Boas-vindas ao Meu financeiro</Text>
+      </View>
+      <Text className="font-brand text-[13px] text-muted leading-5">Sua conta está pronta e só você vê estes dados.</Text>
+      {steps.map((s, i) => (
+        <View key={s.title} className="rounded-[14px] border border-line bg-surface-2 p-3.5 gap-2">
+          <View className="flex-row items-center gap-2.5">
+            <IconBubble icon={s.icon} size="sm" />
+            <Text className="font-display text-[16px] text-heading flex-1">{s.title}</Text>
+          </View>
+          <Text className="font-brand text-[12px] text-muted leading-[17px]">{s.text}</Text>
+          <Button label={s.action} size="sm" variant={i === 0 ? "primary" : "secondary"} onPress={s.onPress} className="self-start" />
+        </View>
+      ))}
+    </Panel>
+  );
+}
+
+export default function OverviewTab({ expenses, incomes, wallet, onWalletChange, wallets, onEditItem, onGo, welcome, onNewIncome, onNewExpense }) {
   const sobra = wallets[wallet].recebido - wallets[wallet].gasto;
   return (
     <View className="gap-3.5">
       <PageHeader title="Visão geral" subtitle={sobra >= 0 ? "Seu mês em equilíbrio" : "Atenção aos gastos deste mês"} />
+      {welcome ? <WelcomeCard onNewIncome={onNewIncome} onNewExpense={onNewExpense} /> : null}
       <SobraCard wallet={wallet} onWalletChange={onWalletChange} wallets={wallets} />
       <UpcomingCard expenses={expenses} incomes={incomes} onGo={onGo} onEditItem={onEditItem} />
       <SpendingCard expenses={expenses} onGo={onGo} />
