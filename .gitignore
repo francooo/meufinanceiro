@@ -2,3 +2,6 @@ node_modules
 dist
 .DS_Store
 .env
+
+# trabalho local do kit de design da página de vendas
+.taste-skill/
