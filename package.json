@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "mobile": "npm --prefix mobile run start",
     "mobile:install": "npm --prefix mobile install",
-    "test:server": "node --test --test-concurrency=1 server/test/isolation.test.mjs"
+    "test:server": "node --test --test-concurrency=1 server/test/isolation.test.mjs",
+    "test:assistant": "node --test server/test/assistant.test.mjs"
   },
   "dependencies": {
     "cookie-parser": "^1.4.7",
@@ -21,6 +22,7 @@
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.462.0",
+    "multer": "^2.5.0",
     "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
