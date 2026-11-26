@@ -30,6 +30,19 @@ export function buildTools(categories) {
     {
       type: "function",
       function: {
+        name: READ_TOOL,
+        description:
+          "Lê os gastos e ganhos de OUTRO mês (diferente do que já está nos dados). Use quando a pergunta for sobre um mês específico, como 'mês passado' ou 'setembro'.",
+        parameters: {
+          type: "object",
+          properties: { month: { type: "string", description: "AAAA-MM" } },
+          required: ["month"],
+        },
+      },
+    },
+    {
+      type: "function",
+      function: {
         name: "propose_expense",
         description: "Propõe lançar um GASTO. Preencha só o que o usuário disse; deixe ausente o que não foi dito.",
         parameters: {
@@ -89,6 +102,9 @@ export function buildTools(categories) {
     },
   ];
 }
+
+/** Ferramenta de LEITURA: o servidor responde com os dados e a IA continua. */
+export const READ_TOOL = "consultar_mes";
 
 export const ACTION_BY_TOOL = {
   propose_expense: "create_expense",
@@ -207,26 +223,64 @@ export function buildResponse(message, months) {
 const sum = (xs) => xs.reduce((s, x) => s + (Number(x.value) || 0), 0);
 const brl = (n) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+const MONTH_NAMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+/** "2026-10" → "outubro de 2026" (a pessoa fala assim; a IA precisa casar os dois). */
+export const monthName = (key) => {
+  const [y, m] = String(key).split("-").map(Number);
+  return MONTH_NAMES[m - 1] ? `${MONTH_NAMES[m - 1]} de ${y}` : String(key);
+};
+
+/* created_at é TIMESTAMPTZ: o pg devolve Date. Linhas antigas têm NULL. */
+const timeOf = (v) => {
+  if (!v) return null;
+  const t = (v instanceof Date ? v : new Date(v)).getTime();
+  return Number.isFinite(t) ? t : null;
+};
+/* A Vercel roda em UTC; a pessoa vive no fuso de Brasília. */
+const dayOf = (t) => new Date(t).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+
+/** Mais recente primeiro; sem data de inclusão vai para o fim, na ordem da tela. */
+const byNewest = (xs) =>
+  xs
+    .map((x, i) => ({ x, i, t: timeOf(x.createdAt) }))
+    .sort((a, b) => (b.t ?? -Infinity) - (a.t ?? -Infinity) || a.i - b.i)
+    .map(({ x, t }) => ({ ...x, _t: t }));
+
+function lastLine(label, items, describe) {
+  if (items.length === 0) return `- Nenhum ${label} lançado neste mês.`;
+  const newest = items.find((x) => x._t != null);
+  if (!newest) return `- Último ${label} incluído: desconhecido (os lançamentos deste mês não têm data de inclusão).`;
+  return `- Último ${label} incluído: ${describe(newest)}, em ${dayOf(newest._t)}.`;
+}
+
 /* Os totais vão PRONTOS no prompt: modelo de linguagem erra soma. A conta
-   do CLT-PJ é a mesma do card da Visão geral (recebido − gasto marcado). */
+   do CLT-PJ é a mesma do card da Visão geral (recebido − gasto marcado).
+   A lista vem na ordem de inclusão, com a data, e o último item é dito com
+   todas as letras: sem isso a IA não tem como responder "qual foi o último". */
 export function monthSummary(month, { expenses = [], incomes = [] }) {
   const cltIn = sum(incomes.filter((i) => i.cltPjIncome));
   const cltOut = sum(expenses.filter((e) => e.paidWithCltPj));
   const totalIn = sum(incomes);
   const totalOut = sum(expenses);
+  const exp = byNewest(expenses);
+  const inc = byNewest(incomes);
+  const added = (x) => (x._t != null ? `incluído em ${dayOf(x._t)}` : null);
+
   return [
-    `Dados do mês ${month}:`,
+    `Dados de ${monthName(month)} (${month}): ${expenses.length} gasto(s) e ${incomes.length} ganho(s) lançados.`,
     `- Ganhos ${brl(totalIn)}; gastos ${brl(totalOut)}; saldo ${brl(totalIn - totalOut)}.`,
     `- Carteira CLT-PJ: recebido ${brl(cltIn)}, gasto ${brl(cltOut)}, sobra ${brl(cltIn - cltOut)}.`,
     `- Gastos pagos ${brl(sum(expenses.filter((e) => e.paidAt)))}; a pagar ${brl(sum(expenses.filter((e) => !e.paidAt)))}.`,
-    "Gastos:",
-    ...expenses.slice(0, 80).map((e) =>
+    lastLine("gasto", exp, (e) => `${e.description} (${e.category || "sem categoria"}, ${brl(Number(e.value))})`),
+    lastLine("ganho", inc, (i) => `${i.source} (${brl(Number(i.value))})`),
+    `Gastos, do mais recente para o mais antigo${expenses.length > 80 ? " (os 80 mais recentes)" : ""}:`,
+    ...exp.slice(0, 80).map((e) =>
       [`  • ${e.description}`, e.category, brl(Number(e.value)), e.paidAt && "pago", e.paidWithCltPj && "CLT-PJ",
-        e.paymentMethod, e.dueDate && `vence ${e.dueDate}`].filter(Boolean).join(" | ")
+        e.paymentMethod, e.dueDate && `vence ${e.dueDate}`, added(e)].filter(Boolean).join(" | ")
     ),
-    "Ganhos:",
-    ...incomes.slice(0, 40).map((i) =>
-      [`  • ${i.source}`, brl(Number(i.value)), i.cltPjIncome && "CLT-PJ", i.voucherIncome && "vale"].filter(Boolean).join(" | ")
+    "Ganhos, do mais recente para o mais antigo:",
+    ...inc.slice(0, 40).map((i) =>
+      [`  • ${i.source}`, brl(Number(i.value)), i.cltPjIncome && "CLT-PJ", i.voucherIncome && "vale", added(i)].filter(Boolean).join(" | ")
     ),
   ].join("\n");
 }
@@ -234,8 +288,10 @@ export function monthSummary(month, { expenses = [], incomes = [] }) {
 export function systemPrompt({ month, today, months, categories, paymentMethods, summary }) {
   return [
     "Você é a assistente financeira pessoal do app Meu Financeiro. Responda em português do Brasil, curto e direto.",
-    `O mês corrente é ${today}. O usuário está vendo o mês ${month}. Meses existentes: ${months.join(", ") || "nenhum"}.`,
+    `O mês corrente é ${monthName(today)} (${today}); "mês passado" é o anterior a ele. O usuário está vendo ${monthName(month)} (${month}).`,
+    `Meses existentes: ${months.map((m) => `${monthName(m)} (${m})`).join(", ") || "nenhum"}.`,
     "Quando o usuário pedir para lançar, criar ou registrar algo, chame UMA ferramenta: propose_expense, propose_income ou propose_list_item.",
+    `Para perguntas sobre um mês diferente do que está nos dados abaixo, chame ${READ_TOOL} com esse mês antes de responder.`,
     "Regras:",
     "- Preencha só o que o usuário disse ou o que está claro na conversa. NUNCA invente valor.",
     "- Categoria: escolha da lista quando for óbvio (mercado → Casa / Utilidades, uber → Transporte, remédio → Saúde). Se não for óbvio, deixe vazia.",
@@ -243,12 +299,59 @@ export function systemPrompt({ month, today, months, categories, paymentMethods,
     "- 'No mês atual' ⇒ month = mês corrente. Sem menção a mês ⇒ não preencha month.",
     "- Se o usuário completar um pedido anterior, chame a ferramenta de novo com TODOS os campos reunidos.",
     "- Você não grava nada: o app mostra um cartão para o usuário confirmar.",
-    "- Perguntas sobre números: use só os dados abaixo, que já estão calculados.",
+    "- Perguntas sobre os lançamentos: responda só com os dados recebidos, que já estão calculados e ordenados. Se os dados mostram lançamentos, nunca diga que não há registro.",
     `Categorias: ${categories.join(", ")}.`,
     `Formas de pagamento conhecidas: ${paymentMethods.join(", ")}.`,
     "",
     summary,
   ].join("\n");
+}
+
+/* ---------- laço da conversa ---------- */
+
+const MAX_READS = 2;
+
+/**
+ * Conversa com a IA, atendendo às leituras de outros meses (consultar_mes)
+ * até chegar a uma resposta final. Puro: o modelo e o banco entram por função.
+ *
+ * @param {object}   o
+ * @param {Array}    o.messages   system + histórico
+ * @param {string[]} o.months     meses que a pessoa tem
+ * @param {(messages) => Promise<object>} o.callModel  devolve a `message` da IA
+ * @param {(month) => Promise<object>}    o.loadMonth  devolve { expenses, incomes }
+ * @returns {Promise<{ response: object, reads: string[] }>}
+ */
+export async function runChat({ messages, months, callModel, loadMonth }) {
+  const convo = [...messages];
+  const reads = [];
+  let message = await callModel(convo);
+
+  while (message?.tool_calls?.[0]?.function?.name === READ_TOOL && reads.length < MAX_READS) {
+    const call = message.tool_calls[0];
+    let month;
+    try {
+      month = JSON.parse(call.function.arguments || "{}").month;
+    } catch {
+      month = undefined; // vira resposta "mês inválido" abaixo, não silêncio
+    }
+    const content =
+      typeof month !== "string" || !MONTH_RE.test(month)
+        ? "Mês inválido. Use AAAA-MM."
+        : !months.includes(month)
+          ? `${monthName(month)} (${month}) não existe no app: não há lançamentos nesse mês.`
+          : monthSummary(month, await loadMonth(month));
+    if (typeof month === "string") reads.push(month);
+    convo.push({ role: "assistant", content: message.content || "", tool_calls: [call] });
+    convo.push({ role: "tool", tool_call_id: call.id, content });
+    message = await callModel(convo);
+  }
+
+  /* Pediu uma terceira leitura: responde com o que tem em vez de entrar em laço. */
+  if (message?.tool_calls?.[0]?.function?.name === READ_TOOL) {
+    return { response: { reply: "Não consegui juntar os dados para responder. Pode perguntar sobre um mês de cada vez?" }, reads };
+  }
+  return { response: buildResponse(message, months), reads };
 }
 
 /* Só papéis e conteúdo de texto; tamanho limitado (custo e prompt injection

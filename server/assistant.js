@@ -17,7 +17,7 @@
 import multer from "multer";
 import { getData, getMonths, getCategories, getPaymentMethods, hitRateLimit } from "./db.js";
 import {
-  MONTH_RE, buildTools, buildResponse, cleanHistory, mergeCategories, monthSummary, systemPrompt,
+  MONTH_RE, buildTools, cleanHistory, mergeCategories, monthSummary, runChat, systemPrompt,
 } from "./assistant-core.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1";
@@ -116,30 +116,45 @@ export function registerAssistantRoutes(app, { requireAuth }) {
       const categories = mergeCategories(custom);
       const paymentMethods = [...new Set(["Pix", ...methods])];
 
-      const completion = await groq("/chat/completions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: CHAT_MODEL,
-          temperature: 0.2,
-          max_completion_tokens: 1024,
-          tools: buildTools(categories),
-          tool_choice: "auto",
-          parallel_tool_calls: false,
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt({
-                month, today: todayMonth, months, categories, paymentMethods,
-                summary: monthSummary(month, data),
-              }),
-            },
-            ...history,
-          ],
-        }),
+      const tools = buildTools(categories);
+      const { response, reads } = await runChat({
+        months,
+        messages: [
+          {
+            role: "system",
+            content: systemPrompt({
+              month, today: todayMonth, months, categories, paymentMethods,
+              summary: monthSummary(month, data),
+            }),
+          },
+          ...history,
+        ],
+        callModel: async (messages) => {
+          const completion = await groq("/chat/completions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              model: CHAT_MODEL,
+              temperature: 0.2,
+              max_completion_tokens: 1024,
+              tools,
+              tool_choice: "auto",
+              parallel_tool_calls: false,
+              messages,
+            }),
+          });
+          return completion?.choices?.[0]?.message;
+        },
+        loadMonth: (m) => getData(req.userEmail, m),
       });
 
-      res.json(buildResponse(completion?.choices?.[0]?.message, months));
+      /* Só contagens, nunca conteúdo nem e-mail: é o que responde "a IA recebeu
+         os dados?" quando uma resposta parecer errada. */
+      console.info("assistant chat", JSON.stringify({
+        month, expenses: data.expenses.length, incomes: data.incomes.length, reads,
+        action: response.proposal?.action || null,
+      }));
+      res.json(response);
     } catch (err) {
       send(res, err, "POST /api/assistant/chat");
     }
