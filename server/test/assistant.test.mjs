@@ -129,3 +129,101 @@ test("transcrição: o nome do arquivo segue o formato gravado (o Whisper lê a 
   assert.equal(audioFile({ mimetype: "application/octet-stream", originalname: "x.ogg" }).name, "audio.ogg");
   assert.equal(audioFile({}).name, "audio.m4a");
 });
+
+/* ---------- resumo com ordem de inclusão e leitura de outros meses ---------- */
+const core = await import("../assistant-core.js");
+
+test("resumo: diz o último gasto incluído, mês por extenso e as contagens", () => {
+  const s = core.monthSummary("2026-10", {
+    expenses: [
+      { description: "Aluguel", category: "Moradia", value: 1500, createdAt: new Date("2026-10-01T12:00:00Z") },
+      { description: "Farmácia", category: "Saúde", value: 42.9, createdAt: new Date("2026-10-28T15:00:00Z") },
+      { description: "Luz", category: "Moradia", value: 180, createdAt: null },
+    ],
+    incomes: [{ source: "Salário", value: 5000, createdAt: "2026-10-05T10:00:00Z" }],
+  });
+  assert.match(s, /^Dados de outubro de 2026 \(2026-10\): 3 gasto\(s\) e 1 ganho\(s\)/);
+  assert.match(s, /Último gasto incluído: Farmácia \(Saúde, R\$\s?42,90\), em 28\/10\/2026/);
+  assert.match(s, /Último ganho incluído: Salário/);
+  const order = s.split("\n").filter((l) => l.startsWith("  • ")).map((l) => l.slice(4).split(" | ")[0]);
+  assert.deepEqual(order.slice(0, 3), ["Farmácia", "Aluguel", "Luz"], "mais recente primeiro; sem data no fim");
+});
+
+test("resumo: data no fuso de Brasília (a Vercel roda em UTC)", () => {
+  // 23h30 de 31/10 em Brasília = 02h30 de 01/11 em UTC
+  const s = core.monthSummary("2026-10", {
+    expenses: [{ description: "Pizza", category: "Lazer / Hobbies", value: 60, createdAt: new Date("2026-11-01T02:30:00Z") }],
+  });
+  assert.match(s, /em 31\/10\/2026/);
+});
+
+test("resumo: sem data de inclusão diz 'desconhecido'; mês vazio diz 'nenhum'", () => {
+  const s = core.monthSummary("2026-09", { expenses: [{ description: "Antigo", category: "Moradia", value: 1 }] });
+  assert.match(s, /Último gasto incluído: desconhecido/);
+  assert.match(s, /Nenhum ganho lançado/);
+});
+
+test("ferramentas: inclui a leitura de outro mês", () => {
+  assert.equal(core.buildTools(core.DEFAULT_CATS)[0].function.name, core.READ_TOOL);
+});
+
+const readCall = (month, id = "c1") => ({
+  content: "",
+  tool_calls: [{ id, function: { name: core.READ_TOOL, arguments: JSON.stringify({ month }) } }],
+});
+
+test("runChat: lê o mês pedido, devolve os dados à IA e usa a resposta final", async () => {
+  const seen = [];
+  const replies = [readCall("2026-09"), { content: "Em setembro o último gasto foi Uber." }];
+  const { response, reads } = await core.runChat({
+    messages: [{ role: "system", content: "x" }, { role: "user", content: "e setembro?" }],
+    months: ["2026-09", "2026-10"],
+    callModel: async (msgs) => { seen.push(msgs); return replies.shift(); },
+    loadMonth: async (m) => {
+      assert.equal(m, "2026-09");
+      return { expenses: [{ description: "Uber", category: "Transporte", value: 25, createdAt: new Date("2026-09-20T12:00:00Z") }], incomes: [] };
+    },
+  });
+  assert.deepEqual(response, { reply: "Em setembro o último gasto foi Uber." });
+  assert.deepEqual(reads, ["2026-09"]);
+  const tool = seen[1].at(-1);
+  assert.equal(tool.role, "tool");
+  assert.equal(tool.tool_call_id, "c1");
+  assert.match(tool.content, /Último gasto incluído: Uber/);
+  assert.equal(seen[1].at(-2).tool_calls[0].id, "c1");
+});
+
+test("runChat: mês inexistente não consulta o banco e avisa a IA", async () => {
+  const replies = [readCall("2025-01"), { content: "Não há lançamentos em janeiro de 2025." }];
+  let loaded = false;
+  let toolMsg;
+  await core.runChat({
+    messages: [], months: ["2026-10"],
+    callModel: async (msgs) => { toolMsg = msgs.at(-1); return replies.shift(); },
+    loadMonth: async () => { loaded = true; return {}; },
+  });
+  assert.equal(loaded, false);
+  assert.match(toolMsg.content, /janeiro de 2025 \(2025-01\) não existe/);
+});
+
+test("runChat: no máximo 2 leituras; depois responde sem entrar em laço", async () => {
+  let calls = 0;
+  const { response, reads } = await core.runChat({
+    messages: [], months: ["2026-08", "2026-09", "2026-10"],
+    callModel: async () => { calls++; return readCall(["2026-08", "2026-09", "2026-10"][calls - 1] || "2026-10", `c${calls}`); },
+    loadMonth: async () => ({ expenses: [], incomes: [] }),
+  });
+  assert.equal(calls, 3);
+  assert.equal(reads.length, 2);
+  assert.match(response.reply, /um mês de cada vez/);
+});
+
+test("runChat: proposta segue para a validação de campos de sempre", async () => {
+  const { response, reads } = await core.runChat({
+    messages: [], months: ["2026-10"],
+    callModel: async () => toolMsg("propose_expense", { description: "Mercado" }),
+    loadMonth: async () => { throw new Error("não deveria ler"); },
+  });
+  assert.deepEqual(reads, []);
+  assert.deepEqual(response.proposal.missing, ["valor", "categoria"]);
+});
