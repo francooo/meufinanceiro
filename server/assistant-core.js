@@ -256,7 +256,17 @@ function lastLine(label, items, describe) {
 /* Os totais vão PRONTOS no prompt: modelo de linguagem erra soma. A conta
    do CLT-PJ é a mesma do card da Visão geral (recebido − gasto marcado).
    A lista vem na ordem de inclusão, com a data, e o último item é dito com
-   todas as letras: sem isso a IA não tem como responder "qual foi o último". */
+   todas as letras: sem isso a IA não tem como responder "qual foi o último".
+
+   Formato ENXUTO de propósito: o plano gratuito da Groq dá 8 mil tokens por
+   minuto, e uma pergunta sobre outro mês manda dois resumos. Por isso só os
+   itens mais recentes, valor sem "R$" repetido e data curta (dd/mm). */
+export const SUMMARY_LIMITS = { expenses: 40, incomes: 15 };
+
+const num2 = (n) => Number(n || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const shortDay = (t) => dayOf(t).slice(0, 5);
+const shortIso = (iso) => (typeof iso === "string" && DATE_RE.test(iso) ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : null);
+
 export function monthSummary(month, { expenses = [], incomes = [] }) {
   const cltIn = sum(incomes.filter((i) => i.cltPjIncome));
   const cltOut = sum(expenses.filter((e) => e.paidWithCltPj));
@@ -264,23 +274,23 @@ export function monthSummary(month, { expenses = [], incomes = [] }) {
   const totalOut = sum(expenses);
   const exp = byNewest(expenses);
   const inc = byNewest(incomes);
-  const added = (x) => (x._t != null ? `incluído em ${dayOf(x._t)}` : null);
+  const { expenses: maxE, incomes: maxI } = SUMMARY_LIMITS;
 
   return [
-    `Dados de ${monthName(month)} (${month}): ${expenses.length} gasto(s) e ${incomes.length} ganho(s) lançados.`,
-    `- Ganhos ${brl(totalIn)}; gastos ${brl(totalOut)}; saldo ${brl(totalIn - totalOut)}.`,
-    `- Carteira CLT-PJ: recebido ${brl(cltIn)}, gasto ${brl(cltOut)}, sobra ${brl(cltIn - cltOut)}.`,
-    `- Gastos pagos ${brl(sum(expenses.filter((e) => e.paidAt)))}; a pagar ${brl(sum(expenses.filter((e) => !e.paidAt)))}.`,
-    lastLine("gasto", exp, (e) => `${e.description} (${e.category || "sem categoria"}, ${brl(Number(e.value))})`),
-    lastLine("ganho", inc, (i) => `${i.source} (${brl(Number(i.value))})`),
-    `Gastos, do mais recente para o mais antigo${expenses.length > 80 ? " (os 80 mais recentes)" : ""}:`,
-    ...exp.slice(0, 80).map((e) =>
-      [`  • ${e.description}`, e.category, brl(Number(e.value)), e.paidAt && "pago", e.paidWithCltPj && "CLT-PJ",
-        e.paymentMethod, e.dueDate && `vence ${e.dueDate}`, added(e)].filter(Boolean).join(" | ")
+    `Dados de ${monthName(month)} (${month}): ${expenses.length} gasto(s) e ${incomes.length} ganho(s). Valores em R$.`,
+    `- Ganhos ${num2(totalIn)}; gastos ${num2(totalOut)}; saldo ${num2(totalIn - totalOut)}.`,
+    `- CLT-PJ: recebido ${num2(cltIn)}, gasto ${num2(cltOut)}, sobra ${num2(cltIn - cltOut)}.`,
+    `- Pagos ${num2(sum(expenses.filter((e) => e.paidAt)))}; a pagar ${num2(sum(expenses.filter((e) => !e.paidAt)))}.`,
+    lastLine("gasto", exp, (e) => `${e.description} (${e.category || "sem categoria"}, R$ ${num2(e.value)})`),
+    lastLine("ganho", inc, (i) => `${i.source} (R$ ${num2(i.value)})`),
+    `Gastos, mais recente primeiro${expenses.length > maxE ? ` (${maxE} mais recentes)` : ""}; campos: descrição; categoria; valor; situação; incluído em:`,
+    ...exp.slice(0, maxE).map((e) =>
+      [e.description, e.category, num2(e.value), e.paidAt ? "pago" : shortIso(e.dueDate) ? `vence ${shortIso(e.dueDate)}` : "a pagar",
+        e.paidWithCltPj && "CLT-PJ", e.paymentMethod, e._t != null ? shortDay(e._t) : "sem data"].filter(Boolean).join("; ")
     ),
-    "Ganhos, do mais recente para o mais antigo:",
-    ...inc.slice(0, 40).map((i) =>
-      [`  • ${i.source}`, brl(Number(i.value)), i.cltPjIncome && "CLT-PJ", i.voucherIncome && "vale", added(i)].filter(Boolean).join(" | ")
+    `Ganhos, mais recente primeiro${incomes.length > maxI ? ` (${maxI} mais recentes)` : ""}:`,
+    ...inc.slice(0, maxI).map((i) =>
+      [i.source, num2(i.value), i.cltPjIncome && "CLT-PJ", i.voucherIncome && "vale", i._t != null ? shortDay(i._t) : "sem data"].filter(Boolean).join("; ")
     ),
   ].join("\n");
 }
@@ -289,7 +299,7 @@ export function systemPrompt({ month, today, months, categories, paymentMethods,
   return [
     "Você é a assistente financeira pessoal do app Meu Financeiro. Responda em português do Brasil, curto e direto.",
     `O mês corrente é ${monthName(today)} (${today}); "mês passado" é o anterior a ele. O usuário está vendo ${monthName(month)} (${month}).`,
-    `Meses existentes: ${months.map((m) => `${monthName(m)} (${m})`).join(", ") || "nenhum"}.`,
+    `Meses existentes (AAAA-MM): ${months.join(", ") || "nenhum"}.`,
     "Quando o usuário pedir para lançar, criar ou registrar algo, chame UMA ferramenta: propose_expense, propose_income ou propose_list_item.",
     `Para perguntas sobre um mês diferente do que está nos dados abaixo, chame ${READ_TOOL} com esse mês antes de responder.`,
     "Regras:",
@@ -305,6 +315,93 @@ export function systemPrompt({ month, today, months, categories, paymentMethods,
     "",
     summary,
   ].join("\n");
+}
+
+/* ---------- mês citado na pergunta ---------- */
+
+const MONTH_WORDS = { janeiro: 1, fevereiro: 2, marco: 3, abril: 4, maio: 5, junho: 6, julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12 };
+const shiftMonth = (key, n) => {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+};
+
+/**
+ * Mês que a pessoa citou no texto ("outubro de 2026", "out/2026", "mês
+ * passado", "este mês"), em AAAA-MM; null se não citou. Sem ano, vale o
+ * mais recente que não seja futuro em relação a `today`.
+ *
+ * Serve para mandar os dados CERTOS já na primeira chamada: consultar outro
+ * mês pela ferramenta custa uma segunda chamada, e o plano gratuito da Groq
+ * tem só 8 mil tokens por minuto.
+ */
+export function monthMentioned(text, today) {
+  // sem acentos: "mês" → "mes", "março" → "marco"
+  const t = String(text || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (/\bmes (passado|anterior)\b/.test(t)) return shiftMonth(today, -1);
+  if (/\b(este|esse|neste|nesse) mes\b|\bmes (atual|corrente)\b/.test(t)) return today;
+
+  const names = Object.keys(MONTH_WORDS).join("|");
+  const abbr = "jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez";
+  const m =
+    new RegExp(String.raw`\b(${names})\b(?:\s*(?:de|/|-)?\s*(\d{4}))?`).exec(t) ||
+    new RegExp(String.raw`\b(${abbr})\s*[/-]\s*(\d{4})\b`).exec(t);
+  if (!m) return null;
+  const word = m[1];
+  const monthNum = MONTH_WORDS[word] || abbr.split("|").indexOf(word) + 1;
+  if (!monthNum) return null;
+  if (m[2]) return `${m[2]}-${String(monthNum).padStart(2, "0")}`;
+  const [ty, tm] = today.split("-").map(Number);
+  const year = monthNum > tm ? ty - 1 : ty;
+  return `${year}-${String(monthNum).padStart(2, "0")}`;
+}
+
+/* ---------- limite de uso da Groq ---------- */
+
+/**
+ * Lê um 429 da Groq: qual limite estourou e quando libera. Usa a mensagem do
+ * corpo ("... on tokens per minute (TPM): Limit 8000, Used 6130, Requested
+ * 3069 ...") e os cabeçalhos x-ratelimit-*. Não guarda a mensagem crua: ela
+ * traz o id da organização na Groq.
+ *
+ * @param {(name: string) => string|null} header
+ * @param {string} bodyText
+ */
+export function rateLimitInfo(header, bodyText = "") {
+  let message = "";
+  try {
+    message = String(JSON.parse(bodyText)?.error?.message || "");
+  } catch {
+    message = String(bodyText || ""); // corpo não-JSON: ainda dá para procurar as siglas
+  }
+  const kind = /\(TPD\)|tokens per day/i.test(message) ? "tpd"
+    : /\(RPD\)|requests per day/i.test(message) ? "rpd"
+    : /\(TPM\)|tokens per minute/i.test(message) ? "tpm"
+    : /\(RPM\)|requests per minute/i.test(message) ? "rpm"
+    : "unknown";
+  const pick = (re) => {
+    const m = re.exec(message);
+    return m ? Number(m[1]) : null;
+  };
+  const retry = Number(header("retry-after"));
+  return {
+    kind,
+    daily: kind === "tpd" || kind === "rpd",
+    retryAfterSeconds: Number.isFinite(retry) && retry > 0 ? retry : null,
+    limit: pick(/Limit (\d+)/i),
+    used: pick(/Used (\d+)/i),
+    requested: pick(/Requested (\d+)/i),
+    remainingTokensMinute: header("x-ratelimit-remaining-tokens"),
+  };
+}
+
+/** Mensagem para a pessoa, conforme o limite que estourou. */
+export function rateLimitMessage(info) {
+  if (info?.daily) return "A IA atingiu o limite diário de uso. Tente de novo amanhã.";
+  const wait = info?.retryAfterSeconds ? Math.ceil(info.retryAfterSeconds) : null;
+  return wait && wait <= 90
+    ? `A IA está no limite de uso por minuto. Aguarde uns ${wait} segundos e tente de novo.`
+    : "A IA está no limite de uso por minuto. Aguarde um minuto e tente de novo.";
 }
 
 /* ---------- laço da conversa ---------- */
