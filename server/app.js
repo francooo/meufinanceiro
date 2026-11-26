@@ -14,6 +14,7 @@ import {
   isAllowedEmail, generatePairingCode, formatPairingCode, normalizePairingCode, isPairingCodeShaped,
   hashPairingCode, PAIR_TTL_MINUTES,
 } from "./auth.js";
+import { registerAssistantRoutes } from "./assistant.js";
 
 const MONTH_RE = /^\d{4}-\d{2}$/;
 
@@ -391,3 +392,6 @@ app.put("/api/cards", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Falha ao salvar os saldos dos cartões." });
   }
 });
+
+/* Assistente financeira do app (Groq). Só propõe; não grava nada. */
+registerAssistantRoutes(app, { requireAuth });
