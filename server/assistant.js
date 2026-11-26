@@ -75,6 +75,17 @@ const upload = multer({
   limits: { fileSize: 4 * 1024 * 1024, files: 1 },
 });
 
+/* O Whisper deduz o formato pela EXTENSÃO do nome. O celular manda m4a; o
+   navegador grava webm (Chrome/Firefox), mp4 (Safari) ou ogg. */
+const AUDIO_EXT = { "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4", "audio/m4a": "m4a",
+  "audio/x-m4a": "m4a", "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav" };
+export function audioFile(file) {
+  const type = String(file?.mimetype || "").split(";")[0].trim().toLowerCase();
+  const fromName = /\.(webm|ogg|mp4|m4a|mp3|wav|flac)$/i.exec(file?.originalname || "")?.[1]?.toLowerCase();
+  const ext = AUDIO_EXT[type] || fromName || "m4a";
+  return { name: `audio.${ext}`, type: type || "audio/m4a" };
+}
+
 const send = (res, err, route) => {
   if (err instanceof UpstreamError) return res.status(err.status).json({ error: err.message });
   console.error(`${route} failed:`, err);
@@ -149,8 +160,9 @@ export function registerAssistantRoutes(app, { requireAuth }) {
       if (!req.file?.buffer?.length) return res.status(400).json({ error: "Nenhum áudio recebido." });
 
       try {
+        const { name, type } = audioFile(req.file);
         const form = new FormData();
-        form.append("file", new Blob([req.file.buffer], { type: req.file.mimetype || "audio/m4a" }), "audio.m4a");
+        form.append("file", new Blob([req.file.buffer], { type }), name);
         form.append("model", STT_MODEL);
         form.append("language", "pt");
         form.append("response_format", "json");

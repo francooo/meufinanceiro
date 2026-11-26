@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "mobile": "npm --prefix mobile run start",
     "mobile:install": "npm --prefix mobile install",
-    "test:server": "node --test --test-concurrency=1 server/test/isolation.test.mjs",
+    "test:server": "node --test --test-concurrency=1 server/test/isolation.test.mjs server/test/items.test.mjs",
     "test:assistant": "node --test server/test/assistant.test.mjs"
   },
   "dependencies": {

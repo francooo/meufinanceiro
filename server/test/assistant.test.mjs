@@ -120,3 +120,12 @@ test("categorias: padrão + personalizadas, sem repetir", () => {
   assert.equal(cats.length, DEFAULT_CATS.length + 1);
   assert.ok(cats.includes("Pets"));
 });
+
+test("transcrição: o nome do arquivo segue o formato gravado (o Whisper lê a extensão)", async () => {
+  const { audioFile } = await import("../assistant.js");
+  assert.deepEqual(audioFile({ mimetype: "audio/webm;codecs=opus", originalname: "audio.webm" }), { name: "audio.webm", type: "audio/webm" });
+  assert.deepEqual(audioFile({ mimetype: "audio/mp4", originalname: "audio.mp4" }), { name: "audio.mp4", type: "audio/mp4" });
+  assert.deepEqual(audioFile({ mimetype: "audio/m4a", originalname: "audio.m4a" }), { name: "audio.m4a", type: "audio/m4a" });
+  assert.equal(audioFile({ mimetype: "application/octet-stream", originalname: "x.ogg" }).name, "audio.ogg");
+  assert.equal(audioFile({}).name, "audio.m4a");
+});

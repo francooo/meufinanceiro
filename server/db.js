@@ -777,3 +777,66 @@ export async function consumePairingCode(codeHash) {
   );
   return rows[0]?.email || null;
 }
+
+/* ---------- criação de UM item (app do celular e assistente) ----------
+   O id vem do cliente e o INSERT é ON CONFLICT DO NOTHING: reenviar o mesmo
+   pedido depois de "a resposta se perdeu" devolve created=false em vez de
+   duplicar a linha. Gasto e ganho exigem que o mês já exista — criá-lo aqui
+   pularia a propagação de recorrentes e parcelas que createMonth faz. */
+async function monthExists(u, month) {
+  const { rowCount } = await pool.query("SELECT 1 FROM months WHERE user_email = $1 AND month = $2", [u, month]);
+  return rowCount > 0;
+}
+
+export async function createExpenseItem(email, month, e) {
+  const u = normalizeEmail(email);
+  if (!(await monthExists(u, month))) throw new NotFoundError("Mês não encontrado.");
+  const { rowCount } = await pool.query(
+    `INSERT INTO expenses (user_email, id, description, category, value, note, month, recurrent, due_date, installment_total, installment_number, purchase_total, paid_with_voucher, paid_with_clt_pj, payment_method, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+     ON CONFLICT (user_email, id) DO NOTHING`,
+    [
+      u, e.id, cut(e.description, T.title), e.category == null ? null : cut(e.category, T.short),
+      Number(e.value) || 0, cut(e.note, T.note), month, !!e.recurrent, optionalDate(e.dueDate),
+      Number.isInteger(e.installmentTotal) ? e.installmentTotal : null,
+      Number.isInteger(e.installmentNumber) ? e.installmentNumber : null,
+      Number.isFinite(e.purchaseTotal) ? e.purchaseTotal : null,
+      !!e.paidWithVoucher, !!e.paidWithCltPj, e.paymentMethod ? cut(e.paymentMethod, T.short) : null,
+      new Date().toISOString(),
+    ]
+  );
+  return rowCount > 0;
+}
+
+export async function createIncomeItem(email, month, i) {
+  const u = normalizeEmail(email);
+  if (!(await monthExists(u, month))) throw new NotFoundError("Mês não encontrado.");
+  const { rowCount } = await pool.query(
+    `INSERT INTO incomes (user_email, id, source, value, note, month, recurrent, receipt_date, voucher_income, clt_pj_income, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     ON CONFLICT (user_email, id) DO NOTHING`,
+    [u, i.id, cut(i.source, T.title), Number(i.value) || 0, cut(i.note, T.note), month, !!i.recurrent,
+      optionalDate(i.receiptDate), !!i.voucherIncome, !!i.cltPjIncome, new Date().toISOString()]
+  );
+  return rowCount > 0;
+}
+
+export async function createWishItem(email, it) {
+  const { rowCount } = await pool.query(
+    `INSERT INTO wishlist_items (user_email, id, title, value, note, target_date)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_email, id) DO NOTHING`,
+    [normalizeEmail(email), it.id, cut(it.title, T.title), Number(it.value) || 0, cut(it.note, T.note), optionalDate(it.targetDate)]
+  );
+  return rowCount > 0;
+}
+
+export async function createShoppingItem(email, listType, it) {
+  const { rowCount } = await pool.query(
+    `INSERT INTO shopping_items (user_email, id, list_type, title, value, note, quantity)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (user_email, id) DO NOTHING`,
+    [normalizeEmail(email), it.id, listType, cut(it.title, T.title), Number(it.value) || 0, cut(it.note, T.note), optionalText(it.quantity)]
+  );
+  return rowCount > 0;
+}

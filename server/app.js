@@ -7,7 +7,7 @@ import {
   currentMonth, getWishlist, replaceWishlist, getShoppingList, replaceShoppingList, getSerasaItems,
   replaceSerasaItems, getCards, replaceCards, getCardClosings, replaceCardClosings, createPairingCode,
   consumePairingCode, ensureUser, deleteUserData, hitRateLimit, normalizeEmail, NotFoundError,
-  MAX_ITEMS, MAX_ID_LENGTH,
+  MAX_ITEMS, MAX_ID_LENGTH, createExpenseItem, createIncomeItem, createWishItem, createShoppingItem,
 } from "./db.js";
 import {
   verifyGoogleCredential, signSession, setSessionCookie, clearSessionCookie, getSessionEmail, requireAuth,
@@ -391,6 +391,67 @@ app.put("/api/cards", requireAuth, async (req, res) => {
     console.error("PUT /api/cards failed:", err);
     res.status(500).json({ error: "Falha ao salvar os saldos dos cartões." });
   }
+});
+
+/* ---------- criação de UM item ----------
+   Usadas pelo app do celular (inclusive pelo Confirmar da assistente lá). O id
+   vem do cliente; reenviar o mesmo id não duplica (created=false). As regras de
+   obrigatório são as mesmas dos formulários da web. */
+const validId = (id) => typeof id === "string" && id.length > 0 && id.length <= MAX_ID_LENGTH;
+const filled = (v) => typeof v === "string" && v.trim() !== "";
+const validValue = (v) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+const badMonth = (m) => (typeof m !== "string" || !MONTH_RE.test(m) ? "Mês inválido. Use o formato AAAA-MM." : null);
+
+function createRoute(path, { validate, create, label }) {
+  app.post(path, requireAuth, async (req, res) => {
+    const body = req.body || {};
+    if (!validId(body.id)) return res.status(400).json({ error: "Id inválido." });
+    const problem = validate(body, req);
+    if (problem) return res.status(400).json({ error: problem });
+    try {
+      const created = await create(req.userEmail, body, req);
+      res.status(created ? 201 : 200).json({ ok: true, id: body.id, created });
+    } catch (err) {
+      if (err instanceof NotFoundError) return res.status(404).json({ error: err.message });
+      console.error(`POST ${path} failed:`, err);
+      res.status(500).json({ error: `Falha ao salvar ${label}.` });
+    }
+  });
+}
+
+createRoute("/api/expenses", {
+  label: "o gasto",
+  validate: (b) =>
+    badMonth(b.month) ||
+    (!filled(b.description) ? "Descrição obrigatória."
+      : !validValue(b.value) ? "Valor inválido."
+      : !filled(b.category) ? "Categoria obrigatória."
+      : b.installmentTotal != null && !(Number.isInteger(b.installmentTotal) && b.installmentTotal >= 2) ? "Parcelas inválidas."
+      : null),
+  create: (email, b) => createExpenseItem(email, b.month, { ...b, description: b.description.trim(), category: b.category.trim() }),
+});
+
+createRoute("/api/incomes", {
+  label: "o ganho",
+  validate: (b) =>
+    badMonth(b.month) || (!filled(b.source) ? "Fonte obrigatória." : !validValue(b.value) ? "Valor inválido." : null),
+  create: (email, b) => createIncomeItem(email, b.month, { ...b, source: b.source.trim() }),
+});
+
+createRoute("/api/wishlist", {
+  label: "o desejo",
+  validate: (b) => (!filled(b.title) ? "Nome obrigatório." : b.value != null && !validValue(b.value) ? "Valor inválido." : null),
+  create: (email, b) => createWishItem(email, { ...b, title: b.title.trim() }),
+});
+
+createRoute("/api/shopping", {
+  label: "o item",
+  validate: (b, req) =>
+    !SHOPPING_LIST_TYPES.has(req.query.list) ? "Lista inválida."
+      : !filled(b.title) ? "Nome obrigatório."
+      : b.value != null && !validValue(b.value) ? "Valor inválido."
+      : null,
+  create: (email, b, req) => createShoppingItem(email, req.query.list, { ...b, title: b.title.trim() }),
 });
 
 /* Assistente financeira do app (Groq). Só propõe; não grava nada. */
