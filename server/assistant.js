@@ -17,7 +17,8 @@
 import multer from "multer";
 import { getData, getMonths, getCategories, getPaymentMethods, hitRateLimit } from "./db.js";
 import {
-  MONTH_RE, buildTools, cleanHistory, mergeCategories, monthSummary, runChat, systemPrompt,
+  MONTH_RE, buildTools, cleanHistory, mergeCategories, monthMentioned, monthSummary, rateLimitInfo,
+  rateLimitMessage, runChat, systemPrompt,
 } from "./assistant-core.js";
 
 const GROQ_URL = "https://api.groq.com/openai/v1";
@@ -26,10 +27,25 @@ const GROQ_URL = "https://api.groq.com/openai/v1";
 const CHAT_MODEL = process.env.GROQ_CHAT_MODEL || "openai/gpt-oss-120b";
 const STT_MODEL = process.env.GROQ_STT_MODEL || "whisper-large-v3-turbo";
 
+/* Plano gratuito da Groq: 8 mil tokens por minuto POR MODELO. Quando o
+   principal estoura, a mesma pergunta vai para o reserva, que tem cota própria. */
+const FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL ?? "openai/gpt-oss-20b";
+const CHAT_MODELS = [...new Set([CHAT_MODEL, FALLBACK_MODEL].filter(Boolean))];
+/* gpt-oss aceita low/medium/high. Low gasta poucos tokens de raciocínio — que
+   também consomem a cota por minuto — e basta para ler dados já calculados. */
+const REASONING = /gpt-oss/.test(CHAT_MODELS.join(" "));
+
 class UpstreamError extends Error {
   constructor(message, status) {
     super(message);
     this.status = status;
+  }
+}
+
+class RateLimitError extends UpstreamError {
+  constructor(info) {
+    super(rateLimitMessage(info), 429);
+    this.info = info;
   }
 }
 
@@ -48,7 +64,12 @@ async function groq(path, init) {
     console.error(`Groq ${path} sem resposta:`, err?.name || err);
     throw new UpstreamError("Não foi possível falar com a IA agora. Tente de novo.", 502);
   }
-  if (res.status === 429) throw new UpstreamError("A IA está no limite de uso. Aguarde um pouco e tente de novo.", 429);
+  if (res.status === 429) {
+    const info = rateLimitInfo((name) => res.headers.get(name), await res.text().catch(() => ""));
+    /* Sem isso não dá para saber QUAL limite estourou (por minuto ou diário). */
+    console.warn("groq 429", JSON.stringify({ path, ...info }));
+    throw new RateLimitError(info);
+  }
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     console.error(`Groq ${path} HTTP ${res.status}:`, detail.slice(0, 500));
@@ -107,51 +128,71 @@ export function registerAssistantRoutes(app, { requireAuth }) {
     }
 
     try {
-      const [data, months, custom, methods] = await Promise.all([
-        getData(req.userEmail, month),
-        getMonths(req.userEmail),
+      const months = await getMonths(req.userEmail);
+      /* Pergunta que cita um mês ("outubro de 2026", "mês passado") já recebe
+         os dados DESSE mês na primeira chamada: consultar pela ferramenta custaria
+         uma segunda chamada e estouraria a cota por minuto da Groq. */
+      const lastUser = [...history].reverse().find((m) => m.role === "user")?.content;
+      const cited = monthMentioned(lastUser, todayMonth);
+      const dataMonth = cited && months.includes(cited) ? cited : month;
+
+      const [data, custom, methods] = await Promise.all([
+        getData(req.userEmail, dataMonth),
         getCategories(req.userEmail),
         getPaymentMethods(req.userEmail),
       ]);
       const categories = mergeCategories(custom);
       const paymentMethods = [...new Set(["Pix", ...methods])];
-
       const tools = buildTools(categories);
+      const system = systemPrompt({
+        month, today: todayMonth, months, categories, paymentMethods,
+        summary: monthSummary(dataMonth, data),
+      });
+
+      /* O modelo reserva entra quando o principal bate no limite, e fica para o
+         resto da pergunta (a leitura de outro mês não volta ao que estourou). */
+      let modelIndex = 0;
+      let calls = 0;
+      const callModel = async (messages) => {
+        for (;;) {
+          const model = CHAT_MODELS[modelIndex];
+          try {
+            calls++;
+            const completion = await groq("/chat/completions", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                model,
+                temperature: 0.2,
+                max_completion_tokens: 700,
+                ...(REASONING ? { reasoning_effort: "low", include_reasoning: false } : null),
+                tools,
+                tool_choice: "auto",
+                parallel_tool_calls: false,
+                messages,
+              }),
+            });
+            return completion?.choices?.[0]?.message;
+          } catch (err) {
+            const canFallBack = err instanceof RateLimitError && modelIndex < CHAT_MODELS.length - 1;
+            if (!canFallBack) throw err;
+            modelIndex++;
+          }
+        }
+      };
+
       const { response, reads } = await runChat({
         months,
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt({
-              month, today: todayMonth, months, categories, paymentMethods,
-              summary: monthSummary(month, data),
-            }),
-          },
-          ...history,
-        ],
-        callModel: async (messages) => {
-          const completion = await groq("/chat/completions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              model: CHAT_MODEL,
-              temperature: 0.2,
-              max_completion_tokens: 1024,
-              tools,
-              tool_choice: "auto",
-              parallel_tool_calls: false,
-              messages,
-            }),
-          });
-          return completion?.choices?.[0]?.message;
-        },
+        messages: [{ role: "system", content: system }, ...history],
+        callModel,
         loadMonth: (m) => getData(req.userEmail, m),
       });
 
       /* Só contagens, nunca conteúdo nem e-mail: é o que responde "a IA recebeu
-         os dados?" quando uma resposta parecer errada. */
+         os dados?" e "por que estourou o limite?" quando algo parecer errado. */
       console.info("assistant chat", JSON.stringify({
-        month, expenses: data.expenses.length, incomes: data.incomes.length, reads,
+        month, dataMonth, expenses: data.expenses.length, incomes: data.incomes.length, reads,
+        model: CHAT_MODELS[modelIndex], calls, promptChars: system.length,
         action: response.proposal?.action || null,
       }));
       res.json(response);

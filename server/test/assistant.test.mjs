@@ -98,8 +98,8 @@ test("resumo do mês traz o CLT-PJ já calculado", () => {
       { description: "Luz", category: "Moradia", value: 100, paidAt: "2026-11-05" },
     ],
   });
-  assert.match(s, /recebido R\$\s?3\.000,00, gasto R\$\s?400,00, sobra R\$\s?2\.600,00/);
-  assert.match(s, /saldo R\$\s?3\.000,00/);
+  assert.match(s, /recebido 3\.000,00, gasto 400,00, sobra 2\.600,00/);
+  assert.match(s, /saldo 3\.000,00/);
 });
 
 test("histórico: só user/assistant com texto, últimas N, conteúdo cortado", () => {
@@ -145,8 +145,12 @@ test("resumo: diz o último gasto incluído, mês por extenso e as contagens", (
   assert.match(s, /^Dados de outubro de 2026 \(2026-10\): 3 gasto\(s\) e 1 ganho\(s\)/);
   assert.match(s, /Último gasto incluído: Farmácia \(Saúde, R\$\s?42,90\), em 28\/10\/2026/);
   assert.match(s, /Último ganho incluído: Salário/);
-  const order = s.split("\n").filter((l) => l.startsWith("  • ")).map((l) => l.slice(4).split(" | ")[0]);
-  assert.deepEqual(order.slice(0, 3), ["Farmácia", "Aluguel", "Luz"], "mais recente primeiro; sem data no fim");
+  const lines = s.split("\n");
+  const start = lines.findIndex((l) => l.startsWith("Gastos, mais recente primeiro"));
+  const order = lines.slice(start + 1, start + 4).map((l) => l.split("; ")[0]);
+  assert.deepEqual(order, ["Farmácia", "Aluguel", "Luz"], "mais recente primeiro; sem data no fim");
+  assert.match(lines[start + 1], /; 28\/10$/);
+  assert.match(lines[start + 3], /; sem data$/);
 });
 
 test("resumo: data no fuso de Brasília (a Vercel roda em UTC)", () => {
@@ -226,4 +230,59 @@ test("runChat: proposta segue para a validação de campos de sempre", async () 
   });
   assert.deepEqual(reads, []);
   assert.deepEqual(response.proposal.missing, ["valor", "categoria"]);
+});
+
+/* ---------- cota da Groq: mês citado, resumo enxuto, limite de uso ---------- */
+
+test("mês citado na pergunta (para mandar os dados certos sem segunda chamada)", () => {
+  const today = "2026-11";
+  const cases = {
+    "qual foi meu ultimo gasto incluido no mes de outubro 2026 ?": "2026-10",
+    "e em março?": "2026-03",
+    "maio": "2026-05",
+    "dezembro": "2025-12",
+    "em dezembro de 2025": "2025-12",
+    "gastos de out/2026": "2026-10",
+    "quanto gastei no mês passado": "2026-10",
+    "neste mês sobrou quanto?": "2026-11",
+    "crie um gasto de 50 no mercado": null,
+    "marcar como pago": null,
+    "": null,
+  };
+  for (const [q, want] of Object.entries(cases)) assert.equal(core.monthMentioned(q, today), want, q);
+  assert.equal(core.monthMentioned("mês passado", "2027-01"), "2026-12", "virada de ano");
+});
+
+test("resumo enxuto: só os mais recentes, e diz quantos ficaram de fora", () => {
+  const many = Array.from({ length: 70 }, (_, i) => ({
+    description: `G${i}`, category: "Moradia", value: 1, createdAt: new Date(Date.UTC(2026, 9, 1, 0, i)),
+  }));
+  const s = core.monthSummary("2026-10", { expenses: many });
+  assert.match(s, /70 gasto\(s\)/);
+  assert.match(s, new RegExp(`\(${core.SUMMARY_LIMITS.expenses} mais recentes\)`));
+  assert.match(s, /Último gasto incluído: G69/);
+  assert.equal(s.includes("G0;"), false, "o mais antigo ficou de fora");
+});
+
+const groqBody = (m) => JSON.stringify({ error: { message: m, type: "tokens" } });
+
+test("429 da Groq: por minuto, com espera", () => {
+  const h = { "retry-after": "9", "x-ratelimit-remaining-tokens": "0" };
+  const info = core.rateLimitInfo((n) => h[n] ?? null,
+    groqBody("Rate limit reached for model `openai/gpt-oss-120b` in organization `org_abc` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 6130, Requested 3069. Please try again in 9.1s."));
+  assert.deepEqual(
+    { kind: info.kind, daily: info.daily, limit: info.limit, used: info.used, requested: info.requested, retry: info.retryAfterSeconds },
+    { kind: "tpm", daily: false, limit: 8000, used: 6130, requested: 3069, retry: 9 }
+  );
+  assert.equal(JSON.stringify(info).includes("org_abc"), false, "não guarda o id da organização");
+  assert.match(core.rateLimitMessage(info), /Aguarde uns 9 segundos/);
+});
+
+test("429 da Groq: diário vira 'tente amanhã'; sem detalhes vira 'aguarde um minuto'", () => {
+  const daily = core.rateLimitInfo(() => null, groqBody("... on tokens per day (TPD): Limit 200000, Used 199500, Requested 3000 ..."));
+  assert.equal(daily.kind, "tpd");
+  assert.match(core.rateLimitMessage(daily), /limite diário.*amanhã/);
+  const bare = core.rateLimitInfo(() => null, "not json");
+  assert.equal(bare.kind, "unknown");
+  assert.match(core.rateLimitMessage(bare), /Aguarde um minuto/);
 });
