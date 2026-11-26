@@ -25,6 +25,7 @@ import {
   ExpenseModal, IncomeModal, DebtModal, CardModal, BalanceModal, ClosingModal,
   WishModal, ShoppingItemModal, PairModal,
 } from "./src/web/modals/index.jsx";
+import { AssistantButton, AssistantPanel, useAssistantChat } from "./src/web/assistant/Assistant.jsx";
 
 /* ---------- calculadora de seleção ---------- */
 /* `kind` reusa o mesmo vocabulário de modal.mode. direction: +1 entra, -1 sai. */
@@ -273,6 +274,9 @@ export default function App() {
   const [confirmState, setConfirmState] = useState(null); // {kind, payload}
   const [saved, setSaved] = useState(false);
   const savedTimer = useRef(null);
+  // Assistente: a conversa vive aqui para sobreviver a fechar/abrir o painel.
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const assistantChat = useAssistantChat(month);
 
   // Estrutura da web (menu lateral + barra superior).
   const [email, setEmail] = useState("");
@@ -357,6 +361,15 @@ export default function App() {
     window.addEventListener("mf:unauthorized", onUnauthorized);
     return () => window.removeEventListener("mf:unauthorized", onUnauthorized);
   }, []);
+
+  /* Saiu da conta por qualquer caminho (logout, sessão perdida, conta excluída):
+     a conversa com a assistente não pode aparecer para a próxima conta. */
+  const clearAssistant = assistantChat.clear;
+  useEffect(() => {
+    if (authed) return;
+    setAssistantOpen(false);
+    clearAssistant();
+  }, [authed, clearAssistant]);
 
   /* "Excluir minha conta": o servidor apaga tudo da pessoa e o cookie; aqui só
      resta limpar a tela e voltar ao login. */
@@ -921,6 +934,13 @@ export default function App() {
     }));
     setModal(null);
   };
+  /* Confirmar da assistente: o mesmo caminho dos formulários, então o item
+     entra no estado e o autosave grava como sempre. */
+  const confirmAssistantEntry = (kind, data) => {
+    if (kind === "expense" || kind === "income") saveEntry(kind, data);
+    else if (kind === "wish") saveWish(data);
+    else saveShoppingItem(kind, data);
+  };
   const toggleShoppingItemDone = (listType, id) => {
     setShoppingLists((prev) => ({
       ...prev,
@@ -1203,22 +1223,38 @@ export default function App() {
         </div>
       </div>
 
-      {/* calculadora de seleção — z-40 fica sob os modais (z-50) */}
-      {!selecting && tab !== "config" && (
+      {/* botões flutuantes: assistente em cima, calculadora de seleção embaixo.
+          z-40 fica sob os modais e o painel da assistente (z-50). */}
+      {!selecting && !assistantOpen && (
         <div className="fixed bottom-0 inset-x-0 lg:left-[260px] z-40 pointer-events-none">
           {/* pb maior no mobile: 20px deixavam o botao atras da barra do navegador */}
-          <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pb-8 sm:pb-6 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setSelecting(true)}
-              title="Somar itens"
-              aria-label="Somar itens"
-              className="pointer-events-auto touch-manipulation h-16 w-16 rounded-2xl bg-forest-2 text-white shadow-[0_14px_30px_-10px_rgba(11,48,37,0.6)] flex items-center justify-center hover:opacity-90 active:scale-95 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-champagne"
-            >
-              <Calculator className="h-7 w-7" />
-            </button>
+          <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-10 pb-8 sm:pb-6 flex flex-col items-end gap-3">
+            <AssistantButton onClick={() => setAssistantOpen(true)} />
+            {tab !== "config" && (
+              <button
+                type="button"
+                onClick={() => setSelecting(true)}
+                title="Somar itens"
+                aria-label="Somar itens"
+                className="pointer-events-auto touch-manipulation h-16 w-16 rounded-2xl bg-forest-2 text-white shadow-[0_14px_30px_-10px_rgba(11,48,37,0.6)] flex items-center justify-center hover:opacity-90 active:scale-95 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-champagne"
+              >
+                <Calculator className="h-7 w-7" />
+              </button>
+            )}
           </div>
         </div>
+      )}
+
+      {assistantOpen && (
+        <AssistantPanel
+          chat={assistantChat}
+          month={month}
+          months={months}
+          switchingMonth={switchingMonth}
+          onClose={() => setAssistantOpen(false)}
+          onGoToMonth={handleMonthChange}
+          onConfirm={confirmAssistantEntry}
+        />
       )}
 
       {selecting && (
